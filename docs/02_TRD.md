@@ -239,4 +239,4 @@ The receiver requires local-network access and background audio configuration ap
 
 ## 15. Source documents
 
-This TRD expands the baseline in [docs/System Structure.md](../docs/System%20Structure.md) and [docs/Sync Engine.md](../docs/Sync%20Engine.md). It is a planning document; it does not assert that these APIs or performance levels have already been validated.
+This TRD expands the baseline in [docs/System Structure.md](../docs_original/System%20Structure.md) and [docs/Sync Engine.md](../docs_original/Sync%20Engine.md). It is a planning document; it does not assert that these APIs or performance levels have already been validated.

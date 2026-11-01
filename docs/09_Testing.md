@@ -311,4 +311,4 @@ Do not overwrite prior test runs. Give each run a unique identifier and retain t
 
 ## 16. Source documents
 
-This plan expands the simulator, phone-test, endurance, scale and fault-injection strategy in [docs/System Structure.md](../docs/System%20Structure.md) and [docs/Sync Engine.md](../docs/Sync%20Engine.md).
+This plan expands the simulator, phone-test, endurance, scale and fault-injection strategy in [docs/System Structure.md](../docs_original/System%20Structure.md) and [docs/Sync Engine.md](../docs_original/Sync%20Engine.md).

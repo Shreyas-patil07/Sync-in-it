@@ -160,4 +160,4 @@ Do not invent a custom encryption algorithm. Use established libraries and proto
 
 ## 12. Source documents
 
-The initial security assumptions are based on sections 2, 8 and 15 of [docs/System Structure.md](../docs/System%20Structure.md). The controls in this document strengthen and clarify that baseline; they do not claim that the current wire protocol is encrypted.
+The initial security assumptions are based on sections 2, 8 and 15 of [docs/System Structure.md](../docs_original/System%20Structure.md). The controls in this document strengthen and clarify that baseline; they do not claim that the current wire protocol is encrypted.

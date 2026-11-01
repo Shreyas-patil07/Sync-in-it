@@ -242,4 +242,4 @@ The intended implementation layout is:
 
 ## 15. Source documents
 
-Primary source references: [docs/Sync Engine.md](../docs/Sync%20Engine.md) and [docs/System Structure.md](../docs/System%20Structure.md). This architecture document consolidates those sources; it does not replace or modify them.
+Primary source references: [docs/Sync Engine.md](../docs_original/Sync%20Engine.md) and [docs/System Structure.md](../docs_original/System%20Structure.md). This architecture document consolidates those sources; it does not replace or modify them.

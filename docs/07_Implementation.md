@@ -300,4 +300,4 @@ Android and iOS CI may be expanded after native project skeletons exist. Physica
 
 ## 11. Source documents
 
-This plan maps the current M0–M9 roadmap in [docs/Sync Engine.md](../docs/Sync%20Engine.md) and [docs/System Structure.md](../docs/System%20Structure.md) into implementation phases. No milestone is marked complete by this plan.
+This plan maps the current M0–M9 roadmap in [docs/Sync Engine.md](../docs_original/Sync%20Engine.md) and [docs/System Structure.md](../docs_original/System%20Structure.md) into implementation phases. No milestone is marked complete by this plan.
