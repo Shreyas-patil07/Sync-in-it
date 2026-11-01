@@ -1,5 +1,9 @@
 # Sync In It
 
+<p align="center">
+  <img src="docs/images/sync_in_it.png" alt="Sync In It logo" width="260" />
+</p>
+
 > Turn 6-10 phones (Android + iOS) into one synchronized speaker group, fully offline.
 
 **Sync In It** is an offline, master-clock-based audio distribution system. One Android phone plays the role of audio source and master clock. Up to 10 other phones, Android or iOS, play the same audio in sync over a private local Wi-Fi network. It is designed for a single train coach (for example a Bandra-Delhi journey), with no internet, no cloud, and no dedicated speakers.
