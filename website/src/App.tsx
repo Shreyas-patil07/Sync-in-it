@@ -112,7 +112,7 @@ function Hero({ navigate }: { navigate: (page: Page) => void }) {
 }
 
 function StatStrip() {
-  const stats = [['6–10', 'PHONE GROUP TARGET'], ['48 kHz', 'BASE AUDIO RATE'], ['20 ms', 'AUDIO CHUNK'], ['0', 'INTERNET REQUIRED']];
+  const stats = [['6–10', 'PHONE GROUP TARGET'], ['48 kHz', 'BASE AUDIO RATE'], ['20 ms', 'AUDIO CHUNK'], ['OFFLINE', 'NO INTERNET NEEDED']];
   return <div className="stat-strip"><div className="container stat-grid">{stats.map(([value, label]) => <div className="stat" key={label}><b>{value}</b><span>{label}</span></div>)}</div></div>;
 }
 
