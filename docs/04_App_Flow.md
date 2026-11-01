@@ -216,4 +216,4 @@ If connection is lost:
 
 ## 8. Source documents
 
-The current state machine and operating procedures are derived from sections 7 and 10 of [docs/System Structure.md](../docs/System%20Structure.md). The high-level system behavior is in [docs/Sync Engine.md](../docs/Sync%20Engine.md).
+The current state machine and operating procedures are derived from sections 7 and 10 of [docs/System Structure.md](../docs_original/System%20Structure.md). The high-level system behavior is in [docs/Sync Engine.md](../docs_original/Sync%20Engine.md).
