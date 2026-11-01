@@ -269,4 +269,4 @@ Both Python reference code and C++ encoders/decoders must pass the same vectors.
 
 ## 14. Source documents
 
-This schema is based on section 8 and the telemetry sections of [docs/System Structure.md](../docs/System%20Structure.md), plus the protocol summary in [docs/Sync Engine.md](../docs/Sync%20Engine.md). Where the summary is abbreviated, the detailed message definitions in this document are the implementation baseline pending protocol review.
+This schema is based on section 8 and the telemetry sections of [docs/System Structure.md](../docs_original/System%20Structure.md), plus the protocol summary in [docs/Sync Engine.md](../docs_original/Sync%20Engine.md). Where the summary is abbreviated, the detailed message definitions in this document are the implementation baseline pending protocol review.
