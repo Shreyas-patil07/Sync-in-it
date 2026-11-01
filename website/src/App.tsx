@@ -74,12 +74,12 @@ function Header({ page, navigate }: { page: Page; navigate: (page: Page) => void
   return <header className="topbar"><div className="container nav-inner">
     <Brand compact />
     <nav className={open ? 'nav-links nav-open' : 'nav-links'}>
-      <button onClick={() => go('home')} className={page === 'home' ? 'nav-link active' : 'nav-link'}>Overview</button>
+      <button onClick={() => go('home')} className={page === 'home' ? 'nav-link active' : 'nav-link'} aria-current={page === 'home' ? 'page' : undefined}>Overview</button>
       <a href={DOCS} className="nav-link">Documentation <ArrowRight size={13} /></a>
-      <button onClick={() => go('downloads')} className={page === 'downloads' ? 'nav-link active' : 'nav-link'}>Downloads</button>
+      <button onClick={() => go('downloads')} className={page === 'downloads' ? 'nav-link active' : 'nav-link'} aria-current={page === 'downloads' ? 'page' : undefined}>Downloads</button>
       <a href={REPO} target="_blank" rel="noreferrer" className="nav-github"><Github size={16} /> GitHub</a>
     </nav>
-    <button className="mobile-menu" onClick={() => setOpen(!open)} aria-label="Toggle navigation">{open ? <X /> : <Menu />}</button>
+    <button className="mobile-menu" onClick={() => setOpen(!open)} aria-label="Toggle navigation" aria-expanded={open}>{open ? <X /> : <Menu />}</button>
   </div></header>;
 }
 
@@ -97,7 +97,7 @@ function Hero({ navigate }: { navigate: (page: Page) => void }) {
         <button className="button button-primary" onClick={() => navigate('downloads')}>Explore downloads <ArrowDownToLine size={17} /></button>
         <a className="button button-ghost" href={REPO} target="_blank" rel="noreferrer">View source <Github size={17} /></a>
       </div>
-      <div className="hero-meta"><span><span className="live-dot" /> Design & research phase</span><i /> <span>Android master · Android + iOS receivers</span></div>
+      <div className="hero-meta"><span><span className="live-dot" /> Design &amp; research phase</span><i /> <span>Android master · Android + iOS receivers</span></div>
     </div>
     <div className="hero-art">
       <div className="art-halo halo-one" /><div className="art-halo halo-two" />
@@ -168,7 +168,7 @@ function Targets() {
 function Roadmap() {
   return <section className="section container" id="roadmap">
     <SectionHeading tag="DEVELOPMENT ROADMAP" title="Built in measurable milestones." description="Synchronization is validated layer by layer. A milestone is complete only when its physical or simulated acceptance gate passes." />
-    <div className="roadmap-grid">{milestones.map(([id, title, detail]) => <article className="roadmap-card" key={id}><div className="roadmap-card-top"><span>{id}</span><em><i /> PLANNED</em></div><h3>{title}</h3><p>{detail}</p></article>)}</div>
+    <div className="roadmap-list">{milestones.map(([id, title, detail]) => <article className="roadmap-item" key={id}><span className="roadmap-id">{id}</span><div className="roadmap-copy"><h3>{title}</h3><p>{detail}</p></div><span className="roadmap-status"><i /> Planned</span></article>)}</div>
   </section>;
 }
 
@@ -190,7 +190,7 @@ function Downloads({ navigate }: { navigate: (page: Page) => void }) {
 }
 
 function Footer({ navigate }: { navigate: (page: Page) => void }) {
-  return <footer className="footer"><div className="container footer-main"><div><Brand compact /><p>One sound. Every phone.<br />Designed to work offline.</p></div><div className="footer-links"><div><b>EXPLORE</b><a href="#how-it-works">How it works</a><a href="#architecture">Architecture</a><a href="#roadmap">Roadmap</a></div><div><b>RESOURCES</b><a href={DOCS}>Documentation</a><button onClick={() => navigate('downloads')}>Downloads</button><a href={REPO}>GitHub repository</a></div></div></div><div className="container footer-bottom"><span>© 2026 Sync In It · Research & development project</span><span>Built for local-first audio synchronization.</span></div></footer>;
+  return <footer className="footer"><div className="container footer-main"><div><Brand compact /><p>One sound. Every phone.<br />Designed to work offline.</p></div><div className="footer-links"><div><b>EXPLORE</b><a href="/#how-it-works">How it works</a><a href="/#architecture">Architecture</a><a href="/#roadmap">Roadmap</a></div><div><b>RESOURCES</b><a href={DOCS}>Documentation</a><button onClick={() => navigate('downloads')}>Downloads</button><a href={REPO}>GitHub repository</a></div></div></div><div className="container footer-bottom"><span>© 2026 Sync In It · Research &amp; development project</span><span>Built for local-first audio synchronization.</span></div></footer>;
 }
 
 export default function App() {
