@@ -175,4 +175,4 @@ The README describes a group of 6–10 phones total. The detailed system design 
 
 ## 12. Source documents
 
-This PRD reorganizes requirements already present in the original design. Consult [docs/Sync Engine.md](../docs/Sync%20Engine.md) for system purpose and [docs/System Structure.md](../docs/System%20Structure.md) for the detailed design baseline. The original files remain unchanged.
+This PRD reorganizes requirements already present in the original design. Consult [docs/Sync Engine.md](../docs_original/Sync%20Engine.md) for system purpose and [docs/System Structure.md](../docs_original/System%20Structure.md) for the detailed design baseline. The original files remain unchanged.
