@@ -1,7 +1,7 @@
 import { useEffect, useState } from 'react';
 import {
   Activity, ArrowDown, ArrowDownToLine, ArrowRight, AudioLines, AudioWaveform,
-  Check, Clock3, Code2, Github, Headphones, Menu, Mic2, Network, Radio,
+  Clock3, Code2, Github, Headphones, Menu, Mic2, Network, Radio,
   ShieldCheck, Smartphone, Timer, Wifi, X
 } from 'lucide-react';
 
@@ -27,7 +27,7 @@ function usePage(): [Page, (page: Page) => void] {
   return [page, navigate];
 }
 
-const milestones = [
+const milestones: [string, string, string][] = [
   ['M0', 'Time & drift simulator', 'Model clock offsets, network jitter, packet loss and playout drift.'],
   ['M1', 'Two-phone clock sync', 'Validate four-timestamp synchronization on physical Android devices.'],
   ['M2', 'Scheduled playback', 'Start a shared click track against one future timeline deadline.'],
@@ -40,7 +40,7 @@ const milestones = [
   ['M9', 'Scale & field trial', 'Validate a 6–10 phone group in a train-coach environment.'],
 ];
 
-const features = [
+const features: [typeof Clock3, string, string][] = [
   [Clock3, 'One shared timeline', 'Every audio sample gets a target presentation time. Devices do not start when packets arrive.'],
   [Network, 'Offline by design', 'Phones communicate over a private local Wi-Fi network. No cloud, account or internet required.'],
   [AudioWaveform, 'Continuous drift control', 'Clock estimation, audio hardware timestamps and correction keep playback aligned over time.'],
@@ -117,7 +117,7 @@ function StatStrip() {
 }
 
 function HowItWorks() {
-  const steps = [
+  const steps: [typeof Smartphone, string, string][] = [
     [Smartphone, 'Create a session', 'One Android phone becomes the master, source and clock authority. It shares a secure join QR.'],
     [Wifi, 'Join the network', 'Other phones connect over the same private Wi-Fi router and synchronize their clocks.'],
     [Timer, 'Buffer & schedule', 'Audio arrives early. Every receiver prepares for one future playback deadline.'],
