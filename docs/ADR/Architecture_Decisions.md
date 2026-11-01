@@ -148,4 +148,4 @@ When an ADR changes, review:
 
 ## 3. Source documents
 
-These records consolidate decisions and open questions from [docs/System Structure.md](../../docs/System%20Structure.md) and [docs/Sync Engine.md](../../docs/Sync%20Engine.md). The original source documents remain unchanged.
+These records consolidate decisions and open questions from [docs/System Structure.md](../../docs_original/System%20Structure.md) and [docs/Sync Engine.md](../../docs_original/Sync%20Engine.md). The original source documents remain unchanged.
