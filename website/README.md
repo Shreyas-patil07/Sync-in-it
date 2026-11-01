@@ -31,7 +31,7 @@ Deploy the `website/` directory as the project root in Vercel or another static 
 - Output directory: `dist`
 - Install command: `npm install`
 
-The Vercel configuration at `website/vercel.json` rewrites SPA paths such as `/downloads` to `index.html`.
+The Vercel configuration at `website/vercel.json` serves the app entry point for `/downloads` while preserving the requested browser path, allowing the client-side route to render.
 
 ## Pages
 
