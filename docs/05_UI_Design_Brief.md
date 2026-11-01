@@ -179,4 +179,4 @@ The final palette, typography and iconography can be selected during UI design. 
 
 ## 10. Source documents
 
-Screen and state requirements originate from section 13 of [docs/System Structure.md](../docs/System%20Structure.md). The role model and session purpose originate from [docs/Sync Engine.md](../docs/Sync%20Engine.md).
+Screen and state requirements originate from section 13 of [docs/System Structure.md](../docs_original/System%20Structure.md). The role model and session purpose originate from [docs/Sync Engine.md](../docs_original/Sync%20Engine.md).
