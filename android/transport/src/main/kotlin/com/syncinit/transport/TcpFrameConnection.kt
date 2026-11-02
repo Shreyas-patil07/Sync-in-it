@@ -168,6 +168,7 @@ class TcpFrameConnection internal constructor(
             require(port in 1..65_535) { "port must be between 1 and 65535" }
             validateSocketOptions(connectTimeoutMs, readTimeoutMs, maxFrameSize)
             val socket = Socket()
+            val startedAtNs = System.nanoTime()
             try {
                 socket.tcpNoDelay = true
                 socket.keepAlive = true
@@ -175,8 +176,15 @@ class TcpFrameConnection internal constructor(
                 socket.connect(InetSocketAddress(host, port), connectTimeoutMs)
                 return TcpFrameConnection(socket, maxFrameSize)
             } catch (e: Exception) {
+                val localEndpoint = "${socket.localAddress?.hostAddress ?: "unassigned"}:${socket.localPort}"
+                val elapsedMs = (System.nanoTime() - startedAtNs) / 1_000_000L
                 socket.close()
-                throw e
+                throw IOException(
+                    "TCP connect failed target=$host:$port local=$localEndpoint " +
+                        "timeoutMs=$connectTimeoutMs elapsedMs=$elapsedMs " +
+                        "cause=${e.javaClass.name}: ${e.message ?: "no message"}",
+                    e
+                )
             }
         }
 
