@@ -1,7 +1,10 @@
 package com.syncinit.app
 
 import android.app.Activity
+import android.content.ClipData
+import android.content.ClipboardManager
 import android.os.Bundle
+import android.widget.Toast
 import android.view.Gravity
 import android.widget.Button
 import android.widget.LinearLayout
@@ -12,6 +15,7 @@ import com.syncinit.app.core.NativeSessionSmokeTest
 import com.syncinit.app.core.NetworkHandshakeSmokeTest
 import com.syncinit.app.audio.PcmAudioSmokeTest
 import com.syncinit.app.network.LanSessionBrowser
+import com.syncinit.app.network.NetworkDiagnostics
 import com.syncinit.app.network.MasterSessionHost
 import com.syncinit.app.network.NearbySession
 import com.syncinit.app.network.ReceiverSessionClient
@@ -22,6 +26,8 @@ class MainActivity : Activity() {
     private lateinit var hostDetails: TextView
     private lateinit var discoveryStatus: TextView
     private lateinit var nearbySessionsContainer: LinearLayout
+    private lateinit var debugLog: TextView
+    private val diagnosticEvents = ArrayDeque<String>()
 
     @Volatile private var masterHost: MasterSessionHost? = null
     @Volatile private var receiverClient: ReceiverSessionClient? = null
@@ -88,6 +94,22 @@ class MainActivity : Activity() {
         content.addView(status)
         content.addView(actionButton("Stop session / disconnect") { stopConnections() })
 
+        content.addView(sectionTitle("Network debugger"))
+        content.addView(TextView(this).apply {
+            text = "Captures this phone's active Android network, interfaces, IP prefixes, routes, discovery events, and exact join stages. No session token, Wi-Fi password, SSID, BSSID, or MAC address is recorded."
+            textSize = 12f
+        })
+        content.addView(actionButton("Capture local network state") { captureNetworkSnapshot() })
+        content.addView(actionButton("Copy full diagnostic log") { copyDiagnosticLog() })
+        content.addView(actionButton("Clear diagnostic log") { clearDiagnosticLog() })
+        debugLog = TextView(this).apply {
+            text = "No diagnostic events yet."
+            textSize = 11f
+            typeface = android.graphics.Typeface.MONOSPACE
+            setPadding(0, 8, 0, 12)
+        }
+        content.addView(debugLog)
+
         content.addView(TextView(this).apply {
             text = "Nearby discovery uses your local Wi-Fi only. Use a trusted private network. The host sends a generated 1 kHz timing-click test stream; receivers prebuffer PCM16 and play it through AudioTrack. User-selected audio and scheduled group playback are not implemented yet."
             textSize = 12f
@@ -144,7 +166,8 @@ class MainActivity : Activity() {
     private fun joinNearby(session: NearbySession) {
         stopConnections()
         stopDiscovery()
-        val client = ReceiverSessionClient(::postStatus)
+        appendDiagnostic("JOIN_TARGET", "service=${session.serviceName} host=${session.hostAddress} controlPort=${session.controlPort}")
+        val client = ReceiverSessionClient(applicationContext, ::postStatus)
         receiverClient = client
         postStatus("Joining ${session.serviceName}…")
         try {
@@ -173,6 +196,7 @@ class MainActivity : Activity() {
                     runOnUiThread {
                         if (isFinishing || isDestroyed || session.serviceName == hostServiceName) return@runOnUiThread
                         nearbySessions[session.serviceName] = session
+                        appendDiagnostic("NSD_SESSION", "resolved service=${session.serviceName} endpoint=${session.hostAddress}:${session.controlPort}")
                         renderNearbySessions()
                     }
                 },
@@ -230,6 +254,7 @@ class MainActivity : Activity() {
         runOnUiThread {
             if (isFinishing || isDestroyed || !::status.isInitialized) return@runOnUiThread
             status.text = message
+            appendDiagnostic("STATUS", message)
 
             val hostEnded = message.startsWith("Receiver sent LEAVE.") ||
                 message.startsWith("Receiver control connection closed.") ||
@@ -248,7 +273,45 @@ class MainActivity : Activity() {
         runOnUiThread {
             if (!isFinishing && !isDestroyed && ::discoveryStatus.isInitialized) {
                 discoveryStatus.text = message
+                appendDiagnostic("DISCOVERY", message)
             }
+        }
+    }
+
+    private fun captureNetworkSnapshot() {
+        appendDiagnostic("ACTION", "Capturing active Android network snapshot.")
+        Thread({
+            val snapshot = NetworkDiagnostics.networkSnapshot(applicationContext)
+            runOnUiThread {
+                if (!isFinishing && !isDestroyed) appendDiagnostic("NETWORK_SNAPSHOT", snapshot)
+            }
+        }, "syncinit-network-diagnostics").apply { isDaemon = true }.start()
+    }
+
+    private fun copyDiagnosticLog() {
+        val clipboard = getSystemService(CLIPBOARD_SERVICE) as ClipboardManager
+        val content = synchronized(diagnosticEvents) { diagnosticEvents.joinToString("\n") }
+        if (content.isBlank()) {
+            Toast.makeText(this, "No diagnostic events to copy.", Toast.LENGTH_SHORT).show()
+            return
+        }
+        clipboard.setPrimaryClip(ClipData.newPlainText("Sync In It diagnostics", content))
+        Toast.makeText(this, "Diagnostic log copied. Share it for analysis.", Toast.LENGTH_LONG).show()
+    }
+
+    private fun clearDiagnosticLog() {
+        diagnosticEvents.clear()
+        if (::debugLog.isInitialized) debugLog.text = "Diagnostic log cleared."
+    }
+
+    private fun appendDiagnostic(category: String, message: String) {
+        if (!::debugLog.isInitialized) return
+        val timestamp = java.text.SimpleDateFormat("HH:mm:ss.SSS", java.util.Locale.US)
+            .format(java.util.Date())
+        synchronized(diagnosticEvents) {
+            diagnosticEvents.addLast("$timestamp [$category] $message")
+            while (diagnosticEvents.size > 240) diagnosticEvents.removeFirst()
+            debugLog.text = diagnosticEvents.joinToString("\n")
         }
     }
 
