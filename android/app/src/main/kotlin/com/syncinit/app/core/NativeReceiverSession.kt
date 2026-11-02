@@ -54,6 +54,20 @@ data class ReceiverSessionConfig(
 /** A thread-safe Kotlin facade over one native master-side ReceiverSession. */
 class NativeReceiverSession private constructor(private var nativeHandle: Long) : Closeable {
     @Synchronized
+    fun onHelloFrame(encodedFrame: ByteArray): ReceiverSessionResult {
+        checkOpen()
+        require(encodedFrame.size in 6..(65_536 + 4)) { "encoded HELLO frame size is invalid" }
+        return result(NativeCore.nativeOnHelloFrame(nativeHandle, encodedFrame.copyOf()))
+    }
+
+    @Synchronized
+    fun onAudioHelloFrame(encodedFrame: ByteArray): ReceiverSessionResult {
+        checkOpen()
+        require(encodedFrame.size in 6..(65_536 + 4)) { "encoded AUDIO_HELLO frame size is invalid" }
+        return result(NativeCore.nativeOnAudioHelloFrame(nativeHandle, encodedFrame.copyOf()))
+    }
+
+    @Synchronized
     fun onHello(protocolVersion: Int, token: ByteArray, platform: Int): ReceiverSessionResult {
         checkOpen()
         require(token.size == 16) { "session token must contain exactly 16 bytes" }
