@@ -425,3 +425,25 @@ No physical-device synchronization results are recorded in this initial log. Add
 **Limitations:** No Android application module, manifest, runtime permission handling, foreground service, JNI bridge, C++ state-machine binding, authenticated transport encryption, retry scheduler, bounded outgoing queue or physical-phone test is included. The Kotlin TCP frame envelope must remain byte-compatible with the C++ core and shared protocol vectors. UDP packet content validation and four-timestamp correlation remain in the protocol/session layer.
 
 **Next action:** Add the Android application shell and JNI bridge, connect socket events to the C++ `ReceiverSession` and `TimeSyncClient`, then validate a two-phone local-Wi-Fi join and time-sync exchange.
+
+
+### 2 November 2026 — M1 Android application shell and JNI session bridge
+
+**Type:** Android application foundation / native integration  
+**Status:** Implemented; Android CI pending  
+**Branch:** feature/m1-android-app-jni-shell
+
+**Summary:**
+- Added a root Android Gradle workspace with :app and :transport modules.
+- Added a minimal launcher Activity and manifest with only Internet and network/Wi-Fi state permissions; no microphone, media projection, notification or foreground playback permissions are requested yet.
+- Pinned Android Gradle Plugin 9.5.0, Gradle 9.6.0, Kotlin 2.4.10, JDK 17, Android SDK 36, NDK r30 and CMake 3.22.1.
+- Added an Android CMake target that compiles the portable protocol, typed message and receiver-session sources directly from core/, keeping desktop Python/vector-generation dependencies out of the APK build.
+- Added a JNI bridge with opaque native session handles, a synchronized handle registry, per-session locking, HELLO validation, encoded WELCOME frame retrieval, AUDIO_HELLO identity checks, READY gates, arm/anchor transitions and degraded-session recovery.
+- Added the Kotlin NativeReceiverSession facade and a launch-time native smoke test for HELLO → WELCOME → AUDIO_HELLO → READY → ARMED.
+- Added an Android-specific CI workflow that builds the debug APK and runs the transport module checks without invoking the frontend/Vercel build.
+
+**Verification:** Android Gradle/NDK CI is pending. No physical Android device or emulator has been used to install the APK or run the JNI smoke test yet.
+
+**Limitations:** No foreground playback service, QR invitation flow, audio capture/decoder, PCM rendering, native audio callback, socket-to-session orchestration, encryption or two-phone time-sync measurement is included. The smoke test validates local JNI/session wiring only, not network or acoustic synchronization.
+
+**Next action:** Pass the Android APK/NDK CI build, then orchestrate the Kotlin TCP/UDP listeners with the native session API and run a two-device Wi-Fi handshake/time-sync experiment.
