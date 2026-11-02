@@ -168,7 +168,7 @@ private fun udpTimeSyncLoopback() {
         val worker = Thread {
             try {
                 val incoming = server.receive()
-                val matches = incoming.bytes.contentEquals(request)
+                val matches = incoming.bytes.contentEquals(request) && incoming.receivedAtNs != 0L
                 server.sendTo(response, incoming.source)
                 received.offer(matches)
             } catch (t: Throwable) { failure.offer(t) }
@@ -176,7 +176,9 @@ private fun udpTimeSyncLoopback() {
         worker.start()
         UdpTimeSyncClient(loopback, server.localPort, receiveTimeoutMs = 3_000).use { client ->
             client.send(request)
-            expect(client.receive().contentEquals(response), "UDP time-sync response round-trips")
+            val timedResponse = client.receiveTimed()
+            expect(timedResponse.bytes.contentEquals(response), "UDP time-sync response round-trips")
+            expect(timedResponse.receivedAtNs != 0L, "UDP client captures a monotonic receive timestamp")
         }
         worker.join(4_000)
         failure.poll()?.let { throw it }
