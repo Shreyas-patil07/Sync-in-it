@@ -5,7 +5,6 @@ import android.net.nsd.NsdManager
 import android.net.nsd.NsdServiceInfo
 import android.net.wifi.WifiManager
 import java.io.Closeable
-import java.net.Inet4Address
 import java.util.concurrent.atomic.AtomicBoolean
 
 data class NearbySession(
