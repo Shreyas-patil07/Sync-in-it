@@ -54,27 +54,30 @@ class MasterSessionHost(private val onStatus: (String) -> Unit) : Closeable {
         try {
             val address = discoverLocalIpv4Address()
             val anyAddress = InetAddress.getByName("0.0.0.0")
-            audio = TcpFrameServer(anyAddress, 0, connectionReadTimeoutMs = AUDIO_READ_TIMEOUT_MS)
-            control = TcpFrameServer(anyAddress, CONTROL_PORT, connectionReadTimeoutMs = AUDIO_READ_TIMEOUT_MS)
+            val audioListener = TcpFrameServer(anyAddress, 0, connectionReadTimeoutMs = AUDIO_READ_TIMEOUT_MS)
+            audio = audioListener
+            val controlListener = TcpFrameServer(anyAddress, CONTROL_PORT, connectionReadTimeoutMs = AUDIO_READ_TIMEOUT_MS)
+            control = controlListener
 
-            val token = ByteArray(16).also(SecureRandom()::nextBytes)
-            val sessionId = SecureRandom().nextInt().toLong() and 0xffff_ffffL
+            val random = SecureRandom()
+            val token = ByteArray(16).also(random::nextBytes)
+            val sessionId = random.nextInt().toLong() and 0xffff_ffffL
             session = NativeReceiverSession.create(
                 ReceiverSessionConfig(
                     sessionId = sessionId,
                     receiverId = 1,
                     token = token,
-                    audioPort = audio.localPort,
+                    audioPort = audioListener.localPort,
                     timePort = TIME_PORT
                 )
             )
 
-            controlServer = control
-            audioServer = audio
+            controlServer = controlListener
+            audioServer = audioListener
             nativeSession = session
             executor.execute(::serve)
             onStatus("Hosting on $address:$CONTROL_PORT. Waiting for a receiver.")
-            return HostInvitation(address, control.localPort, token.toHex())
+            return HostInvitation(address, controlListener.localPort, token.toHex())
         } catch (error: Exception) {
             session?.close()
             control?.close()
