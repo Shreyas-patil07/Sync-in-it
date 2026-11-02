@@ -91,6 +91,8 @@ All fields in this table are in wire order. u = unsigned, i = signed, and byte a
 | 0x20 | CALIB_CHIRP | Master → Receiver | chirpId u16, playAtMasterTimeNs i64, f0Hz u32, f1Hz u32, durationMs u16, gain u8 |
 | 0x21 | CALIB_ACK | Receiver → Master | chirpId u16, status u8 |
 
+The `platform` field in HELLO is an enum: `1 = Android`, `2 = iOS`. Implementations may reject values they do not support.
+
 ### 5.1 ANCHOR kinds
 
 | Value | Name | Meaning |
@@ -102,6 +104,26 @@ All fields in this table are in wire order. u = unsigned, i = signed, and byte a
 | 4 | delay-change | Apply a coordinated delay/timeline change |
 
 Unknown anchor kinds must be rejected or ignored safely according to protocol compatibility rules; they must not be treated as start.
+
+### 5.2 Receiver join and playback state
+
+The master enforces the following per-control-connection states:
+
+| State | Accepted next message/event | Result |
+|---|---|---|
+| AwaitingHello | HELLO | Validate version, token and platform; return WELCOME |
+| AwaitingAudioHello | AUDIO_HELLO | Bind the audio channel to the WELCOME session/receiver IDs |
+| Synchronizing | READY | Accept only when clock is stable and configured buffer/residual gates pass |
+| Ready | Arm command | Enter Armed |
+| Armed | START anchor | Enter Playing |
+| Playing | PAUSE anchor | Enter Paused |
+| Paused | RESUME anchor | Enter Playing |
+| Playing/Paused | SEEK or delay-change anchor | Preserve the current playback state |
+| Synchronizing/Ready/Armed/Playing/Paused | Degradation event | Enter Degraded |
+| Degraded | Begin resynchronization | Return to Synchronizing; require READY again |
+| Any active state | LEAVE or connection close | Enter Closed |
+
+Invalid ordering is rejected. Version, token, platform, session-ID or receiver-ID mismatches close the connection. Minimum buffered duration and maximum clock residual are master configuration values; the protocol does not impose one universal threshold. The session token is an admission credential only and does not provide channel encryption or cryptographic integrity.
 
 ## 6. Audio message
 
