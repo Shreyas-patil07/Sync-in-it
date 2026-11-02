@@ -94,19 +94,24 @@ internal object NetworkDiagnostics {
     private fun formatRoute(route: String, isDefault: Boolean): String =
         if (isDefault) "$route [DEFAULT]" else route
 
-    private fun activeInterfaces(): String = try {
-        val interfaces = NetworkInterface.getNetworkInterfaces()
-        if (interfaces == null) return "unavailable"
-        interfaces.toList()
-            .filter { it.isUp && !it.isLoopback }
-            .joinToString(";") { networkInterface ->
-                val addresses = networkInterface.inetAddresses.toList()
-                    .joinToString(",") { it.hostAddress ?: "?" }
-                "${networkInterface.name}(mtu=${networkInterface.mtu},addresses=$addresses)"
+    private fun activeInterfaces(): String {
+        return try {
+            val interfaces = NetworkInterface.getNetworkInterfaces()
+            if (interfaces == null) {
+                "unavailable"
+            } else {
+                interfaces.toList()
+                    .filter { it.isUp && !it.isLoopback }
+                    .joinToString(";") { networkInterface ->
+                        val addresses = networkInterface.inetAddresses.toList()
+                            .joinToString(",") { it.hostAddress ?: "?" }
+                        "${networkInterface.name}(mtu=${networkInterface.mtu},addresses=$addresses)"
+                    }
+                    .ifBlank { "no-up-non-loopback-interface" }
             }
-            .ifBlank { "no-up-non-loopback-interface" }
-    } catch (error: Exception) {
-        "unavailable(${error.javaClass.simpleName}:${error.message ?: "no message"})"
+        } catch (error: Exception) {
+            "unavailable(${error.javaClass.simpleName}:${error.message ?: "no message"})"
+        }
     }
 
     private fun addressScope(peerAddress: String): String {
