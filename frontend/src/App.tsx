@@ -51,9 +51,6 @@ function Header({ page, navigate }: { page: Page; navigate: (page: NavigablePage
       <div className="nav-island">
         <Brand compact />
         <nav id="primary-navigation" className={menuOpen ? 'nav-links nav-open' : 'nav-links'} aria-label="Primary navigation">
-          <a href="/#experience" onClick={() => setMenuOpen(false)}>Experience</a>
-          <a href="/#how-it-works" onClick={() => setMenuOpen(false)}>How it works</a>
-          <a href="/#project-status" onClick={() => setMenuOpen(false)}>Development</a>
           <a href="/downloads" onClick={(event) => { event.preventDefault(); go('downloads'); }} aria-current={page === 'downloads' ? 'page' : undefined}>Downloads</a>
           <a className="nav-source" href={REPO} target="_blank" rel="noreferrer">GitHub <span aria-hidden="true">↗</span></a>
         </nav>
@@ -226,7 +223,6 @@ function Footer({ navigate }: { navigate: (page: NavigablePage) => void }) {
     <div className="shell footer-main">
       <div className="footer-brand"><Brand compact /><p>Local audio. Shared time.<br />A research project in active development.</p></div>
       <div className="footer-columns">
-        <div><span>EXPLORE</span><a href="/#experience">The experience</a><a href="/#how-it-works">How it works</a><a href="/#project-status">Development</a></div>
         <div><span>RESOURCES</span><a href={DOCS} target="_blank" rel="noreferrer">Documentation</a><a href={REPO + '/blob/main/LICENSE'} target="_blank" rel="noreferrer">Code license</a><a href={REPO + '/blob/main/LICENSE-DOCS'} target="_blank" rel="noreferrer">Documentation license</a></div>
         <div><span>PROJECT</span><a href="/downloads" onClick={(event) => { event.preventDefault(); navigate('downloads'); }}>Downloads</a><a href={RELEASES} target="_blank" rel="noreferrer">Releases</a><a href={REPO} target="_blank" rel="noreferrer">GitHub ↗</a></div>
       </div>
