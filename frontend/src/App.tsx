@@ -1,222 +1,440 @@
 import { useEffect, useState } from 'react';
-import {
-  Activity, ArrowDown, ArrowDownToLine, ArrowRight, AudioLines, AudioWaveform,
-  Clock3, Code2, Github, Headphones, Menu, Mic2, Network, Radio,
-  ShieldCheck, Smartphone, Timer, Wifi, X
-} from 'lucide-react';
+import type { ReactNode } from 'react';
 
 const REPO = 'https://github.com/Shreyas-patil07/Sync-in-it';
-const RELEASES = REPO + '/releases';
 const DOCS = REPO + '/tree/main/docs';
+const RELEASES = REPO + '/releases';
 
-type Page = 'home' | 'downloads';
+type Page = 'home' | 'downloads' | 'not-found';
+type NavigablePage = Exclude<Page, 'not-found'>;
 
-function usePage(): [Page, (page: Page) => void] {
-  const [page, setPage] = useState<Page>(() => window.location.pathname === '/downloads' ? 'downloads' : 'home');
+function resolvePage(): Page {
+  if (window.location.pathname === '/') return 'home';
+  if (window.location.pathname.replace(/\/$/, '') === '/downloads') return 'downloads';
+  return 'not-found';
+}
+
+function usePage(): [Page, (page: NavigablePage) => void] {
+  const [page, setPage] = useState<Page>(resolvePage);
   useEffect(() => {
-    const handler = () => setPage(window.location.pathname === '/downloads' ? 'downloads' : 'home');
-    window.addEventListener('popstate', handler);
-    return () => window.removeEventListener('popstate', handler);
+    const onPopState = () => setPage(resolvePage());
+    window.addEventListener('popstate', onPopState);
+    return () => window.removeEventListener('popstate', onPopState);
   }, []);
-  const navigate = (next: Page) => {
+  const navigate = (next: NavigablePage) => {
     const path = next === 'downloads' ? '/downloads' : '/';
-    if (path !== window.location.pathname) window.history.pushState({}, '', path);
+    if (window.location.pathname !== path) window.history.pushState({}, '', path);
     setPage(next);
     window.scrollTo({ top: 0, behavior: 'smooth' });
   };
   return [page, navigate];
 }
 
-const milestones: [string, string, string][] = [
-  ['M0', 'Time & drift simulator', 'Model clock offsets, network jitter, packet loss and playout drift.'],
-  ['M1', 'Two-phone clock sync', 'Validate four-timestamp synchronization on physical Android devices.'],
-  ['M2', 'Scheduled playback', 'Start a shared click track against one future timeline deadline.'],
-  ['M3', 'DAC mapping', 'Map audio output timestamps and add manual device compensation.'],
-  ['M4', 'Drift correction', 'Hold alignment through a 30-minute endurance run.'],
-  ['M5', 'Group control', 'Support 3–4 receivers, group readiness and reconnect.'],
-  ['M6', 'Audio sources', 'Add Opus and supported Android system-audio capture.'],
-  ['M7', 'iOS receiver', 'Bring the shared receiver protocol to iPhone.'],
-  ['M8', 'Acoustic calibration', 'Measure speaker arrival delay at a defined listening position.'],
-  ['M9', 'Scale & field trial', 'Validate a 6–10 phone group in a train-coach environment.'],
-];
-
-const features: [typeof Clock3, string, string][] = [
-  [Clock3, 'One shared timeline', 'Every audio sample gets a target presentation time. Devices do not start when packets arrive.'],
-  [Network, 'Offline by design', 'Phones communicate over a private local Wi-Fi network. No cloud, account or internet required.'],
-  [AudioWaveform, 'Continuous drift control', 'Clock estimation, audio hardware timestamps and correction keep playback aligned over time.'],
-  [Mic2, 'Acoustic calibration', 'Scheduled chirps estimate output delay and compensate for device differences at one listening point.'],
-  [Radio, 'Cross-platform receivers', 'An Android master coordinates Android and iOS receivers through one platform-neutral protocol.'],
-  [ShieldCheck, 'Fail-safe playback', 'A receiver that cannot keep the timeline is muted and resynchronized instead of creating an echo.'],
-];
-
-function Background() {
-  return <div className="ambient" aria-hidden="true">
-    <div className="ambient-orb orb-one" /><div className="ambient-orb orb-two" />
-    <svg viewBox="0 0 1440 900" preserveAspectRatio="none">
-      <path d="M-150 700 C 180 200, 440 180, 700 410 S 1180 760, 1590 220" />
-      <path d="M-120 250 C 250 760, 540 720, 830 420 S 1220 170, 1570 680" />
-      <path d="M-100 850 C 300 520, 520 280, 850 470 S 1300 800, 1550 120" />
-    </svg>
-    <div className="grid-fade" />
-  </div>;
-}
-
 function Brand({ compact = false }: { compact?: boolean }) {
-  return <a className={'brand' + (compact ? ' brand-compact' : '')} href="/" aria-label="Sync In It home">
+  return <a className={compact ? 'brand brand-compact' : 'brand'} href="/" aria-label="Sync In It home">
     <img src="/images/sync_in_it.png" alt="" />
     <span>sync<span className="brand-accent">in</span>it</span>
   </a>;
 }
 
-function Header({ page, navigate }: { page: Page; navigate: (page: Page) => void }) {
-  const [open, setOpen] = useState(false);
-  const go = (next: Page) => { navigate(next); setOpen(false); };
-  return <header className="topbar"><a className="skip-link" href="#main-content">Skip to content</a><div className="container nav-inner">
-    <Brand compact />
-    <nav id="primary-navigation" aria-label="Primary navigation" className={open ? 'nav-links nav-open' : 'nav-links'}>
-      <button onClick={() => go('home')} className={page === 'home' ? 'nav-link active' : 'nav-link'} aria-current={page === 'home' ? 'page' : undefined}>Overview</button>
-      <a href={DOCS} className="nav-link">Documentation <ArrowRight size={13} /></a>
-      <button onClick={() => go('downloads')} className={page === 'downloads' ? 'nav-link active' : 'nav-link'} aria-current={page === 'downloads' ? 'page' : undefined}>Downloads</button>
-      <a href={REPO} target="_blank" rel="noreferrer" className="nav-github"><Github size={16} /> GitHub</a>
-    </nav>
-    <button className="mobile-menu" onClick={() => setOpen(!open)} aria-label={open ? "Close navigation" : "Open navigation"} aria-controls="primary-navigation" aria-expanded={open}>{open ? <X /> : <Menu />}</button>
-  </div></header>;
-}
+function Header({ page, navigate }: { page: Page; navigate: (page: NavigablePage) => void }) {
+  const [menuOpen, setMenuOpen] = useState(false);
+  useEffect(() => {
+    document.body.classList.toggle('menu-open', menuOpen);
+    return () => document.body.classList.remove('menu-open');
+  }, [menuOpen]);
+  const go = (next: NavigablePage) => { navigate(next); setMenuOpen(false); };
 
-function SectionHeading({ tag, title, description }: { tag: string; title: string; description: string }) {
-  return <div className="section-heading"><div className="section-tag">{tag}</div><h2>{title}</h2><p>{description}</p></div>;
-}
-
-function Hero({ navigate }: { navigate: (page: Page) => void }) {
-  return <section className="hero container">
-    <div className="hero-copy">
-      <div className="eyebrow"><span className="eyebrow-dot" /> OFFLINE AUDIO SYNCHRONIZATION <span className="eyebrow-line" /></div>
-      <h1>One sound.<br /><span className="gradient-text">Every phone.</span></h1>
-      <p className="hero-lede">Turn a group of smartphones into one synchronized speaker system. No internet. No dedicated speakers. Just your phones, playing together.</p>
-      <div className="hero-actions">
-        <button className="button button-primary" onClick={() => navigate('downloads')}>Explore downloads <ArrowDownToLine size={17} /></button>
-        <a className="button button-ghost" href={REPO} target="_blank" rel="noreferrer">View source <Github size={17} /></a>
+  return <>
+    <a className="skip-link" href="#main-content">Skip to content</a>
+    <header className="site-header">
+      <div className="nav-island">
+        <Brand compact />
+        <nav id="primary-navigation" className={menuOpen ? 'nav-links nav-open' : 'nav-links'} aria-label="Primary navigation">
+          <a href="/#system" onClick={() => setMenuOpen(false)}>The system</a>
+          <a href="/#architecture" onClick={() => setMenuOpen(false)}>Architecture</a>
+          <a href="/#roadmap" onClick={() => setMenuOpen(false)}>Roadmap</a>
+          <a href="/downloads" onClick={(event) => { event.preventDefault(); go('downloads'); }} aria-current={page === 'downloads' ? 'page' : undefined}>Downloads</a>
+          <a className="nav-source" href={REPO} target="_blank" rel="noreferrer">GitHub <span aria-hidden="true">↗</span></a>
+        </nav>
+        <button className={menuOpen ? 'menu-toggle is-open' : 'menu-toggle'} type="button"
+          aria-label={menuOpen ? 'Close navigation' : 'Open navigation'}
+          aria-controls="primary-navigation" aria-expanded={menuOpen}
+          onClick={() => setMenuOpen((open) => !open)}>
+          <span /><span />
+        </button>
       </div>
-      <div className="hero-meta"><span><span className="live-dot" /> M0 simulator in progress</span><i /> <span>Android master · Android + iOS receivers</span></div>
+    </header>
+  </>;
+}
+
+function Eyebrow({ children }: { children: ReactNode }) {
+  return <p className="eyebrow"><span className="eyebrow-mark" />{children}</p>;
+}
+function Arrow({ diagonal = false }: { diagonal?: boolean }) {
+  return <span className="arrow-symbol" aria-hidden="true">{diagonal ? '↗' : '→'}</span>;
+}
+
+function HeroDiagram() {
+  return <div className="hero-visual" role="img" aria-label="Conceptual diagram of an Android Host coordinating multiple Speaker phones against one shared playback timeline">
+    <div className="visual-topline"><span>SYNC MODEL / 01</span><span className="model-state"><i /> SYSTEM DESIGN</span></div>
+    <div className="visual-heading"><span>ONE SHARED PLAYBACK TIMELINE</span><b>Every receiver aims for T₀.</b></div>
+    <div className="device-network">
+      <div className="device-host">
+        <div className="device-screen"><span className="device-speaker" /><span className="device-wave">
+          <i /><i /><i /><i /><i /><i /><i /><i /><i />
+        </span></div>
+        <span className="device-caption">ANDROID HOST</span><small>Source + clock</small>
+      </div>
+      <div className="network-lines" aria-hidden="true">
+        <span className="line line-one" /><span className="line line-two" />
+        <span className="line line-three" /><span className="line line-four" />
+        <span className="network-core"><i /><i /><i /></span>
+      </div>
+      <div className="device-receivers">
+        <div className="receiver-device"><div className="receiver-screen"><span /></div><div><b>01</b><small>ANDROID</small></div></div>
+        <div className="receiver-device"><div className="receiver-screen"><span /></div><div><b>02</b><small>ANDROID</small></div></div>
+        <div className="receiver-device receiver-planned"><div className="receiver-screen"><span /></div><div><b>03</b><small>iOS · PLANNED</small></div></div>
+      </div>
     </div>
-    <div className="hero-art">
-      <div className="art-halo halo-one" /><div className="art-halo halo-two" />
-      <div className="art-orbit orbit-a" /><div className="art-orbit orbit-b" />
-      <div className="art-core"><img src="/images/sync_in_it.png" alt="Sync In It audio synchronization emblem" /></div>
-      <div className="floating-card card-left"><span className="mini-icon cyan"><Wifi size={16} /></span><span><b>LOCAL NETWORK</b><small>No internet needed</small></span></div>
-      <div className="floating-card card-right"><span className="mini-icon purple"><AudioLines size={17} /></span><span><b>SHARED TIMELINE</b><small>One playback deadline</small></span></div>
-      <div className="floating-card card-bottom"><span className="mini-icon orange"><Activity size={17} /></span><span><b>REAL-TIME CONTROL</b><small>Clock · drift · buffer</small></span></div>
+    <div className="timeline-visual">
+      <div className="timeline-labels"><span>BUFFER FIRST</span><span>PLAYBACK DEADLINE</span></div>
+      <div className="timeline-track"><div className="timeline-buffer" /><div className="timeline-deadline"><i /><b>T₀</b></div><div className="timeline-pulse" /></div>
+      <div className="timeline-times"><span>Audio arrives ahead of time</span><b>Shared clock</b></div>
     </div>
-    <div className="scroll-cue"><ArrowDown size={15} /> SCROLL TO EXPLORE</div>
+    <div className="visual-foot">
+      <span><i className="legend-dot legend-host" /> Host</span>
+      <span><i className="legend-dot legend-receiver" /> Receiver</span>
+      <span className="visual-foot-note">Conceptual system view, not a live session</span>
+    </div>
+  </div>;
+}
+
+function Hero() {
+  return <section className="hero shell">
+    <div className="hero-copy">
+      <Eyebrow>OFFLINE AUDIO SYNCHRONIZATION <span className="eyebrow-divider">/</span> OPEN RESEARCH</Eyebrow>
+      <h1>Many phones.<br /><span className="hero-gradient">One shared moment.</span></h1>
+      <p className="hero-lede">Sync In It is building a way for ordinary phones to play the same audio together. One Android Host sends it ahead. Every Speaker follows one shared playback timeline.</p>
+      <div className="hero-actions">
+        <a className="button button-primary" href="#system">Explore the system <Arrow /></a>
+        <a className="button button-text" href={REPO} target="_blank" rel="noreferrer">View the source <Arrow diagonal /></a>
+      </div>
+      <div className="hero-status"><span className="status-point" /><span>M0 simulator in progress</span><span className="status-separator">/</span><span>No public app build yet</span></div>
+    </div>
+    <HeroDiagram />
+    <div className="hero-index" aria-hidden="true"><span>01</span><span>10</span></div>
   </section>;
 }
 
-function StatStrip() {
-  const stats = [['6–10', 'PHONE GROUP TARGET'], ['48 kHz', 'BASE AUDIO RATE'], ['20 ms', 'AUDIO CHUNK'], ['OFFLINE', 'NO INTERNET NEEDED']];
-  return <div className="stat-strip"><div className="container stat-grid">{stats.map(([value, label]) => <div className="stat" key={label}><b>{value}</b><span>{label}</span></div>)}</div></div>;
+function SpecRail() {
+  return <section className="spec-rail" aria-label="Current system design baseline">
+    <div className="shell spec-grid">
+      <div className="spec-intro"><span>THE DESIGN BASELINE</span><b>Built around time, not arrival.</b></div>
+      <div className="spec-item"><strong>48 <small>kHz</small></strong><span>PCM audio baseline</span></div>
+      <div className="spec-item"><strong>960</strong><span>Frames per chunk</span></div>
+      <div className="spec-item"><strong>20 <small>ms</small></strong><span>Chunk duration</span></div>
+      <div className="spec-item spec-offline"><strong>Offline</strong><span>Private local Wi Fi</span></div>
+    </div>
+  </section>;
 }
 
 function TaglineReveal() {
-  const words = ['Shared', 'timing.', 'Local', 'network.', 'Every', 'phone', 'follows', 'one', 'playback', 'timeline.'];
-  return <section className="tagline-section container" aria-label="Sync In It principle">
-    <p className="tagline-kicker">THE PRINCIPLE</p>
-    <h2 className="tagline-copy">{words.map((word, index) => <span className="tagline-word" style={{ transitionDelay: (index * 55) + 'ms' }} key={word + index}>{word}{index < words.length - 1 ? ' ' : ''}</span>)}</h2>
+  const words = ['Packets', 'arrive', 'at', 'different', 'times.', 'Playback', 'should', 'not.'];
+  return <section className="tagline-section shell" aria-label="The central synchronization principle">
+    <Eyebrow>THE PROBLEM IN ONE LINE</Eyebrow>
+    <h2 className="tagline-copy">{words.map((word, index) =>
+      <span className="tagline-word" data-word-reveal key={word + index}>{word}{index < words.length - 1 ? ' ' : ''}</span>)}
+    </h2>
+    <p className="tagline-note">Arrival is a network event. Playback is a clock decision.</p>
   </section>;
 }
+
+function TimingComparison() {
+  return <section className="section timing-section" id="system">
+    <div className="shell">
+      <div className="section-intro section-intro-split" data-reveal>
+        <div><Eyebrow>01 / WHY SYNCHRONIZATION IS HARD</Eyebrow><h2>Receiving together<br />is not playing together.</h2></div>
+        <p>Every phone has its own operating system, audio pipeline and hardware clock. Starting sound as soon as data arrives creates timing differences that can become audible echoes.</p>
+      </div>
+      <div className="timing-comparison" data-reveal>
+        <article className="timing-case timing-case-naive">
+          <div className="case-heading"><span>WITHOUT A SHARED TIMELINE</span><b>Arrival decides</b></div>
+          <p>Each phone starts when its audio reaches the device.</p>
+          <div className="case-axis"><span>PACKET ARRIVAL</span><span>PLAYBACK</span></div>
+          <div className="arrival-row"><b>Phone 01</b><div className="arrival-track"><i className="arrival-a" /><span /></div><small>Starts first</small></div>
+          <div className="arrival-row"><b>Phone 02</b><div className="arrival-track"><i className="arrival-b" /><span /></div><small>Starts later</small></div>
+          <div className="arrival-row"><b>Phone 03</b><div className="arrival-track"><i className="arrival-c" /><span /></div><small>Starts later</small></div>
+          <div className="case-result"><span className="result-mark result-cross">×</span><span>Different start times can create echoes.</span></div>
+        </article>
+        <article className="timing-case timing-case-sync">
+          <div className="case-heading"><span>WITH A SHARED TIMELINE</span><b>One deadline</b></div>
+          <p>Audio is buffered early. Each phone waits for the same future time.</p>
+          <div className="case-axis"><span>BUFFERED</span><span>PLAY AT T₀</span></div>
+          <div className="sync-row"><b>Phone 01</b><div className="sync-track"><i /></div><small>T₀</small></div>
+          <div className="sync-row"><b>Phone 02</b><div className="sync-track"><i /></div><small>T₀</small></div>
+          <div className="sync-row"><b>Phone 03</b><div className="sync-track"><i /></div><small>T₀</small></div>
+          <div className="case-result"><span className="result-mark result-check">✓</span><span>Every ready receiver targets one shared start.</span></div>
+        </article>
+      </div>
+      <p className="section-footnote">Conceptual illustration of the scheduling model. It is not a measured timing result.</p>
+    </div>
+  </section>;
+}
+
+const steps = [
+  { number: '01', title: 'Create a session', text: 'An Android phone becomes the Host, owns the audio source and establishes the session clock. Other phones join over the same private network.', detail: 'ANDROID HOST', code: 'SESSION + QR' },
+  { number: '02', title: 'Align the clocks', text: 'Receivers exchange four timestamps with the Host. The estimator tracks clock offset and skew instead of assuming every phone runs at the same rate.', detail: 'TIME SYNCHRONIZATION', code: 'UDP · 4 TIMESTAMPS' },
+  { number: '03', title: 'Prepare, then play', text: 'Audio is sent ahead and placed into sample indexed buffers. Once receivers are ready, the Host schedules a future playback deadline for the group.', detail: 'GROUP PLAYOUT', code: 'ONE FUTURE T₀' },
+];
 
 function HowItWorks() {
-  const steps: [typeof Smartphone, string, string][] = [
-    [Smartphone, 'Create a session', 'One Android phone becomes the master, source and clock authority. It shares a secure join QR.'],
-    [Wifi, 'Join the network', 'Other phones connect over the same private Wi-Fi router and synchronize their clocks.'],
-    [Timer, 'Buffer & schedule', 'Audio arrives early. Every receiver prepares for one future playback deadline.'],
-    [Headphones, 'Play together', 'Each phone follows the sample timeline, tracks its audio clock and corrects drift.'],
-  ];
-  return <section className="section container" id="how-it-works">
-    <SectionHeading tag="THE SYSTEM" title="Not just synchronized starts." description="The hard part is keeping independent phones aligned while their clocks, audio pipelines and network conditions keep changing." />
-    <div className="steps-grid">{steps.map(([Icon, title, text], i) => <article className="step-card" key={String(title)}><div className="step-top"><span>0{i + 1}</span><Icon size={19} /></div><h3>{String(title)}</h3><p>{String(text)}</p></article>)}</div>
-    <div className="flow-band"><div className="flow-node master-node"><span className="node-icon"><Radio size={20} /></span><span><b>ANDROID MASTER</b><small>Source + clock + controller</small></span></div><div className="flow-lines"><span /><span /><span /></div><div className="flow-receivers">
-      {['ANDROID', 'iOS', 'MORE PHONES'].map((name) => <div className="flow-node" key={name}><span className="node-icon"><Smartphone size={18} /></span><span><b>{name}</b><small>Receiver</small></span></div>)}
-    </div></div>
+  return <section className="section workflow-section" id="how-it-works">
+    <div className="shell">
+      <div className="section-intro" data-reveal>
+        <Eyebrow>02 / HOW IT WORKS</Eyebrow>
+        <h2>Three steps between<br />a file and a shared moment.</h2>
+        <p>The system separates audio delivery from time coordination. It does not depend on packet arrival to decide when a Speaker plays.</p>
+      </div>
+      <div className="workflow-list">
+        {steps.map((step) => <article className="workflow-step" data-reveal key={step.number}>
+          <span className="workflow-number">{step.number}</span>
+          <div className="workflow-copy"><h3>{step.title}</h3><p>{step.text}</p></div>
+          <div className="workflow-detail"><span>{step.detail}</span><b>{step.code}</b></div>
+        </article>)}
+      </div>
+    </div>
   </section>;
 }
 
-function Features() {
-  return <section className="section section-tint" id="features"><div className="container">
-    <SectionHeading tag="ENGINEERED FOR REAL DEVICES" title="Seven layers. One experience." description="A timing system built around the real constraints of smartphones—not simply sending audio to several devices." />
-    <div className="features-grid">{features.map(([Icon, title, text], i) => <article className="feature-card" key={String(title)}><div className={'feature-icon tone-' + (i % 4)}><Icon size={21} /></div><h3>{String(title)}</h3><p>{String(text)}</p><span className="feature-index">0{i + 1}</span></article>)}</div>
-  </div></section>;
-}
+const layers = [
+  ['L1', 'Audio transport', 'Timestamped chunks over TCP'],
+  ['L2', 'Clock distribution', 'UDP four timestamp exchange'],
+  ['L3', 'Group playout', 'Shared timeline anchors'],
+  ['L4', 'DAC clock mapping', 'Output frame timestamps'],
+  ['L5', 'Drift correction', 'Bounded playout adjustment'],
+  ['L6', 'Acoustic alignment', 'Chirp measurement and compensation'],
+  ['L7', 'Resilience', 'Buffering, recovery and rejoin'],
+];
 
 function Architecture() {
-  const layers = [
-    ['L1', 'Audio transport', 'TCP · sample-indexed chunks'],
-    ['L2', 'Clock distribution', 'UDP · four timestamps'],
-    ['L3', 'Group playout', 'One common deadline'],
-    ['L4', 'DAC clock mapping', 'Output frame timestamps'],
-    ['L5', 'Drift correction', 'Bounded playout adjustment'],
-    ['L6', 'Acoustic alignment', 'Chirp + microphone calibration'],
-    ['L7', 'Resilience', 'Mute · recover · rejoin'],
-  ];
-  return <section className="section container" id="architecture"><div className="architecture-layout">
-    <div><SectionHeading tag="UNDER THE HOOD" title="A timing engine, not a speaker clone." description="A portable C++ core handles timing logic while native Android and iOS layers handle device audio, lifecycle and permissions." />
-      <div className="stack-tags"><span><Code2 size={14} /> C++17 core</span><span><Smartphone size={14} /> Kotlin + Oboe</span><span><Activity size={14} /> Swift + AVAudioEngine</span><span><Activity size={14} /> Python simulator</span></div>
+  return <section className="section architecture-section" id="architecture">
+    <div className="shell architecture-layout">
+      <div className="architecture-copy" data-reveal>
+        <Eyebrow>03 / UNDER THE HOOD</Eyebrow>
+        <h2>A timing engine,<br />not a speaker clone.</h2>
+        <p>The design separates network delivery, clock coordination and acoustic alignment. A portable C++17 core owns timing logic while native platform layers handle audio and lifecycle.</p>
+        <div className="architecture-stack">
+          <span><b>C++17</b> Shared timing core</span>
+          <span><b>Kotlin</b> Android app layer</span>
+          <span><b>Oboe / AAudio</b> Android audio</span>
+          <span><b>Swift</b> Planned iOS receiver</span>
+          <span><b>Python</b> M0 simulator</span>
+        </div>
+        <a className="inline-link" href={REPO + '/blob/main/docs/03_Architecture.md'} target="_blank" rel="noreferrer">Read the architecture document <Arrow diagonal /></a>
+      </div>
+      <div className="architecture-panel" data-reveal>
+        <div className="architecture-panel-head"><span>THE SYSTEM STACK</span><span>DESIGN BASELINE</span></div>
+        <div className="layer-list">
+          {layers.map(([id, title, detail], index) => <div className={index === 2 ? 'layer-entry layer-emphasis' : 'layer-entry'} key={id}>
+            <span>{id}</span><div><b>{title}</b><small>{detail}</small></div><i aria-hidden="true" />
+          </div>)}
+        </div>
+        <div className="architecture-panel-foot"><span>01</span><div /><span>07 LAYERS</span></div>
+      </div>
     </div>
-    <div className="layer-stack">{layers.map(([id, title, detail], i) => <div className="layer-row" key={id}><span className="layer-id">{id}</span><b>{title}</b><small>{detail}</small><span className="layer-pulse" style={{ animationDelay: i * 0.18 + 's' }} /></div>)}</div>
-  </div></section>;
-}
-
-function Targets() {
-  const tiers = [['T1', '≤20 ms', 'Initial practical target', '100%'], ['T2', '≤10 ms', 'Strong mixed-device target', '50%'], ['T3', '≤5 ms', 'Stretch goal at listening position', '25%']];
-  return <section className="section section-tint"><div className="container target-layout">
-    <SectionHeading tag="MEASURED, NOT PROMISED" title="Precision is a test result." description="Different phone clocks, output pipelines and speaker distances make perfect zero-millisecond synchronization unrealistic. These are engineering targets—not guarantees." />
-    <div className="target-panel">{tiers.map(([label, value, note, width]) => <div className="tier" key={label}><div className="tier-head"><span>{label}</span><b>{value}</b></div><div className="tier-track"><span style={{ width }} /></div><p>{note}</p></div>)}<div className="target-foot"><ShieldCheck size={15} /> Every result will include mean, p95 and maximum error.</div></div>
-  </div></section>;
-}
-
-function Roadmap() {
-  return <section className="section container" id="roadmap">
-    <SectionHeading tag="DEVELOPMENT ROADMAP" title="Built in measurable milestones." description="Synchronization is validated layer by layer. A milestone is complete only when its physical or simulated acceptance gate passes." />
-    <div className="roadmap-list">{milestones.map(([id, title, detail]) => <article className="roadmap-item" key={id}><span className="roadmap-id">{id}</span><div className="roadmap-copy"><h3>{title}</h3><p>{detail}</p></div><span className="roadmap-status"><i /> {id === 'M0' ? 'In progress' : 'Planned'}</span></article>)}</div>
   </section>;
 }
 
-function CTA({ navigate }: { navigate: (page: Page) => void }) {
-  return <section className="container cta-section"><div className="cta-card"><div className="cta-glow" /><div className="cta-content"><div className="section-tag">OPEN DEVELOPMENT</div><h2>Help us get the timing right.</h2><p>Explore the architecture, follow the milestones or review the source as the system takes shape.</p><div className="hero-actions"><a className="button button-primary" href={REPO} target="_blank" rel="noreferrer">Explore on GitHub <Github size={16} /></a><button className="button button-ghost" onClick={() => navigate('downloads')}>Visit downloads <ArrowRight size={16} /></button></div></div><div className="cta-emblem"><img src="/images/sync_in_it.png" alt="" /></div></div></section>;
+const targets = [
+  { tier: 'T1', value: '≤20', unit: 'ms', note: 'Initial practical target' },
+  { tier: 'T2', value: '≤10', unit: 'ms', note: 'Strong mixed device target' },
+  { tier: 'T3', value: '≤5', unit: 'ms', note: 'Stretch target at a chosen listening position' },
+];
+
+function Precision() {
+  return <section className="section precision-section">
+    <div className="shell precision-layout">
+      <div className="precision-copy" data-reveal>
+        <Eyebrow>04 / ENGINEERING TARGETS</Eyebrow>
+        <h2>Precision is<br />a test result.</h2>
+        <p>These are acoustic skew acceptance goals, not product guarantees. Every claim must be backed by a documented test on real devices at a defined listening position.</p>
+        <div className="precision-note"><span>!</span><p>No physical device synchronization result is recorded yet. M0 results are simulated.</p></div>
+      </div>
+      <div className="target-list" data-reveal>
+        {targets.map((target) => <div className="target-row" key={target.tier}>
+          <span className="target-tier">{target.tier}</span>
+          <strong>{target.value}<small>{target.unit}</small></strong>
+          <span className="target-note">{target.note}</span>
+        </div>)}
+        <div className="target-method">REPORTING STANDARD <b>Mean · p95 · Maximum error</b></div>
+      </div>
+    </div>
+  </section>;
 }
 
-function Downloads({ navigate }: { navigate: (page: Page) => void }) {
-  return <main id="main-content" className="container download-page">
-    <div className="download-hero"><div className="section-tag">DOWNLOAD CENTER</div><h1>Everything you need.<br /><span className="gradient-text">When it’s ready.</span></h1><p>Sync In It’s M0 timing simulator is in progress. No installable Android or iOS builds have been published yet. This page will host verified releases when the first prototype is ready.</p><div className="release-state"><span className="status-orb" /><div><b>No public builds yet</b><small>Development status: pre-release</small></div></div></div>
-    <div className="download-grid">
-      <article className="download-card"><div className="download-card-icon android-icon"><Smartphone size={24} /></div><div className="download-card-top"><span>ANDROID</span><em>COMING LATER</em></div><h2>Sync In It for Android</h2><p>Master and receiver modes. Local file playback first, followed by supported live capture.</p><button className="button button-disabled" disabled><ArrowDownToLine size={16} /> No APK available</button><small className="platform-note">Target: Android receiver baseline and newer master features are provisional.</small></article>
-      <article className="download-card"><div className="download-card-icon ios-icon"><Smartphone size={24} /></div><div className="download-card-top"><span>iOS</span><em>ROADMAP M7</em></div><h2>Sync In It for iPhone</h2><p>Receiver app following the same protocol and shared timing core as Android.</p><button className="button button-disabled" disabled><ArrowDownToLine size={16} /> No iOS build available</button><small className="platform-note">Target: iOS 15+ (provisional)</small></article>
-      <article className="download-card"><div className="download-card-icon source-icon"><Github size={24} /></div><div className="download-card-top"><span>SOURCE CODE</span><em>AVAILABLE</em></div><h2>Explore the repository</h2><p>Review the current specifications, architecture decisions and development roadmap.</p><a className="button button-primary" href={REPO} target="_blank" rel="noreferrer"><Github size={16} /> View source on GitHub</a><small className="platform-note">Source repository is public; application code is not released yet.</small></article>
+const milestones = [
+  { id: 'M0', title: 'Simulator and timing core', status: 'IN PROGRESS', description: 'Model clock offset, skew, network variation and playout drift. Python and C++ timing work is underway.' },
+  { id: 'M1', title: 'Two physical phones', status: 'PLANNED', description: 'Validate clock synchronization between real Android devices.' },
+  { id: 'M2', title: 'Scheduled playback', status: 'PLANNED', description: 'Start a shared click track against one future timeline deadline.' },
+  { id: 'M3', title: 'Output timestamps', status: 'PLANNED', description: 'Map audio output time and add manual per Speaker offset.' },
+  { id: 'M4', title: 'Drift control', status: 'PLANNED', description: 'Validate bounded drift through a 30 minute endurance run.' },
+  { id: 'M5 to M7', title: 'Group and platform support', status: 'PLANNED', description: 'Add group reconnect, codec work and the iOS receiver.' },
+  { id: 'M8 to M9', title: 'Acoustic calibration and field trial', status: 'PLANNED', description: 'Measure output arrival at a defined listening position and test the group in a train coach.' },
+];
+
+function Roadmap() {
+  return <section className="section roadmap-section" id="roadmap">
+    <div className="shell">
+      <div className="section-intro section-intro-split" data-reveal>
+        <div><Eyebrow>05 / DEVELOPMENT ROADMAP</Eyebrow><h2>Progress has to<br />be measurable.</h2></div>
+        <p>A milestone is complete only when its simulated or physical acceptance gate passes. The current work is still at M0.</p>
+      </div>
+      <div className="roadmap-list" data-reveal>
+        {milestones.map((milestone, index) => <article className={index === 0 ? 'roadmap-item roadmap-current' : 'roadmap-item'} key={milestone.id}>
+          <span className="roadmap-id">{milestone.id}</span>
+          <div className="roadmap-description"><h3>{milestone.title}</h3><p>{milestone.description}</p></div>
+          <span className={index === 0 ? 'roadmap-state state-current' : 'roadmap-state'}><i />{milestone.status}</span>
+        </article>)}
+      </div>
+      <div className="roadmap-source"><span>STATUS SOURCE</span><a href={REPO + '/blob/main/docs/10_Development_Log.md'} target="_blank" rel="noreferrer">Development log <Arrow diagonal /></a></div>
     </div>
-    <div className="release-panel"><div className="release-panel-icon"><ArrowDownToLine size={20} /></div><div><h3>Looking for the latest release?</h3><p>Published binaries will appear in GitHub Releases with version notes, checksums and supported-device information.</p></div><a href={RELEASES} target="_blank" rel="noreferrer" className="text-link">Open releases <ArrowRight size={15} /></a></div>
-    <div className="download-back"><button className="button button-ghost" onClick={() => navigate('home')}><ArrowRight className="rotate-180" size={16} /> Back to overview</button></div>
+  </section>;
+}
+
+const questions = [
+  { question: 'Does Sync In It need an internet connection?', answer: 'No. The intended system runs over a private local Wi Fi network. The router provides the connection between phones; a public internet connection or cloud service is not required.' },
+  { question: 'Which phone acts as the Host?', answer: 'An Android phone is the Host in the current architecture. It owns the session, audio source and master clock. iOS is planned as a Speaker only.' },
+  { question: 'Can I download and use the app now?', answer: 'Not yet. The project is at M0, the simulator and timing core stage. The Android application and physical device playback prototype have not been implemented, and there are no public APK or iOS builds.' },
+  { question: 'Why not start playback as soon as audio arrives?', answer: 'Network delivery time varies. The system sends audio ahead, buffers it by sample index and schedules playback against one future master timeline deadline.' },
+  { question: 'Does it guarantee a specific synchronization error?', answer: 'No. T1, T2 and T3 are engineering acceptance goals. They require measurement on physical devices and at a defined listening position before any performance claim can be made.' },
+  { question: 'How many phones will it support?', answer: 'The product target is 6 to 10 phones in total. The exact split between the Android Host and Speakers is still an open design decision.' },
+  { question: 'Will Bluetooth speakers be supported?', answer: 'Bluetooth output is not part of the validated target. The system design treats Bluetooth as a source of additional delay that is difficult to measure reliably. Initial testing focuses on phone speakers.' },
+  { question: 'Where can I follow the engineering work?', answer: 'The repository contains the product requirements, architecture, protocol proposal, decisions, simulator and development log. Start with the documentation index on GitHub.' },
+];
+
+function FAQ() {
+  return <section className="section faq-section" id="faq">
+    <div className="shell faq-layout">
+      <div className="faq-copy" data-reveal>
+        <Eyebrow>06 / QUESTIONS</Eyebrow>
+        <h2>Clear answers.<br />No timing myths.</h2>
+        <p>What is designed, what is being built and what still needs proof.</p>
+        <a className="inline-link" href={DOCS} target="_blank" rel="noreferrer">Explore all project docs <Arrow diagonal /></a>
+      </div>
+      <div className="faq-list" data-reveal>
+        {questions.map((item, index) => <details className="faq-item" key={item.question} open={index === 0}>
+          <summary><span>{item.question}</span><i aria-hidden="true" /></summary>
+          <p>{item.answer}</p>
+        </details>)}
+      </div>
+    </div>
+  </section>;
+}
+
+function ClosingCTA() {
+  return <section className="closing-section shell" data-reveal>
+    <div className="closing-content">
+      <Eyebrow>OPEN DEVELOPMENT</Eyebrow>
+      <h2>The timeline is the product.<br />The proof is the work.</h2>
+      <p>Read the design, inspect the timing core and follow each milestone as it earns its way to completion.</p>
+      <div className="closing-actions">
+        <a className="button button-primary" href={DOCS} target="_blank" rel="noreferrer">Read the documentation <Arrow diagonal /></a>
+        <a className="button button-text" href={REPO} target="_blank" rel="noreferrer">Open GitHub <Arrow diagonal /></a>
+      </div>
+    </div>
+    <div className="closing-mark" aria-hidden="true"><img src="/images/sync_in_it.png" alt="" /><span>ONE TIMELINE<br />MANY RECEIVERS</span></div>
+  </section>;
+}
+
+function Footer({ navigate }: { navigate: (page: NavigablePage) => void }) {
+  return <footer className="site-footer">
+    <div className="shell footer-main">
+      <div className="footer-brand"><Brand compact /><p>Local audio. Shared time.<br />A research project in active development.</p></div>
+      <div className="footer-columns">
+        <div><span>EXPLORE</span><a href="/#system">The system</a><a href="/#architecture">Architecture</a><a href="/#roadmap">Roadmap</a></div>
+        <div><span>RESOURCES</span><a href={DOCS} target="_blank" rel="noreferrer">Documentation</a><a href={REPO + '/blob/main/LICENSE'} target="_blank" rel="noreferrer">Code license</a><a href={REPO + '/blob/main/LICENSE-DOCS'} target="_blank" rel="noreferrer">Documentation license</a></div>
+        <div><span>PROJECT</span><a href="/downloads" onClick={(event) => { event.preventDefault(); navigate('downloads'); }}>Downloads</a><a href={RELEASES} target="_blank" rel="noreferrer">Releases</a><a href={REPO} target="_blank" rel="noreferrer">GitHub ↗</a></div>
+      </div>
+    </div>
+    <div className="shell footer-bottom"><span>© 2026 Sync In It</span><span>Research and development. No public app build yet.</span></div>
+  </footer>;
+}
+
+function Home() {
+  return <main id="main-content">
+    <Hero /><SpecRail /><TaglineReveal /><TimingComparison /><HowItWorks />
+    <Architecture /><Precision /><Roadmap /><FAQ /><ClosingCTA />
   </main>;
 }
 
-function Footer({ navigate }: { navigate: (page: Page) => void }) {
-  return <footer className="footer"><div className="container footer-main"><div><Brand compact /><p>One sound. Every phone.<br />Designed to work offline.</p></div><div className="footer-links"><div><b>EXPLORE</b><a href="/#how-it-works">How it works</a><a href="/#architecture">Architecture</a><a href="/#roadmap">Roadmap</a></div><div><b>RESOURCES</b><a href={DOCS}>Documentation</a><button onClick={() => navigate('downloads')}>Downloads</button><a href={REPO}>GitHub repository</a></div></div></div><div className="container footer-bottom"><span>© 2026 Sync In It · Research &amp; development project</span><span>Built for local-first audio synchronization.</span></div></footer>;
+function Downloads({ navigate }: { navigate: (page: NavigablePage) => void }) {
+  return <main id="main-content" className="downloads-page">
+    <section className="downloads-hero shell">
+      <Eyebrow>DOWNLOADS / PROJECT STATUS</Eyebrow>
+      <h1>Built in the open.<br /><span className="hero-gradient">Not released yet.</span></h1>
+      <p>The engineering work is underway, but there is no installable app today. The current milestone is the simulator and timing core.</p>
+      <div className="release-status"><span className="status-point" /><div><b>M0 in progress</b><small>Android app and physical playback prototype not implemented</small></div></div>
+    </section>
+    <section className="downloads-content shell">
+      <div className="downloads-primary">
+        <span className="downloads-label">ANDROID / iOS BUILDS</span>
+        <h2>No public binaries are available.</h2>
+        <p>When a build is ready, it will appear here with its version, supported devices, release notes and checksum.</p>
+        <span className="button button-disabled" aria-disabled="true">No app build to download</span>
+      </div>
+      <div className="downloads-secondary">
+        <article><span>01 / SOURCE</span><h3>Inspect what exists today.</h3><p>The repository contains the simulator, timing core, protocol vectors and technical documentation.</p><a className="inline-link" href={REPO} target="_blank" rel="noreferrer">Browse the source <Arrow diagonal /></a></article>
+        <article><span>02 / RELEASES</span><h3>Watch for a real build.</h3><p>Published Android or iOS packages will be listed with release notes and verification details.</p><a className="inline-link" href={RELEASES} target="_blank" rel="noreferrer">Open GitHub Releases <Arrow diagonal /></a></article>
+      </div>
+    </section>
+    <div className="shell downloads-back"><a href="/" onClick={(event) => { event.preventDefault(); navigate('home'); }} className="inline-link"><span aria-hidden="true">←</span> Back to the project</a></div>
+  </main>;
+}
+
+function NotFound({ navigate }: { navigate: (page: NavigablePage) => void }) {
+  return <main id="main-content" className="not-found shell">
+    <span className="not-found-code">404 / NOT FOUND</span>
+    <h1>This page is<br /><span className="hero-gradient">out of sync.</span></h1>
+    <p>The address does not match a page in the Sync In It project site.</p>
+    <button className="button button-primary" onClick={() => navigate('home')}>Return to the overview <Arrow /></button>
+  </main>;
 }
 
 export default function App() {
   const [page, navigate] = usePage();
   useEffect(() => {
-    document.title = page === 'downloads' ? 'Downloads — Sync In It' : 'Sync In It — One sound. Every phone.';
+    const titles: Record<Page, string> = {
+      home: 'Sync In It — Many phones. One shared moment.',
+      downloads: 'Downloads — Sync In It',
+      'not-found': 'Page not found — Sync In It',
+    };
+    document.title = titles[page];
   }, [page]);
+
   useEffect(() => {
-    const element = document.querySelector('.tagline-section');
-    if (!element || window.matchMedia('(prefers-reduced-motion: reduce)').matches) return;
-    const observer = new IntersectionObserver(([entry]) => {
-      if (entry.isIntersecting) {
-        element.classList.add('is-visible');
-        observer.disconnect();
-      }
-    }, { threshold: 0.25 });
-    observer.observe(element);
+    const revealElements = document.querySelectorAll<HTMLElement>('[data-reveal], [data-word-reveal]');
+    if (window.matchMedia('(prefers-reduced-motion: reduce)').matches) {
+      revealElements.forEach((element) => element.classList.add('is-revealed'));
+      return;
+    }
+    const observer = new IntersectionObserver((entries, activeObserver) => {
+      entries.forEach((entry) => {
+        if (entry.isIntersecting) {
+          entry.target.classList.add('is-revealed');
+          activeObserver.unobserve(entry.target);
+        }
+      });
+    }, { threshold: 0.16, rootMargin: '0px 0px -48px 0px' });
+    revealElements.forEach((element) => observer.observe(element));
     return () => observer.disconnect();
   }, [page]);
-  return <div className="app-shell"><Background /><Header page={page} navigate={navigate} />{page === 'downloads' ? <Downloads navigate={navigate} /> : <main id="main-content"><Hero navigate={navigate} /><StatStrip /><TaglineReveal /><HowItWorks /><Features /><Architecture /><Targets /><Roadmap /><CTA navigate={navigate} /></main>}<Footer navigate={navigate} /></div>;
+
+  return <div className="app-shell">
+    <Header page={page} navigate={navigate} />
+    {page === 'home' && <Home />}
+    {page === 'downloads' && <Downloads navigate={navigate} />}
+    {page === 'not-found' && <NotFound navigate={navigate} />}
+    <Footer navigate={navigate} />
+  </div>;
 }
