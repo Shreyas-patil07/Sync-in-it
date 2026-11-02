@@ -88,7 +88,7 @@ class MainActivity : Activity() {
         content.addView(actionButton("Stop session / disconnect") { stopConnections() })
 
         content.addView(TextView(this).apply {
-            text = "Nearby discovery uses your local Wi-Fi only. Use a trusted private network: the current prototype advertises its admission token to devices on that network. Clock synchronization is implemented, but audio buffering and playback are not enabled yet."
+            text = "Nearby discovery uses your local Wi-Fi only. Use a trusted private network. The host sends a generated 1 kHz timing-click test stream; receivers prebuffer PCM16 and play it through AudioTrack. User-selected audio and scheduled group playback are not implemented yet."
             textSize = 12f
             setPadding(0, 24, 0, 0)
         })
@@ -125,7 +125,7 @@ class MainActivity : Activity() {
                     } else {
                         hostServiceName = invitation.serviceName
                         hostDetails.text =
-                            "Visible as ${invitation.serviceName}\nWaiting for one receiver on this Wi-Fi network."
+                            "Visible as ${invitation.serviceName}\nWaiting for one receiver. A 1 kHz timing-click test stream will start after it joins."
                         postStatus("Session created. Nearby phones can see this device and tap to join.")
                         renderNearbySessions()
                     }
