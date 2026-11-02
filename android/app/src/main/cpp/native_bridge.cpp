@@ -7,6 +7,7 @@
 #include "syit/session.h"
 #include "syit/transport.h"
 
+#include <algorithm>
 #include <array>
 #include <climits>
 #include <cmath>
