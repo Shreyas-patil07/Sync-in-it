@@ -212,6 +212,7 @@ class TcpFrameServer(
     private val closed = AtomicBoolean(false)
 
     val localPort: Int get() = server.localPort
+    val isListening: Boolean get() = server.isBound && !server.isClosed
 
     init {
         require(port in 0..65_535) { "port must be between 0 and 65535" }
