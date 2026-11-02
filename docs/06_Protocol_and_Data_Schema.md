@@ -269,7 +269,7 @@ Before native protocol implementation, create shared vectors for:
 7. Truncated frame, invalid length and oversized frame.
 8. Little-endian edge values and signed timestamp handling.
 
-Both Python reference code and C++ encoders/decoders must pass the same vectors.
+Both Python reference code and C++ encoders/decoders must pass the same vectors. The initial framing-only fixtures are stored in `protocol/vectors/wire_protocol.json`; they cover TCP frame envelopes and fixed-size UDP packet envelopes. Typed payload field validation remains a subsequent protocol implementation task.
 ## 13. Outstanding protocol questions
 
 - Capacity definition: 10 total phones versus 10 receivers plus master.
