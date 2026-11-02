@@ -21,14 +21,24 @@
 **Status:** Completed for this documentation commit
 
 - Inspected the existing repository documentation:
-  - docs/Sync Engine.md
-  - docs/System Structure.md
+  - docs_original/Sync Engine.md
+  - docs_original/System Structure.md
   - README.md
-- Established Docs2 as a structured documentation set based on the original docs.
-- Planned 10 main documents and one ADR document.
-- Preserved the original docs/ folder as the source reference.
+- Established `docs/` as the primary 10+1 documentation set based on the original design.
+- Preserved the two original design documents in `docs_original/` as reference sources.
 - No application code or test implementation was completed by this documentation activity.
 - No M0–M9 milestone is marked complete.
+
+### 2 November 2026 — Licensing files added
+
+**Type:** Documentation / decision  
+**Status:** Completed  
+**Commit/PR:** [b2352de8e941ea64af3eeb4f61d74332d2c57445](https://github.com/Shreyas-patil07/Sync-in-it/commit/b2352de8e941ea64af3eeb4f61d74332d2c57445)  
+**Summary:** Added `LICENSE` (Apache-2.0), `LICENSE-DOCS` (CC BY 4.0), `NOTICE`, `LICENSING.md` and `THIRD_PARTY_NOTICES.md`; updated the README license section and accepted ADR-017.  
+**Verification:** All five root licensing files are present; README license references resolve; ADR-017 records the split-license decision.  
+**Result:** Code, documentation, brand assets and third-party components have an explicit licensing map.  
+**Risks or limitations:** `NOTICE` uses the GitHub account name as the copyright holder. Confirm the right to reserve the logo/name before relying on the brand-rights statement. Dependency license entries must be re-verified for exact versions at release. Not legal advice.  
+**Next action:** Continue Dev-0 repository hygiene, then begin M0.
 
 ## 3. Current engineering status
 
