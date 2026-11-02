@@ -80,8 +80,8 @@ jobs:
         run: |
           mkdir -p release-assets
           cp android/app/build/outputs/apk/debug/app-debug.apk \
-            release-assets/SyncInIt-Android-preview-v0.4.0.apk
-          sha256sum release-assets/SyncInIt-Android-preview-v0.4.0.apk \
+            release-assets/SyncInIt-Android-preview-v0.5.0.apk
+          sha256sum release-assets/SyncInIt-Android-preview-v0.5.0.apk \
             | awk '{print $1}' > release-assets/SHA256SUMS.txt
 
       - name: Create GitHub pre-release and upload APK
@@ -89,39 +89,37 @@ jobs:
           GH_TOKEN: ${{ secrets.GITHUB_TOKEN }}
         run: |
           cat > release-notes.md <<'EOF'
-          ## Sync In It Android Preview v0.4.0
+          ## Sync In It Android Preview v0.5.0
 
-          This preview includes the Android LAN join reliability fixes merged in PR #27.
+          This engineering preview adds the first end-to-end Android PCM16 audio transport and rendering path on top of the LAN discovery and clock-synchronization foundation.
 
           ### Included
-          - Android launcher with mDNS/DNS-SD nearby host discovery and tap-to-join on the same local Wi-Fi network.
-          - Host remains available after a failed or incomplete pre-admission join, and can accept a fresh receiver attempt.
-          - UDP time-sync listener binds before the host is advertised, avoiding the startup race that caused ICMP Port Unreachable.
-          - Receiver retries transient UDP PortUnreachable responses and reports a clear error after repeated failures.
-          - Discovery checks the advertised service-name token fingerprint against the resolved TXT token before attempting TCP admission.
-          - Shared C++ protocol codecs and ReceiverSession state machine through JNI.
-          - Separate TCP control and audio-admission channels; audio streaming is not implemented yet.
-          - UDP four-timestamp clock synchronization and adaptive acquisition.
-          - Stable preview signing key, increasing versionCode, and native builds for arm64-v8a and x86_64.
+          - Android host and receiver join flow using local mDNS/DNS-SD discovery.
+          - Separate TCP control and audio channels, with UDP four-timestamp clock acquisition.
+          - Master-side generated 1 kHz timing-click test signal, encoded as 48 kHz stereo PCM16 in 20 ms chunks.
+          - Receiver-side AUDIO_CHUNK validation through the shared C++ codec and bounded sample-indexed jitter buffer via JNI.
+          - Android AudioTrack output on a dedicated writer thread, gated by a 3.5-second contiguous prebuffer.
+          - Receiver sends READY only after clock acquisition is stable and at least 3 seconds of PCM remain buffered.
+          - Native PCM16 JNI smoke test covering frame encoding, duplicate rejection and sample-preserving jitter-buffer reads.
+          - Stable preview signing key, monotonically increasing versionCode, and native APK builds for arm64-v8a and x86_64.
 
           ### Validation
-          - Android Gradle build and Kotlin TCP/UDP transport checks passed in CI.
+          - Android Gradle/JNI build and Kotlin transport checks passed in GitHub Actions.
+          - Native core and simulator checks passed in GitHub Actions.
           - APK signature verification passed.
-          - Physical two-phone admission and sustained clock synchronization still need to be re-tested with this release.
+          - Physical two-phone playback and acoustic timing measurements have not yet been completed.
 
           ### Important limitations
-          This remains an engineering preview, not a functional synchronized-speaker release. Audio chunks, PCM buffering, audio rendering, playback service, transport encryption and acoustic synchronization validation are not included. The native session still gates readiness while the receiver reports a 0 ms audio buffer.
+          The audio source is a generated timing-click test signal, not user-selected music or system audio. Playback currently begins locally after the prebuffer is filled; it is not yet scheduled against a shared future T0. DAC output timestamp mapping, drift correction, gap concealment tuning, multi-receiver admission, foreground playback service, iOS support and measured acoustic synchronization remain pending. This is an engineering preview, not a completed synchronized-speaker release.
 
-          Use only on a trusted private Wi-Fi network. The session token is an admission credential, not transport encryption.
-
-          Install as an update over a prior preview signed with the persistent Sync In It preview key.
+          Use on a private Wi-Fi network with client-to-client communication enabled. Install as an update over a previous preview signed with the persistent Sync In It preview key.
           EOF
 
-          gh release create "v0.4.0-preview.1" \
-            "release-assets/SyncInIt-Android-preview-v0.4.0.apk#SyncInIt-Android-preview-v0.4.0.apk" \
+          gh release create "v0.5.0-preview.1" \
+            "release-assets/SyncInIt-Android-preview-v0.5.0.apk#SyncInIt-Android-preview-v0.5.0.apk" \
             "release-assets/SHA256SUMS.txt#SHA256SUMS.txt" \
             --repo "$GITHUB_REPOSITORY" \
             --target "$GITHUB_SHA" \
-            --title "Sync In It Android Preview v0.4.0" \
+            --title "Sync In It Android Preview v0.5.0" \
             --notes-file release-notes.md \
             --prerelease
