@@ -430,19 +430,19 @@ No physical-device synchronization results are recorded in this initial log. Add
 ### 2 November 2026 — M1 Android application shell and JNI session bridge
 
 **Type:** Android application foundation / native integration  
-**Status:** Implemented; Android CI pending  
+**Status:** Implemented; Android CI passed  
 **Branch:** feature/m1-android-app-jni-shell
 
 **Summary:**
 - Added a root Android Gradle workspace with :app and :transport modules.
 - Added a minimal launcher Activity and manifest with only Internet and network/Wi-Fi state permissions; no microphone, media projection, notification or foreground playback permissions are requested yet.
-- Pinned Android Gradle Plugin 9.5.0, Gradle 9.6.0, Kotlin 2.4.10, JDK 17, Android SDK 36, NDK r30 and CMake 3.22.1.
+- Pinned Android Gradle Plugin 8.13.2, Gradle 8.13, Kotlin 2.2.10, JDK 17, Android SDK 36, NDK r30 and CMake 3.22.1.
 - Added an Android CMake target that compiles the portable protocol, typed message and receiver-session sources directly from core/, keeping desktop Python/vector-generation dependencies out of the APK build.
 - Added a JNI bridge with opaque native session handles, a synchronized handle registry, per-session locking, HELLO validation, encoded WELCOME frame retrieval, AUDIO_HELLO identity checks, READY gates, arm/anchor transitions and degraded-session recovery.
 - Added the Kotlin NativeReceiverSession facade and a launch-time native smoke test for HELLO → WELCOME → AUDIO_HELLO → READY → ARMED.
-- Added an Android-specific CI workflow that builds the debug APK and runs the transport module checks without invoking the frontend/Vercel build.
+- Added an Android-specific CI workflow that builds the debug APK, runs transport checks, and uploads the APK as a 7-day GitHub Actions artifact without invoking the frontend/Vercel build.
 
-**Verification:** Android Gradle/NDK CI is pending. No physical Android device or emulator has been used to install the APK or run the JNI smoke test yet.
+**Verification:** [Android app/JNI workflow 41472511194](https://github.com/Shreyas-patil07/Sync-in-it/actions/runs/41472511194) passed. It assembled the debug APK, compiled the native C++ library for arm64-v8a and x86_64, and ran the Kotlin TCP/UDP loopback checks. The runtime JNI smoke test is included in the APK but has not yet been executed on an emulator or physical Android device.
 
 **Limitations:** No foreground playback service, QR invitation flow, audio capture/decoder, PCM rendering, native audio callback, socket-to-session orchestration, encryption or two-phone time-sync measurement is included. The smoke test validates local JNI/session wiring only, not network or acoustic synchronization.
 
