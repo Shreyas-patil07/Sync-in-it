@@ -187,6 +187,8 @@ private fun tcpRejectsOversizedAndTruncatedFrames() {
 private fun udpTimeSyncLoopback() {
     val loopback = InetAddress.getByName("127.0.0.1")
     UdpTimeSyncServer(loopback, 0, receiveTimeoutMs = 3_000).use { server ->
+        expect(server.isBound, "UDP diagnostics expose bound server state")
+        expect(server.localAddress == "127.0.0.1", "UDP diagnostics expose bound server address")
         val request = ByteArray(UdpTimeSyncClient.PACKET_SIZE) { it.toByte() }
         val response = ByteArray(UdpTimeSyncClient.PACKET_SIZE) { (255 - it).toByte() }
         val received = ArrayBlockingQueue<Boolean>(1)
@@ -201,6 +203,11 @@ private fun udpTimeSyncLoopback() {
         }
         worker.start()
         UdpTimeSyncClient(loopback, server.localPort, receiveTimeoutMs = 3_000).use { client ->
+            expect(client.isConnected, "connected UDP socket exposes connected state")
+            expect(client.localAddress == "127.0.0.1", "UDP diagnostics expose selected local address")
+            expect(client.localPort in 1..65_535, "UDP diagnostics expose ephemeral local port")
+            expect(client.remoteAddress == "127.0.0.1", "UDP diagnostics expose remote address")
+            expect(client.remotePort == server.localPort, "UDP diagnostics expose remote port")
             client.send(request)
             val timedResponse = client.receiveTimed()
             expect(timedResponse.bytes.contentEquals(response), "UDP time-sync response round-trips")
