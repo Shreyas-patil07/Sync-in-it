@@ -227,7 +227,20 @@ class MainActivity : Activity() {
 
     private fun postStatus(message: String) {
         runOnUiThread {
-            if (!isFinishing && !isDestroyed && ::status.isInitialized) status.text = message
+            if (isFinishing || isDestroyed || !::status.isInitialized) return@runOnUiThread
+            status.text = message
+
+            val hostEnded = message.startsWith("Receiver sent LEAVE.") ||
+                message.startsWith("Receiver control connection closed.") ||
+                message.startsWith("Admitted receiver disconnected:")
+            if (hostEnded && masterHost != null) {
+                masterHost = null
+                hostServiceName = null
+                if (::hostDetails.isInitialized) {
+                    hostDetails.text = "Host session ended. Tap Start hosting to advertise again."
+                }
+                renderNearbySessions()
+            }
         }
     }
 
