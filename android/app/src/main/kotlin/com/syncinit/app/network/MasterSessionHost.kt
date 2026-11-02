@@ -1,10 +1,13 @@
 package com.syncinit.app.network
 
+import com.syncinit.app.core.NativeCore
 import com.syncinit.app.core.NativeReceiverSession
 import com.syncinit.app.core.ReceiverSessionConfig
 import com.syncinit.app.core.ReceiverSessionResult
 import com.syncinit.transport.TcpFrameConnection
 import com.syncinit.transport.TcpFrameServer
+import com.syncinit.transport.FrameProtocolException
+import com.syncinit.transport.UdpTimeSyncServer
 import java.io.Closeable
 import java.net.Inet4Address
 import java.net.InetAddress
@@ -13,7 +16,6 @@ import java.net.SocketException
 import java.net.SocketTimeoutException
 import java.security.SecureRandom
 import java.util.Collections
-import java.util.concurrent.CountDownLatch
 import java.util.concurrent.Executors
 import java.util.concurrent.atomic.AtomicBoolean
 
@@ -33,13 +35,13 @@ class MasterSessionHost(private val onStatus: (String) -> Unit) : Closeable {
 
     private val closed = AtomicBoolean(false)
     private val started = AtomicBoolean(false)
-    private val finish = CountDownLatch(1)
     private val executor = Executors.newSingleThreadExecutor { task ->
         Thread(task, "syncinit-master-handshake").apply { isDaemon = true }
     }
 
     @Volatile private var controlServer: TcpFrameServer? = null
     @Volatile private var audioServer: TcpFrameServer? = null
+    @Volatile private var timeSyncServer: UdpTimeSyncServer? = null
     @Volatile private var controlConnection: TcpFrameConnection? = null
     @Volatile private var audioConnection: TcpFrameConnection? = null
     @Volatile private var nativeSession: NativeReceiverSession? = null
@@ -83,7 +85,6 @@ class MasterSessionHost(private val onStatus: (String) -> Unit) : Closeable {
             control?.close()
             audio?.close()
             closed.set(true)
-            finish.countDown()
             executor.shutdownNow()
             throw error
         }
@@ -114,14 +115,99 @@ class MasterSessionHost(private val onStatus: (String) -> Unit) : Closeable {
             check(audioResult == ReceiverSessionResult.Accepted) { "AUDIO_HELLO rejected: $audioResult" }
 
             onStatus(
-                "Receiver admitted · native state ${nativeSession?.state()} · " +
-                    "awaiting UDP time sync and buffer readiness."
+                "Receiver admitted · native state ${nativeSession?.state()} · starting UDP clock sync."
             )
-            finish.await()
+            runTimeSyncServer(control)
         } catch (error: Exception) {
             if (!closed.get()) onStatus("Host handshake failed: ${error.message ?: error.javaClass.simpleName}")
         } finally {
             closeResources()
+        }
+    }
+
+    private fun runTimeSyncServer(control: TcpFrameConnection) {
+        val server = UdpTimeSyncServer(
+            bindAddress = InetAddress.getByName("0.0.0.0"),
+            port = TIME_PORT,
+            receiveTimeoutMs = 500
+        )
+        timeSyncServer = server
+
+        val controlReader = Thread({ readControlFrames(control) }, "syncinit-master-control-reader").apply {
+            isDaemon = true
+            start()
+        }
+        var responseCount = 0
+        try {
+            while (!closed.get()) {
+                val datagram = try {
+                    server.receive()
+                } catch (_: SocketTimeoutException) {
+                    continue
+                } catch (_: FrameProtocolException) {
+                    continue
+                } catch (error: SocketException) {
+                    if (closed.get()) break
+                    throw error
+                }
+
+                // The UDP peer must be the same IP that completed the TCP admission.
+                if (datagram.source.address != control.remoteAddress) continue
+
+                val t3Ns = System.nanoTime()
+                val response = nativeSession?.timeSyncResponse(
+                    datagram.bytes, datagram.receivedAtNs, t3Ns
+                ) ?: continue
+                server.sendTo(response, datagram.source)
+
+                responseCount += 1
+                if (responseCount == 1 || responseCount % 20 == 0) {
+                    onStatus("UDP time sync active · $responseCount validated requests answered.")
+                }
+            }
+        } finally {
+            controlReader.interrupt()
+        }
+    }
+
+    private fun readControlFrames(control: TcpFrameConnection) {
+        try {
+            while (!closed.get()) {
+                val frame = control.readFrame() ?: break
+                when (frame.messageType) {
+                    0x04 -> {
+                        check(frame.flags == 0) { "READY frame flags must be zero" }
+                        val result = nativeSession?.onReadyFrame(frame.toEncodedBytes())
+                        when (result) {
+                            ReceiverSessionResult.Accepted ->
+                                onStatus("Receiver READY · native state ${nativeSession?.state()}.")
+                            ReceiverSessionResult.BufferInsufficient ->
+                                onStatus("Clock sync is stable. Master is holding READY until an audio buffer exists.")
+                            ReceiverSessionResult.ClockNotStable ->
+                                onStatus("Receiver requested READY before the clock estimator was stable.")
+                            ReceiverSessionResult.ClockResidualTooHigh ->
+                                onStatus("Receiver READY rejected: clock residual exceeded the configured gate.")
+                            else ->
+                                onStatus("Receiver READY rejected: ${result ?: "session unavailable"}.")
+                        }
+                    }
+                    0x0A -> {
+                        onStatus("Receiver sent LEAVE.")
+                        close()
+                        return
+                    }
+                    else -> onStatus("Ignoring unsupported control message 0x${frame.messageType.toString(16)}.")
+                }
+            }
+            if (!closed.get()) {
+                onStatus("Receiver control connection closed.")
+                close()
+            }
+        } catch (error: Exception) {
+            if (!closed.get()) {
+                onStatus("Receiver control channel failed: ${error.message ?: error.javaClass.simpleName}")
+                close()
+            }
         }
     }
 
@@ -138,11 +224,13 @@ class MasterSessionHost(private val onStatus: (String) -> Unit) : Closeable {
         closeQuietly(audioConnection)
         closeQuietly(controlServer)
         closeQuietly(audioServer)
+        closeQuietly(timeSyncServer)
         nativeSession?.close()
         controlConnection = null
         audioConnection = null
         controlServer = null
         audioServer = null
+        timeSyncServer = null
         nativeSession = null
     }
 
