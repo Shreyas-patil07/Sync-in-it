@@ -1,5 +1,7 @@
 package com.syncinit.app.network
 
+import android.content.Context
+import android.os.Build
 import com.syncinit.app.core.NativeReceiverSession
 import com.syncinit.app.core.ReceiverSessionConfig
 import com.syncinit.app.core.ReceiverSessionResult
@@ -8,31 +10,27 @@ import com.syncinit.transport.TcpFrameServer
 import com.syncinit.transport.FrameProtocolException
 import com.syncinit.transport.UdpTimeSyncServer
 import java.io.Closeable
-import java.net.Inet4Address
 import java.net.InetAddress
 import java.net.InetSocketAddress
-import java.net.NetworkInterface
-import java.net.SocketException
 import java.net.SocketTimeoutException
 import java.security.SecureRandom
-import java.util.Collections
 import java.util.concurrent.Executors
 import java.util.concurrent.atomic.AtomicBoolean
 
 data class HostInvitation(
-    val address: String,
-    val controlPort: Int,
-    val sessionToken: String
+    val serviceName: String,
+    val controlPort: Int
 )
 
 /** One-receiver Android master that performs control and audio-channel admission only. */
-class MasterSessionHost(private val onStatus: (String) -> Unit) : Closeable {
+class MasterSessionHost(context: Context, private val onStatus: (String) -> Unit) : Closeable {
     companion object {
         const val CONTROL_PORT = 47_800
         const val TIME_PORT = 47_802
         private const val AUDIO_READ_TIMEOUT_MS = 0
     }
 
+    private val appContext = context.applicationContext
     private val closed = AtomicBoolean(false)
     private val started = AtomicBoolean(false)
     private val executor = Executors.newSingleThreadExecutor { task ->
@@ -45,6 +43,7 @@ class MasterSessionHost(private val onStatus: (String) -> Unit) : Closeable {
     @Volatile private var controlConnection: TcpFrameConnection? = null
     @Volatile private var audioConnection: TcpFrameConnection? = null
     @Volatile private var nativeSession: NativeReceiverSession? = null
+    @Volatile private var advertiser: LanSessionAdvertiser? = null
 
     fun start(): HostInvitation {
         check(!closed.get()) { "host service is closed" }
@@ -54,7 +53,6 @@ class MasterSessionHost(private val onStatus: (String) -> Unit) : Closeable {
         var audio: TcpFrameServer? = null
         var session: NativeReceiverSession? = null
         try {
-            val address = discoverLocalIpv4Address()
             val anyAddress = InetAddress.getByName("0.0.0.0")
             val audioListener = TcpFrameServer(anyAddress, 0, connectionReadTimeoutMs = AUDIO_READ_TIMEOUT_MS)
             audio = audioListener
@@ -75,12 +73,18 @@ class MasterSessionHost(private val onStatus: (String) -> Unit) : Closeable {
             )
 
             check(!closed.get()) { "host session was stopped while starting" }
+            val deviceLabel = "${Build.MANUFACTURER} ${Build.MODEL}".trim().take(40)
+            val serviceName = "Sync In It - $deviceLabel"
+            val serviceAdvertiser = LanSessionAdvertiser(appContext, onStatus)
+            serviceAdvertiser.start(serviceName, controlListener.localPort, token.toHex())
+
             controlServer = controlListener
             audioServer = audioListener
             nativeSession = session
+            advertiser = serviceAdvertiser
             executor.execute(::serve)
-            onStatus("Hosting on $address:$CONTROL_PORT. Waiting for a receiver.")
-            return HostInvitation(address, controlListener.localPort, token.toHex())
+            onStatus("Hosting and advertising on this Wi-Fi network. Waiting for a receiver.")
+            return HostInvitation(serviceName, controlListener.localPort)
         } catch (error: Exception) {
             session?.close()
             control?.close()
@@ -232,29 +236,15 @@ class MasterSessionHost(private val onStatus: (String) -> Unit) : Closeable {
         closeQuietly(controlServer)
         closeQuietly(audioServer)
         closeQuietly(timeSyncServer)
+        closeQuietly(advertiser)
         nativeSession?.close()
         controlConnection = null
         audioConnection = null
         controlServer = null
         audioServer = null
         timeSyncServer = null
+        advertiser = null
         nativeSession = null
-    }
-
-    private fun discoverLocalIpv4Address(): String {
-        val interfaces = NetworkInterface.getNetworkInterfaces()
-            ?: throw SocketException("No network interfaces are available")
-        var fallback: String? = null
-        for (network in Collections.list(interfaces)) {
-            if (!network.isUp || network.isLoopback) continue
-            for (address in Collections.list(network.inetAddresses)) {
-                if (address !is Inet4Address || address.isLoopbackAddress || !address.isSiteLocalAddress) continue
-                val value = address.hostAddress ?: continue
-                if (network.name.startsWith("wlan", ignoreCase = true)) return value
-                if (fallback == null) fallback = value
-            }
-        }
-        return fallback ?: throw SocketException("No usable local IPv4 address found; connect to Wi-Fi first")
     }
 
     private fun ByteArray.toHex(): String = joinToString("") { "%02X".format(it.toInt() and 0xff) }
