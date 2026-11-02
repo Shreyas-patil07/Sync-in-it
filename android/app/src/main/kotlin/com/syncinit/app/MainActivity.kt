@@ -1,32 +1,32 @@
 package com.syncinit.app
 
 import android.app.Activity
-import android.content.ClipData
-import android.content.ClipboardManager
-import android.content.Context
 import android.os.Bundle
-import android.text.InputType
 import android.view.Gravity
 import android.widget.Button
-import android.widget.EditText
 import android.widget.LinearLayout
 import android.widget.ScrollView
 import android.widget.TextView
 import com.syncinit.app.core.NativeCore
 import com.syncinit.app.core.NativeSessionSmokeTest
 import com.syncinit.app.core.NetworkHandshakeSmokeTest
+import com.syncinit.app.network.LanSessionBrowser
 import com.syncinit.app.network.MasterSessionHost
+import com.syncinit.app.network.NearbySession
 import com.syncinit.app.network.ReceiverSessionClient
 
 class MainActivity : Activity() {
     private lateinit var status: TextView
     private lateinit var foundationStatus: TextView
     private lateinit var hostDetails: TextView
-    private lateinit var masterAddress: EditText
-    private lateinit var sessionToken: EditText
+    private lateinit var discoveryStatus: TextView
+    private lateinit var nearbySessionsContainer: LinearLayout
 
     @Volatile private var masterHost: MasterSessionHost? = null
     @Volatile private var receiverClient: ReceiverSessionClient? = null
+    @Volatile private var hostServiceName: String? = null
+    @Volatile private var nearbyBrowser: LanSessionBrowser? = null
+    private val nearbySessions = LinkedHashMap<String, NearbySession>()
 
     override fun onCreate(savedInstanceState: Bundle?) {
         super.onCreate(savedInstanceState)
@@ -50,44 +50,45 @@ class MainActivity : Activity() {
 
         content.addView(sectionTitle("Host a session"))
         content.addView(TextView(this).apply {
-            text = "Create a local session on this phone. Share the IP address and 32-character token with one receiver on the same Wi-Fi network."
+            text = "Make this phone visible to other Sync In It devices on the same Wi-Fi network."
             textSize = 14f
         })
-        content.addView(actionButton("Create session") { startHosting() })
+        content.addView(actionButton("Start hosting") { startHosting() })
         hostDetails = TextView(this).apply {
-            text = "No active host session."
+            text = "You are not hosting a session."
             textSize = 14f
             setPadding(0, 8, 0, 4)
         }
         content.addView(hostDetails)
-        content.addView(actionButton("Copy invitation") { copyInvitation() })
 
-        content.addView(sectionTitle("Join a session"))
-        masterAddress = EditText(this).apply {
-            hint = "Master IPv4 address (for example 192.168.1.10)"
-            inputType = InputType.TYPE_CLASS_TEXT or InputType.TYPE_TEXT_VARIATION_URI
-            setSingleLine(true)
+        content.addView(sectionTitle("Nearby sessions"))
+        content.addView(TextView(this).apply {
+            text = "Choose a phone to join. Hosts appear automatically when they are advertising on the same local network."
+            textSize = 14f
+        })
+        content.addView(actionButton("Refresh nearby sessions") { scanNearbySessions() })
+        discoveryStatus = TextView(this).apply {
+            text = "Searching when this screen is open…"
+            textSize = 13f
+            setPadding(0, 8, 0, 4)
         }
-        content.addView(masterAddress)
-        sessionToken = EditText(this).apply {
-            hint = "32-character session token"
-            inputType = InputType.TYPE_CLASS_TEXT
-            setSingleLine(true)
+        content.addView(discoveryStatus)
+        nearbySessionsContainer = LinearLayout(this).apply {
+            orientation = LinearLayout.VERTICAL
         }
-        content.addView(sessionToken)
-        content.addView(actionButton("Join master") { joinMaster() })
+        content.addView(nearbySessionsContainer)
 
         content.addView(sectionTitle("Connection status"))
         status = TextView(this).apply {
-            text = "Idle · connect both phones to the same local Wi-Fi network."
+            text = "Idle · connect both phones to the same private Wi-Fi network."
             textSize = 14f
             setPadding(0, 8, 0, 16)
         }
         content.addView(status)
-        content.addView(actionButton("Stop / disconnect") { stopConnections() })
+        content.addView(actionButton("Stop session / disconnect") { stopConnections() })
 
         content.addView(TextView(this).apply {
-            text = "This build validates HELLO → WELCOME → AUDIO_HELLO over separate TCP channels and runs UDP clock acquisition using the shared C++ estimator. READY remains blocked until an audio buffer exists; streaming and playback are not enabled yet."
+            text = "Nearby discovery uses your local Wi-Fi only. Use a trusted private network: the current prototype advertises its admission token to devices on that network. Clock synchronization is implemented, but audio buffering and playback are not enabled yet."
             textSize = 12f
             setPadding(0, 24, 0, 0)
         })
@@ -100,11 +101,21 @@ class MainActivity : Activity() {
         runStartupSmokeTests()
     }
 
+    override fun onStart() {
+        super.onStart()
+        scanNearbySessions()
+    }
+
+    override fun onStop() {
+        stopDiscovery()
+        super.onStop()
+    }
+
     private fun startHosting() {
         stopConnections()
-        val service = MasterSessionHost(::postStatus)
+        val service = MasterSessionHost(applicationContext, ::postStatus)
         masterHost = service
-        postStatus("Starting the local host…")
+        postStatus("Starting a discoverable session…")
         Thread({
             try {
                 val invitation = service.start()
@@ -112,9 +123,11 @@ class MainActivity : Activity() {
                     if (isFinishing || isDestroyed || masterHost !== service) {
                         service.close()
                     } else {
+                        hostServiceName = invitation.serviceName
                         hostDetails.text =
-                            "Master: ${invitation.address}:${invitation.controlPort}\nToken: ${invitation.sessionToken}"
-                        postStatus("Host is ready. Enter this address and token on the receiver phone.")
+                            "Visible as ${invitation.serviceName}\nWaiting for one receiver on this Wi-Fi network."
+                        postStatus("Session created. Nearby phones can see this device and tap to join.")
+                        renderNearbySessions()
                     }
                 }
             } catch (error: Exception) {
@@ -127,29 +140,78 @@ class MainActivity : Activity() {
         }, "syncinit-master-startup").apply { isDaemon = true }.start()
     }
 
-    private fun joinMaster() {
+    private fun joinNearby(session: NearbySession) {
         stopConnections()
+        stopDiscovery()
+        val client = ReceiverSessionClient(::postStatus)
+        receiverClient = client
+        postStatus("Joining ${session.serviceName}…")
         try {
-            val client = ReceiverSessionClient(::postStatus)
-            receiverClient = client
             client.connect(
-                host = masterAddress.text.toString().trim(),
-                tokenHex = sessionToken.text.toString()
+                host = session.hostAddress,
+                tokenHex = session.sessionToken,
+                controlPort = session.controlPort
             )
         } catch (error: Exception) {
             postStatus("Could not join: ${error.message ?: error.javaClass.simpleName}")
+            client.close()
+            receiverClient = null
         }
     }
 
-    private fun copyInvitation() {
-        val text = hostDetails.text.toString()
-        if (text == "No active host session.") {
-            postStatus("Create a host session first.")
+    private fun scanNearbySessions() {
+        stopDiscovery()
+        nearbySessions.clear()
+        renderNearbySessions()
+        discoveryStatus.text = "Searching this Wi-Fi network for Sync In It hosts…"
+
+        try {
+            val browser = LanSessionBrowser(
+                context = applicationContext,
+                onSessionFound = { session ->
+                    runOnUiThread {
+                        if (isFinishing || isDestroyed || session.serviceName == hostServiceName) return@runOnUiThread
+                        nearbySessions[session.serviceName] = session
+                        renderNearbySessions()
+                    }
+                },
+                onSessionLost = { serviceName ->
+                    runOnUiThread {
+                        nearbySessions.remove(serviceName)
+                        renderNearbySessions()
+                    }
+                },
+                onStatus = ::postDiscoveryStatus
+            )
+            nearbyBrowser = browser
+            browser.start()
+        } catch (error: Exception) {
+            nearbyBrowser = null
+            discoveryStatus.text = "Nearby discovery unavailable: ${error.message ?: error.javaClass.simpleName}"
+        }
+    }
+
+    private fun renderNearbySessions() {
+        if (!::nearbySessionsContainer.isInitialized) return
+        nearbySessionsContainer.removeAllViews()
+        val sessions = nearbySessions.values.sortedBy { it.serviceName }
+        if (sessions.isEmpty()) {
+            discoveryStatus.text = "No hosts found yet. Keep this screen open and check that the host is on the same Wi-Fi."
             return
         }
-        val clipboard = getSystemService(Context.CLIPBOARD_SERVICE) as ClipboardManager
-        clipboard.setPrimaryClip(ClipData.newPlainText("Sync In It invitation", text))
-        postStatus("Invitation copied.")
+        discoveryStatus.text = "${sessions.size} nearby session(s) found. Tap one to join."
+        for (session in sessions) {
+            nearbySessionsContainer.addView(
+                actionButton("${session.serviceName}\n${session.hostAddress} · Tap to join") {
+                    joinNearby(session)
+                }
+            )
+        }
+    }
+
+    private fun stopDiscovery() {
+        nearbyBrowser?.close()
+        nearbyBrowser = null
     }
 
     private fun stopConnections() {
@@ -157,13 +219,23 @@ class MainActivity : Activity() {
         masterHost = null
         receiverClient?.close()
         receiverClient = null
-        if (::hostDetails.isInitialized) hostDetails.text = "No active host session."
+        hostServiceName = null
+        if (::hostDetails.isInitialized) hostDetails.text = "You are not hosting a session."
         if (::status.isInitialized) status.text = "Disconnected."
+        if (::nearbySessionsContainer.isInitialized) renderNearbySessions()
     }
 
     private fun postStatus(message: String) {
         runOnUiThread {
             if (!isFinishing && !isDestroyed && ::status.isInitialized) status.text = message
+        }
+    }
+
+    private fun postDiscoveryStatus(message: String) {
+        runOnUiThread {
+            if (!isFinishing && !isDestroyed && ::discoveryStatus.isInitialized) {
+                discoveryStatus.text = message
+            }
         }
     }
 
@@ -175,6 +247,7 @@ class MainActivity : Activity() {
 
     private fun actionButton(label: String, action: () -> Unit) = Button(this).apply {
         text = label
+        isAllCaps = false
         setOnClickListener { action() }
     }
 
@@ -196,6 +269,7 @@ class MainActivity : Activity() {
     }
 
     override fun onDestroy() {
+        stopDiscovery()
         stopConnections()
         super.onDestroy()
     }

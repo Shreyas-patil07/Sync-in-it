@@ -43,15 +43,43 @@ jobs:
             "ndk;30.0.16248370" \
             "cmake;3.22.1"
 
-      - name: Build APK and run transport tests
+      - name: Require persistent preview signing key
+        env:
+          PREVIEW_KEYSTORE_BASE64: ${{ secrets.SYNCINIT_PREVIEW_KEYSTORE_BASE64 }}
+          PREVIEW_KEYSTORE_PASSWORD: ${{ secrets.SYNCINIT_PREVIEW_KEYSTORE_PASSWORD }}
+        run: |
+          if [ -z "$PREVIEW_KEYSTORE_BASE64" ] || [ -z "$PREVIEW_KEYSTORE_PASSWORD" ]; then
+            echo "::error::Configure SYNCINIT_PREVIEW_KEYSTORE_BASE64 and SYNCINIT_PREVIEW_KEYSTORE_PASSWORD before publishing an updateable APK."
+            exit 1
+          fi
+          mkdir -p android/app
+          printf '%s' "$PREVIEW_KEYSTORE_BASE64" | base64 --decode > android/app/syncinit-preview.jks
+          test -s android/app/syncinit-preview.jks
+
+      - name: Generate monotonic Android version code
+        id: apk_version
+        run: echo "code=$(date -u +%s)" >> "$GITHUB_OUTPUT"
+
+      - name: Build updateable APK and run transport tests
+        env:
+          ORG_GRADLE_PROJECT_syncinitVersionCode: ${{ steps.apk_version.outputs.code }}
+          ORG_GRADLE_PROJECT_previewKeystorePath: ${{ github.workspace }}/android/app/syncinit-preview.jks
+          ORG_GRADLE_PROJECT_previewStorePassword: ${{ secrets.SYNCINIT_PREVIEW_KEYSTORE_PASSWORD }}
+          ORG_GRADLE_PROJECT_previewKeyPassword: ${{ secrets.SYNCINIT_PREVIEW_KEYSTORE_PASSWORD }}
+          ORG_GRADLE_PROJECT_previewKeyAlias: syncinit-preview
         run: gradle -p android :app:assembleDebug :transport:check --stacktrace
+
+      - name: Verify APK signature
+        run: |
+          "$ANDROID_HOME/build-tools/36.0.0/apksigner" verify --verbose android/app/build/outputs/apk/debug/app-debug.apk
+          "$ANDROID_HOME/build-tools/36.0.0/apksigner" verify --print-certs android/app/build/outputs/apk/debug/app-debug.apk
 
       - name: Prepare release assets
         run: |
           mkdir -p release-assets
           cp android/app/build/outputs/apk/debug/app-debug.apk \
-            release-assets/SyncInIt-Android-preview-v0.2.0.apk
-          sha256sum release-assets/SyncInIt-Android-preview-v0.2.0.apk \
+            release-assets/SyncInIt-Android-preview-v0.3.0.apk
+          sha256sum release-assets/SyncInIt-Android-preview-v0.3.0.apk \
             | awk '{print $1}' > release-assets/SHA256SUMS.txt
 
       - name: Create GitHub pre-release and upload APK
@@ -59,12 +87,13 @@ jobs:
           GH_TOKEN: ${{ secrets.GITHUB_TOKEN }}
         run: |
           cat > release-notes.md <<'EOF'
-          ## Sync In It Android Preview v0.2.0
+          ## Sync In It Android Preview v0.3.0
 
-          This preview adds the Android one-master/one-receiver TCP admission flow and UDP clock-acquisition path.
+          This preview adds nearby-host discovery and a stable Android signing identity so future APK installs can update the existing app in place.
 
           ### Included
-          - Android launcher with Host and Join modes for devices on the same local Wi-Fi network.
+          - Android launcher with mDNS/DNS-SD nearby host discovery and tap-to-join on the same local Wi-Fi network.
+          - Stable preview signing key and increasing versionCode for in-place updates; keep the app's package ID unchanged.
           - Shared C++ protocol codecs and ReceiverSession state machine through JNI.
           - Separate TCP control and audio-admission channels (audio streaming is not implemented yet).
           - UDP four-timestamp time synchronization using the shared native TimeSyncResponder, TimeSyncClient and clock estimator.
@@ -75,14 +104,16 @@ jobs:
           ### Important limitations
           This is an engineering preview, not a functional synchronized speaker release. No audio chunks, PCM buffering, audio rendering, playback service, encryption or acoustic synchronization validation are included. The receiver sends READY only after clock acquisition; the master rejects it while the reported audio buffer is 0 ms.
 
-          Use only on a trusted private Wi-Fi network. The session token is an admission credential, not transport encryption. Physical two-phone clock validation is still required.
+          Use only on a trusted private Wi-Fi network. The session token is an admission credential, not transport encryption. Physical two-phone discovery and clock validation are still required.
+
+          Existing APKs signed with an ephemeral CI debug key may require one final uninstall/reinstall to migrate to the persistent signing key. Later previews signed with this same key install as updates.
           EOF
 
-          gh release create "v0.2.0-preview.1" \
-            "release-assets/SyncInIt-Android-preview-v0.2.0.apk#SyncInIt-Android-preview-v0.2.0.apk" \
+          gh release create "v0.3.0-preview.1" \
+            "release-assets/SyncInIt-Android-preview-v0.3.0.apk#SyncInIt-Android-preview-v0.3.0.apk" \
             "release-assets/SHA256SUMS.txt#SHA256SUMS.txt" \
             --repo "$GITHUB_REPOSITORY" \
             --target "$GITHUB_SHA" \
-            --title "Sync In It Android Preview v0.2.0" \
+            --title "Sync In It Android Preview v0.3.0" \
             --notes-file release-notes.md \
             --prerelease

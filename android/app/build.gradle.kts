@@ -3,6 +3,26 @@ plugins {
     id("org.jetbrains.kotlin.android")
 }
 
+val previewKeystorePath = providers.gradleProperty("previewKeystorePath").orNull
+val previewStorePassword = providers.gradleProperty("previewStorePassword").orNull
+val previewKeyAlias = providers.gradleProperty("previewKeyAlias").orNull
+val previewKeyPassword = providers.gradleProperty("previewKeyPassword").orNull
+val previewSigningEnabled = listOf(
+    previewKeystorePath,
+    previewStorePassword,
+    previewKeyAlias,
+    previewKeyPassword
+).all { !it.isNullOrBlank() } && file(previewKeystorePath!!).isFile
+
+val requestedVersionCode = providers.gradleProperty("syncinitVersionCode")
+    .orNull
+    ?.toIntOrNull()
+    ?: 1
+
+require(requestedVersionCode in 1..2_100_000_000) {
+    "syncinitVersionCode must be between 1 and 2100000000"
+}
+
 android {
     namespace = "com.syncinit.app"
     compileSdk = 36
@@ -12,8 +32,8 @@ android {
         applicationId = "com.syncinit.app"
         minSdk = 26
         targetSdk = 36
-        versionCode = 1
-        versionName = "0.1.0"
+        versionCode = requestedVersionCode
+        versionName = "0.3.0-preview"
 
         ndk {
             abiFilters += listOf("arm64-v8a", "x86_64")
@@ -27,13 +47,32 @@ android {
         }
     }
 
+    signingConfigs {
+        if (previewSigningEnabled) {
+            create("preview") {
+                storeFile = file(previewKeystorePath!!)
+                storePassword = previewStorePassword
+                keyAlias = previewKeyAlias
+                keyPassword = previewKeyPassword
+                storeType = "JKS"
+            }
+        }
+    }
+
     buildTypes {
         debug {
+            // Keep this suffix: it preserves the package ID used by existing preview installs.
             applicationIdSuffix = ".debug"
             versionNameSuffix = "-debug"
+            if (previewSigningEnabled) {
+                signingConfig = signingConfigs.getByName("preview")
+            }
         }
         release {
             isMinifyEnabled = false
+            if (previewSigningEnabled) {
+                signingConfig = signingConfigs.getByName("preview")
+            }
         }
     }
 
