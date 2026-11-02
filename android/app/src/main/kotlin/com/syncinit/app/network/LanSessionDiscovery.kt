@@ -41,10 +41,10 @@ class LanSessionAdvertiser(
             serviceName = displayName.take(55)
             serviceType = SERVICE_TYPE
             port = controlPort
-            setAttribute("app", APP_ID.toByteArray(Charsets.US_ASCII))
-            setAttribute("ver", byteArrayOf('1'.code.toByte()))
+            setAttribute("app", APP_ID)
+            setAttribute("ver", "1")
             // The token is visible to devices on this LAN. Use only a trusted private network.
-            setAttribute("token", sessionToken.uppercase().toByteArray(Charsets.US_ASCII))
+            setAttribute("token", sessionToken.uppercase())
         }
 
         val registration = object : NsdManager.RegistrationListener {
