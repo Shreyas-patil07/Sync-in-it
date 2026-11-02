@@ -3,3 +3,7 @@ local.properties
 **/build/
 **/.cxx/
 **/.externalNativeBuild/
+
+# Never commit the persistent Android preview signing key.
+*.jks
+*.keystore
