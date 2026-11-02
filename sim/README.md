@@ -36,6 +36,10 @@ PYTHONPATH=src python -m sync_in_it_sim --duration 60 --seed 7 --check-acceptanc
 
 The check is intentionally locked to 60 seconds and seed 7. It returns a non-zero exit code when a required criterion fails. Use \`--json\` with the same command to include the full machine-readable acceptance report. The gate is simulator-only and does not claim physical-device or acoustic accuracy.
 
+## Incremental TCP stream framing
+
+The Python reference wire module exposes \`FrameStreamDecoder\`. It consumes arbitrary bytes-like fragments, emits all complete frames, and retains only one incomplete frame. The four-byte length is checked as soon as it is available; the parser never treats a socket read as a frame boundary. The maximum applies per frame, so a single input fragment may contain several valid frames whose combined size is larger than the per-frame limit. The framer does not perform socket I/O or session-state validation.
+
 ## Shared Wi-Fi model
 
 - One half-duplex Wi-Fi channel and an access point forwarding unicast traffic.
