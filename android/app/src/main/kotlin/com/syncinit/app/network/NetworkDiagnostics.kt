@@ -56,16 +56,15 @@ internal object NetworkDiagnostics {
     }
 
     fun exceptionDetails(error: Throwable): String {
-        val chain = generateSequence(error as Throwable?) { it.cause }
-            .take(6)
-            .mapIndexed { index, cause ->
-                "#$index ${cause.javaClass.name}: ${cause.message ?: "no message"}"
-            }
-            .joinToString(" <- ")
-        val category = when (error) {
+        val causes = generateSequence(error as Throwable?) { it.cause }.take(6).toList()
+        val chain = causes.mapIndexed { index, cause ->
+            "#$index ${cause.javaClass.name}: ${cause.message ?: "no message"}"
+        }.joinToString(" <- ")
+        val root = causes.lastOrNull() ?: error
+        val category = when (root) {
             is java.net.NoRouteToHostException -> "NO_ROUTE_TO_HOST"
             is java.net.ConnectException -> when {
-                error.message.orEmpty().contains("refused", ignoreCase = true) -> "CONNECTION_REFUSED"
+                root.message.orEmpty().contains("refused", ignoreCase = true) -> "CONNECTION_REFUSED"
                 else -> "CONNECTION_FAILED"
             }
             is java.net.SocketTimeoutException -> "CONNECT_TIMEOUT_OR_FILTERED"
