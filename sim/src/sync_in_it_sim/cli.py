@@ -4,6 +4,7 @@ from __future__ import annotations
 import argparse
 import json
 
+from .acceptance import evaluate_m0_acceptance
 from .lan import run_shared_wifi_scenarios
 from .scenarios import run_scenarios
 
@@ -43,15 +44,27 @@ def main() -> None:
     parser.add_argument("--seed", type=int, default=7, help="deterministic random seed")
     parser.add_argument("--json", action="store_true", help="emit machine-readable JSON")
     parser.add_argument("--lan", action="store_true", help="run shared Wi-Fi airtime/queue scenarios only")
+    parser.add_argument("--check-acceptance", action="store_true", help="enforce the 60-second seed-7 M0 simulator acceptance suite")
     args = parser.parse_args()
+
+    if args.check_acceptance and (args.lan or args.duration != 60.0 or args.seed != 7):
+        parser.error("--check-acceptance requires the clock suite with --duration 60 --seed 7")
 
     if args.lan:
         results = run_shared_wifi_scenarios(duration_s=args.duration, seed=args.seed)
     else:
         results = run_scenarios(duration_s=args.duration, seed=args.seed)
 
+    acceptance = evaluate_m0_acceptance(results) if args.check_acceptance else None
+
     if args.json:
-        print(json.dumps(results, indent=2, sort_keys=True))
+        payload = results if acceptance is None else {
+            "scenarios": results,
+            "m0_acceptance": acceptance,
+        }
+        print(json.dumps(payload, indent=2, sort_keys=True))
+        if acceptance is not None and not acceptance["passed"]:
+            raise SystemExit(1)
         return
     if args.lan:
         _print_lan_results(results)
@@ -106,6 +119,20 @@ def main() -> None:
                 f"probes {metrics['baseline_probe_count']} -> {metrics['adaptive_probe_count']} "
                 f"(+{metrics['extra_probe_count']})"
             )
+
+    if acceptance is not None:
+        print(
+            f"\nM0 acceptance: {'PASS' if acceptance['passed'] else 'FAIL'} "
+            f"({acceptance['passed_count']}/{acceptance['check_count']} checks)"
+        )
+        for check in acceptance["checks"]:
+            if not check["passed"]:
+                print(
+                    f"  FAIL {check['name']}: observed={check['observed']!r}; "
+                    f"expected {check['expected']}"
+                )
+        if not acceptance["passed"]:
+            raise SystemExit(1)
 
 
 if __name__ == "__main__":

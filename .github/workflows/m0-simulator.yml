@@ -35,6 +35,10 @@ jobs:
         env:
           PYTHONPATH: sim/src
         run: python -m sync_in_it_sim --duration 60 --seed 7
+      - name: Enforce M0 scenario acceptance gates
+        env:
+          PYTHONPATH: sim/src
+        run: python -m sync_in_it_sim --duration 60 --seed 7 --check-acceptance
       - name: Run shared Wi-Fi airtime and queue scenarios
         env:
           PYTHONPATH: sim/src
