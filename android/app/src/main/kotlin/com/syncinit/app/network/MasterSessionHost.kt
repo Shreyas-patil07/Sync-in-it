@@ -74,17 +74,23 @@ class MasterSessionHost(context: Context, private val onStatus: (String) -> Unit
             )
 
             check(!closed.get()) { "host session was stopped while starting" }
-            val deviceLabel = Build.MODEL.trim().take(32).ifBlank { "Android" }
-            val serviceName = "Sync In It - $deviceLabel ${token.toHex().take(4)}"
-            val serviceAdvertiser = LanSessionAdvertiser(appContext, onStatus)
-            serviceAdvertiser.start(serviceName, controlListener.localPort, token.toHex())
 
+            // Publish the fully bound listeners and start the accept loop before advertising
+            // the service. A discovered DNS-SD record must never precede TCP readiness.
+            check(controlListener.isListening) { "control TCP listener did not bind" }
+            check(audioListener.isListening) { "audio TCP listener did not bind" }
             controlServer = controlListener
             audioServer = audioListener
             nativeSession = session
-            advertiser = serviceAdvertiser
             executor.execute(::serve)
-            onStatus("Hosting and advertising on this Wi-Fi network. Waiting for a receiver.")
+
+            val deviceLabel = Build.MODEL.trim().take(32).ifBlank { "Android" }
+            val serviceName = "Sync In It - $deviceLabel ${token.toHex().take(4)}"
+            val serviceAdvertiser = LanSessionAdvertiser(appContext, onStatus)
+            advertiser = serviceAdvertiser
+            serviceAdvertiser.start(serviceName, controlListener.localPort, token.toHex())
+
+            onStatus("TCP listener ready on port ${controlListener.localPort}. Advertising nearby session.")
             return HostInvitation(serviceName, controlListener.localPort)
         } catch (error: Exception) {
             session?.close()
