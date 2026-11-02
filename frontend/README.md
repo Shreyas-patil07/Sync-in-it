@@ -1,6 +1,8 @@
 # Sync In It Frontend
 
-A responsive project information and downloads frontend for Sync In It. Built with React, TypeScript and Vite, using the visual language of the Dex project with Sync In It's cyan/blue/purple identity.
+The public website for Sync In It. The homepage introduces the product through a logo-led hero, benefit-focused sections, a simple explanation of the intended experience, current development status and FAQs. The downloads page clearly states that no public app builds are available yet.
+
+Built with React, TypeScript and Vite. The interface uses a lightweight custom CSS system and the original project logo, with no additional component or animation dependency.
 
 ## Local development
 
@@ -11,8 +13,6 @@ cd frontend
 npm install
 npm run dev
 ```
-
-Open the local URL printed by Vite.
 
 ## Production build
 
@@ -31,17 +31,20 @@ Deploy the `frontend/` directory as the project root in Vercel or another static
 - Output directory: `dist`
 - Install command: `npm install`
 
-The Vercel configuration at `frontend/vercel.json` serves the app entry point for `/downloads` while preserving the requested browser path, allowing the client-side route to render.
+The Vercel rewrite sends client-side routes to the app entry point. Static assets remain served from the public directory.
 
 ## Pages
 
-- `/` — project overview, problem, system flow, architecture, synchronization targets and roadmap.
-- `/downloads` — Android/iOS pre-release status, source repository and GitHub Releases link.
+- `/` — brand-led landing page, product benefits, intended usage flow, project status and FAQ.
+- `/downloads` — current release state, source repository and GitHub Releases.
+- Unknown routes — branded 404 view.
 
-## Release policy
+## Project status
 
-The project is currently in the design/research phase. The download page deliberately does not expose fictitious APK/IPA links. Publish actual binaries as GitHub Releases before linking them from this page.
+M0, the simulator and timing core, is in progress. The Android application and physical device playback prototype have not been implemented. There are no public APK or iOS builds.
 
-## Brand asset
+The site does not claim measured acoustic synchronization results. Engineering targets still require physical device testing.
 
-The frontend references the repository logo at `/images/sync_in_it.png`, copied into the frontend public assets during deployment setup. Keep the image transparent and preserve the original asset.
+## Brand assets
+
+The website uses the original project logo at `/images/sync_in_it.png`. Preserve the original asset and its aspect ratio.
