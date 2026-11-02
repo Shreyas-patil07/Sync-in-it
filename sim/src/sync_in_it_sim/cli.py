@@ -46,7 +46,7 @@ def main() -> None:
         )
 
 
-if comparison is not None:
+    if comparison is not None:
         print("\nAcquisition cadence A/B (same profile, seed and duration):")
         for profile, metrics in comparison["profile_comparisons"].items():
             fixed = metrics["baseline_convergence_time_s"]
