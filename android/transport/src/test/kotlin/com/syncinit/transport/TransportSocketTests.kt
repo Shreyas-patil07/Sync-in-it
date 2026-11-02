@@ -23,6 +23,20 @@ private fun frameWire(type: Int, flags: Int, payload: ByteArray): ByteArray {
     return wire
 }
 
+private fun encodedFrameCodecRoundTrip() {
+    val original = WireFrame(0x02, 0x01, byteArrayOf(0, 1, 2, 0xff.toByte()))
+    val encoded = original.toEncodedBytes()
+    val decoded = WireFrame.fromEncodedBytes(encoded)
+    expect(decoded.messageType == original.messageType, "encoded frame preserves message type")
+    expect(decoded.flags == original.flags, "encoded frame preserves flags")
+    expect(decoded.payload.contentEquals(original.payload), "encoded frame preserves payload")
+
+    var rejected = false
+    try { WireFrame.fromEncodedBytes(encoded.copyOf(encoded.size - 1)) }
+    catch (_: FrameProtocolException) { rejected = true }
+    expect(rejected, "encoded frame rejects a length prefix/body mismatch")
+}
+
 private fun tcpRoundTrip() {
     val loopback = InetAddress.getByName("127.0.0.1")
     TcpFrameServer(loopback, 0, acceptTimeoutMs = 3_000, connectionReadTimeoutMs = 3_000).use { server ->
@@ -204,6 +218,7 @@ private fun udpRejectsMalformedDatagrams() {
 }
 
 fun main() {
+    encodedFrameCodecRoundTrip()
     tcpRoundTrip()
     tcpCoalescedFramesSingleWrite()
     tcpFragmentedRead()
