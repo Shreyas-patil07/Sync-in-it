@@ -64,6 +64,70 @@ def decode_frame(data: bytes) -> Frame:
     return Frame(data[4], data[5], data[6:])
 
 
+
+class FrameStreamDecoder:
+    """Incrementally decode TCP frames while retaining at most one partial frame."""
+
+    def __init__(self, max_frame_size: int = MAX_FRAME_SIZE) -> None:
+        if (isinstance(max_frame_size, bool) or not isinstance(max_frame_size, int)
+                or not 2 <= max_frame_size <= MAX_FRAME_SIZE):
+            raise ProtocolError("max_frame_size must be between 2 and MAX_FRAME_SIZE")
+        self._max_frame_size = max_frame_size
+        self._buffer = bytearray()
+        self._expected_size: int | None = None
+
+    @property
+    def buffered_bytes(self) -> int:
+        """Number of bytes retained from an incomplete frame."""
+        return len(self._buffer)
+
+    def reset(self) -> None:
+        """Discard any incomplete frame and return to the initial state."""
+        self._buffer.clear()
+        self._expected_size = None
+
+    def feed(self, data: bytes | bytearray | memoryview) -> list[Frame]:
+        """Consume an arbitrary TCP byte fragment and return every complete frame."""
+        if not isinstance(data, (bytes, bytearray, memoryview)):
+            raise ProtocolError("stream data must be bytes-like")
+        try:
+            view = memoryview(data).cast("B")
+        except TypeError as exc:
+            raise ProtocolError("stream data must be a contiguous bytes-like object") from exc
+
+        frames: list[Frame] = []
+        offset = 0
+        while offset < len(view):
+            if self._expected_size is None:
+                take = min(4 - len(self._buffer), len(view) - offset)
+                if take:
+                    self._buffer.extend(view[offset:offset + take])
+                    offset += take
+                if len(self._buffer) < 4:
+                    break
+
+                frame_length, = struct.unpack_from("<I", self._buffer)
+                if frame_length < 2:
+                    self.reset()
+                    raise ProtocolError("frame length is smaller than type and flags")
+                if frame_length > self._max_frame_size:
+                    self.reset()
+                    raise ProtocolError("frame exceeds maximum size")
+                self._expected_size = 4 + frame_length
+
+            take = min(self._expected_size - len(self._buffer), len(view) - offset)
+            if take:
+                self._buffer.extend(view[offset:offset + take])
+                offset += take
+
+            if len(self._buffer) == self._expected_size:
+                frames.append(decode_frame(bytes(self._buffer)))
+                self._buffer.clear()
+                self._expected_size = None
+
+        return frames
+
+
 def encode_time_sync_request(packet: TimeSyncPacket) -> bytes:
     if packet.packet_type != 1:
         raise ProtocolError("request packet_type must be 1")
