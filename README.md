@@ -8,7 +8,7 @@
 
 **Project website:** [Sync In It](./website) — project overview and pre-release downloads page.
 
-**Sync In It** is an offline, master-clock-based audio distribution system. One Android phone plays the role of audio source and master clock. Up to 10 other phones, Android or iOS, play the same audio in sync over a private local Wi-Fi network. It is designed for a single train coach (for example a Bandra-Delhi journey), with no internet, no cloud, and no dedicated speakers.
+**Sync In It** is an offline, master-clock-based audio distribution system. One Android phone plays the role of audio source and master clock. Other Android or iOS phones play the same audio in sync over a private local Wi-Fi network. The current product target is 6–10 phones in total; exact receiver capacity remains an open design decision. It is designed for a single train coach (for example a Bandra-Delhi journey), with no internet, no cloud, and no dedicated speakers.
 
 *Sync In It is a working name. Rename it freely.*
 
@@ -16,7 +16,7 @@
 
 ## Status
 
-**Design phase. No code is released yet.** This README describes the planned system. Commands and folders marked *(planned)* do not exist yet. The full design lives in the system design document and is summarized below.
+**Design phase. No application or simulator code is released yet.** The website is informational; the audio synchronization system remains in planning. Commands and folders marked *(planned)* do not exist yet. The current specifications are organized in [`docs/`](docs/), with the original design references preserved in [`docs_original/`](docs_original/).
 
 | Milestone | Description | State |
 |---|---|---|
@@ -155,7 +155,8 @@ Sync In It/
   tools/
     analyze/       # click-track recording analysis (cross-correlation)
     logs/          # telemetry plotting
-  docs/            # system design document, test reports
+  docs/            # primary product and engineering documentation
+  docs_original/   # original source design documents
 ```
 
 The `core/` library is shared by Android and iOS so the timing logic is identical on every platform.
@@ -177,7 +178,7 @@ magic(2) version(1) type(1) session(4) seq(4)
 sampleIndex(8) frames(2) codec(1) payloadLen(2) payload
 ```
 
-Chunks are placed in the jitter buffer by `sampleIndex`, never by arrival order. All fields are little-endian. The protocol is platform-neutral so Android and iOS receivers behave identically on the wire. The full spec will live in `protocol/`.
+Chunks are placed in the jitter buffer by `sampleIndex`, never by arrival order. All fields are little-endian. The protocol is platform-neutral so Android and iOS receivers behave identically on the wire. The normative protocol and data-schema draft is documented in [`docs/06_Protocol_and_Data_Schema.md`](docs/06_Protocol_and_Data_Schema.md); `protocol/` will hold implementation-ready definitions and golden test vectors.
 
 ---
 
@@ -282,7 +283,14 @@ The project is at the design stage. Useful contributions right now: review of th
 
 ## License
 
-To be decided. Note that if code is derived from Snapcast, its license terms apply, so check them before reusing code.
+| Material | License |
+|---|---|
+| Source code (core, apps, simulator, tools, website) | [Apache License 2.0](LICENSE) |
+| Documentation, specifications and reports | [Creative Commons Attribution 4.0](LICENSE-DOCS) |
+| Project name, logo and brand images | All rights reserved |
+| Third-party components | Their own licenses, listed in [THIRD_PARTY_NOTICES.md](THIRD_PARTY_NOTICES.md) |
+
+See [LICENSING.md](LICENSING.md) for the full map, contribution terms and the rules for adding dependencies. Snapcast is an architectural reference only, and no Snapcast code is used in this repository.
 
 ---
 
