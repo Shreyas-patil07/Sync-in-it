@@ -350,7 +350,7 @@ No physical-device synchronization results are recorded in this initial log. Add
 ### 2 November 2026 — M1 bounded incremental TCP stream framer
 
 **Type:** Protocol implementation / bounded stream parsing  
-**Status:** Implemented; CI verification pending  
+**Status:** Implemented; CI passed  
 **Branch:** `feature/m1-bounded-tcp-framer`
 
 **Summary:**
@@ -362,5 +362,7 @@ No physical-device synchronization results are recorded in this initial log. Add
 - Updated the protocol specification, core/simulator READMEs and project README to distinguish the implemented protocol foundation from unimplemented socket/session and physical-device work.
 
 **Limitations:** This component parses TCP byte streams only. It does not open sockets, schedule I/O, enforce session state, authenticate peers, parse audio payload fields, or guarantee bounded memory for the caller's returned collection of complete frames. Callers must use bounded socket-read chunks and bounded downstream queues. No Android or physical-device behavior is claimed.
+
+**Verification:** [GitHub Actions run 41460064640](https://github.com/Shreyas-patil07/Sync-in-it/actions/runs/41460064640) passed on Python 3.11, 3.12 and 3.13. The full Python suite, C++17 configure/build/CTest, deterministic M0 scenarios, M0 acceptance gates and shared-Wi-Fi regression all passed.
 
 **Next action:** Implement the platform-neutral control/time-sync transport adapters with bounded queues, then connect them to the Android session shell. Keep the two-physical-phone time-sync test as the M1 exit gate.
