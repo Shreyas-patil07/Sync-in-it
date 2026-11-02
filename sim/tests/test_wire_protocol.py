@@ -5,7 +5,7 @@ from pathlib import Path
 import unittest
 
 from sync_in_it_sim.wire import (
-    Frame, FrameStreamDecoder, ProtocolError, TimeSyncPacket, decode_frame, decode_time_sync_packet,
+    MAX_FRAME_SIZE, Frame, FrameStreamDecoder, ProtocolError, TimeSyncPacket, decode_frame, decode_time_sync_packet,
     encode_frame, encode_time_sync_request, encode_time_sync_response,
 )
 
