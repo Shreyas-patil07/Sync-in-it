@@ -517,3 +517,26 @@ No physical-device synchronization results are recorded in this initial log. Add
 **Verification:** [Android app/JNI workflow 41492793054](https://github.com/Shreyas-patil07/Sync-in-it/actions/runs/41492793054) passed: Gradle APK assembly, JNI/native C++ builds for arm64-v8a and x86_64, and Kotlin transport checks. [M0 simulator/native core workflow 41492792949](https://github.com/Shreyas-patil07/Sync-in-it/actions/runs/41492792949) passed across Python 3.11, 3.12 and 3.13. The debug APK is available as the Android workflow artifact. No physical multi-device discovery result is claimed until tested on phones.
 
 **Next action:** Install the same discovery-enabled build on two Android phones on the same private Wi-Fi, verify that each host appears in the other's Nearby Sessions list, and tap to join.
+
+
+### 2 November 2026 — Persistent Android preview signing and in-place updates
+
+**Type:** Android distribution / APK signing / versioning  
+**Status:** Implemented; CI validation pending  
+**Branch:** `feature/android-nearby-host-discovery`
+
+**Summary:**
+- Preserved the preview package ID `com.syncinit.app.debug` so all future preview APKs target the existing installed app identity.
+- Added optional persistent JKS signing to the Android Gradle build. When configured, both debug preview and release variants use the same preview certificate.
+- Added a timestamp-based monotonic `versionCode` property, supplied by CI on each build, so newer APKs can be installed over earlier versions.
+- Updated Android CI to build with the stable key when secrets exist and only upload an APK artifact when persistent signing is enabled. Compilation and tests can still run without the key; no misleading updateable artifact is published.
+- Updated the GitHub release workflow to require the persistent signing secrets, verify the APK signature, and publish the next preview as `v0.3.0-preview.1`.
+- Added keystore ignore rules and Windows PowerShell instructions for generating and backing up the key and configuring repository Actions secrets.
+
+**Required repository configuration:** Add `SYNCINIT_PREVIEW_KEYSTORE_BASE64` and `SYNCINIT_PREVIEW_KEYSTORE_PASSWORD` under Settings → Secrets and variables → Actions. The alias is fixed as `syncinit-preview`; the key password reuses the store password.
+
+**Migration limitation:** Earlier APKs were signed by ephemeral GitHub-runner debug keys. Those private keys were not retained, so an already installed disposable-key APK cannot be guaranteed to accept the persistent-key update. Plan one final uninstall/reinstall for the first persistent-key build. All subsequent APKs signed by the same keystore and using the same package ID with a higher versionCode install as updates without uninstalling. Losing the persistent keystore would break that update path.
+
+**Verification:** Pending Android Gradle/NDK and native core CI on the final branch head. Release publication is blocked until the two repository secrets are configured.
+
+**Next action:** Configure the two Actions secrets, rerun Android app/JNI workflow to publish a signed preview artifact, merge PR #23, then install the first persistent-key build once.
