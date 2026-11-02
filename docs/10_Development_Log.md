@@ -493,3 +493,27 @@ No physical-device synchronization results are recorded in this initial log. Add
 **Verification:** [Android app/JNI workflow 41485883288](https://github.com/Shreyas-patil07/Sync-in-it/actions/runs/41485883288) passed on the final timing-schedule commit, including the NDK build for arm64-v8a and x86_64, APK assembly and Kotlin transport checks. [M0 simulator/native core workflow 41485883250](https://github.com/Shreyas-patil07/Sync-in-it/actions/runs/41485883250) passed across Python 3.11, 3.12 and 3.13. [Kotlin socket transport workflow 41484743007](https://github.com/Shreyas-patil07/Sync-in-it/actions/runs/41484743007) passed, including the UDP monotonic receive timestamp tests. The debug APK is uploaded as the Android workflow artifact. The launch-time native TCP/UDP loopback test is packaged in the APK but CI does not execute Android runtime code; it remains to be exercised on a physical device.
 
 **Next action:** Run this build on two physical Android phones on the same Wi-Fi network. Record accepted sample count, RTT p50, offset estimate, skew estimate, residual RMS and selected-sample span before beginning audio-buffer implementation.
+
+
+### 2 November 2026 — Android nearby host discovery
+
+**Type:** Android LAN discovery / host advertising / UI join flow  
+**Status:** Implemented; Android CI validation pending  
+**Branch:** `feature/android-nearby-host-discovery`
+
+**Summary:**
+- Added DNS-SD/mDNS service advertising with Android `NsdManager` using service type `_syncinit._tcp.`.
+- A host now advertises a named Sync In It service with its control TCP port and protocol metadata.
+- Added an Android NSD browser that discovers and resolves nearby host services, validates the application/version metadata, and returns the host IPv4 address, control port and session admission token.
+- Serialized service resolutions to avoid exceeding Android NSD's outstanding-resolution limit when multiple devices are discovered.
+- Added a receiver-side Nearby Sessions list. Tapping a discovered host automatically invokes the existing TCP HELLO/WELCOME/AUDIO_HELLO and UDP time-sync flow. Manual IP/token entry has been removed from the launcher UI.
+- The browser holds a Wi-Fi multicast lock only while scanning and releases it when the activity leaves the foreground. Added `CHANGE_WIFI_MULTICAST_STATE` to the manifest for compatibility with older Android Wi-Fi stacks.
+- Updated the README, Android guide and architecture document.
+
+**Security limitation:** The current one-tap prototype includes the 16-byte session token in the DNS-SD TXT record. Any device browsing the same LAN can read it. It is an admission token, not cryptographic authentication or transport encryption. Use only a trusted private Wi-Fi network. Replace this with host approval or a short-lived pairing exchange before production/public use.
+
+**Network limitation:** Discovery requires all devices to be on the same local network and the access point to permit mDNS/multicast and client-to-client traffic. Guest/client-isolated Wi-Fi networks may block it. The current app targets API 36; targetSdk 37 must implement Android 17 local-network permission or a supported privacy-preserving service-picker path.
+
+**Verification:** Pending Android Gradle/NDK and Kotlin transport CI on this branch. No physical multi-device discovery result is claimed until tested on phones.
+
+**Next action:** Install the same discovery-enabled build on two Android phones on the same private Wi-Fi, verify that each host appears in the other's Nearby Sessions list, and tap to join.
