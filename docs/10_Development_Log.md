@@ -608,6 +608,8 @@ No physical-device synchronization results are recorded in this initial log. Add
 - Added connect duration, timeout, selected local endpoint, remote endpoint, connected state and nested OS exception chain to successful/failed TCP connection diagnostics.
 - Categorized root socket failures including NO_ROUTE_TO_HOST, CONNECTION_REFUSED, CONNECT_TIMEOUT_OR_FILTERED, HOST_RESOLUTION_FAILED, LOCAL_BIND_FAILED and generic socket failures.
 - Added host-side listener bind/readiness, active network snapshot, accepted peer endpoint, HELLO/AUDIO_HELLO and failed admission details.
+- Added UDP socket endpoint reporting and correlated clock-probe diagnostics: local/remote ports, probe duration, response timeout counts, malformed/uncorrelated response counts, and categorized port-unreachable errors.
+- Added host-side UDP peer pinning and counters for malformed datagrams, rejected source IPs/ports and native packet/session validation failures; valid responses record destination, byte count and send duration.
 - Added mDNS service-found, resolve-failed, resolve-success, record rejection and advertisement registration events. Session tokens and Wi-Fi credentials are not written to the diagnostic log.
 - Deliberately did not add a separate TCP probe, because a probe would consume the current one-receiver host's accept slot and interfere with the real join attempt.
 - Exposed TCP local/remote endpoint properties and added transport assertions for successful endpoint reporting plus a deterministic refused-loopback-connect test that checks endpoint/timing/cause retention.
