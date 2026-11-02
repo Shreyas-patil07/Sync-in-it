@@ -16,12 +16,12 @@
 
 ## Status
 
-**M0 remains in progress; M1 protocol integration is underway.** The Python reference simulator uses adaptive clock acquisition: a 20-probe join burst, 500 ms retries until three consecutive estimator updates meet the stability gate, then a 2 s steady-state interval. A portable C++17 timing core and shared Python/C++ golden vectors are also available. The M1 development branch now also contains shared TCP/UDP wire codecs, typed control-message codecs and a bounded incremental TCP frame decoder in Python and C++. The Android application, socket/session transport adapters and physical-device playback prototype are not implemented yet. The project website is informational. The current specifications are organized in [`docs/`](docs/), with original design references preserved in [`docs_original/`](docs_original/).
+**M0 remains in progress; M1 protocol integration is underway.** The Python reference simulator uses adaptive clock acquisition: a 20-probe join burst, 500 ms retries until three consecutive estimator updates meet the stability gate, then a 2 s steady-state interval. A portable C++17 timing core and shared Python/C++ golden vectors are also available. The M1 implementation now includes shared TCP/UDP wire codecs, typed control-message codecs, a bounded incremental TCP frame decoder in Python and C++, and bounded C++ transport primitives for frame queues and time-sync exchange correlation. Native Android/iOS socket adapters and physical-device synchronization are still pending. The Android application, socket/session transport adapters and physical-device playback prototype are not implemented yet. The project website is informational. The current specifications are organized in [`docs/`](docs/), with original design references preserved in [`docs_original/`](docs_original/).
 
 | Milestone | Description | State |
 |---|---|---|
 | M0 | Python simulator for time sync and drift control | In progress |
-| M1 | Time sync between two real phones | Planned |
+| M1 | Time sync between two real phones | In progress |
 | M2 | Scheduled click-track start on 2 receivers | Planned |
 | M3 | Output-timestamp mapping and manual offsets | Planned |
 | M4 | Drift controller, 30-minute run | Planned |

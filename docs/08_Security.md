@@ -62,7 +62,7 @@ Out of scope for the initial prototype:
 
 The current draft sends the session token and audio/control messages over plain TCP/UDP on the local network. WPA2/WPA3 protects the Wi-Fi link against outsiders but does not provide application-level confidentiality or integrity between participating LAN devices.
 
-This is acceptable only as a controlled prototype assumption. Before use on an untrusted or shared network, add authenticated key establishment and encryption/integrity protection for control, audio and time-sync channels. A token alone does not prevent replay or traffic observation.
+This is acceptable only as a controlled prototype assumption. Before use on an untrusted or shared network, add authenticated key establishment and encryption/integrity protection for control, audio and time-sync channels. A token alone does not prevent replay or traffic observation. The current time-sync correlation helper rejects duplicate or unsolicited responses within the live process, but it does not authenticate UDP packets cryptographically or protect against an on-path LAN attacker. Transport authentication and integrity remain release blockers for untrusted networks.
 
 ## 5. Input validation and resource protection
 
@@ -76,6 +76,9 @@ Every network-facing parser must:
 - Handle unknown messages safely according to versioning rules.
 - Apply rate limits to connection attempts, invalid tokens and control messages.
 - Enforce per-receiver and global queue/buffer limits.
+- Bind each UDP time-sync client/responder to the session and receiver identity associated with the authenticated control connection.
+- Bound outstanding time-sync requests and reject unsolicited, duplicate, expired or timestamp-mismatched responses.
+- Use separate bounded control and audio queues; define explicit behavior when either queue is full.
 - Use bounded send queues and disconnect persistently abusive peers.
 - Avoid trusting device model strings or other receiver-supplied metadata.
 

@@ -26,6 +26,14 @@ Do not manually edit generated headers. Add or change a test case in the JSON fi
 
 `syit::FrameStreamDecoder` consumes arbitrary TCP byte fragments and returns complete `Frame` objects. Each instance retains at most one incomplete frame, validates the length prefix before buffering the body, and supports partial headers, partial payloads and multiple frames in one read. Use one decoder per connection on its network thread, pass bounded socket-read chunks, and keep it out of the real-time audio callback.
 
+## Transport primitives
+
+`syit::BoundedFrameQueue` is a non-blocking, thread-safe FIFO with frame-count and byte budgets. A full queue rejects the newest frame; closed queues reject new work but allow queued items to drain. Create distinct queues for control and audio traffic.
+
+`syit::TimeSyncClient` creates bounded outstanding UDP requests and correlates responses by protocol version, session ID, receiver ID, sequence and echoed t1. It rejects duplicate/unsolicited responses, validates timestamp ordering and RTT, and exposes accepted exchanges as `SyncSample`. `syit::TimeSyncResponder` validates connection-bound identity before constructing a response. Keep each client/responder on its owning network/control thread.
+
+These are transport primitives, not socket implementations. Android/Kotlin and iOS/Swift own socket lifecycle and call these components from network threads. They do not add cryptographic packet authentication or encryption.
+
 ## Scope and limitations
 
 This is a portable timing core, not a complete streaming/audio engine. It does not implement sockets, buffering, codec processing, native audio callbacks, DAC timestamp acquisition or acoustic calibration. Passing synthetic parity vectors demonstrates algorithm agreement, not device performance or acoustic synchronization. The drift controller remains the initial bounded frame-slip policy and needs listening tests before production use.
