@@ -59,6 +59,16 @@ ctest --test-dir build/core -C Release --output-on-failure
 
 The build generates its C++ test data from [`protocol/vectors/m0_timing.json`](protocol/vectors/m0_timing.json). The Python test suite loads that same JSON directly. Passing parity tests proves algorithm agreement on the supplied vectors; it does not prove physical-device or acoustic synchronization.
 
+### Build and test the Kotlin/JVM socket transport
+
+Requires JDK 17 and Gradle 8.10.2 or newer.
+
+```bash
+gradle -p android/transport check
+```
+
+This compiles the JVM-compatible TCP/UDP adapter and runs loopback integration tests. It does not build an Android APK.
+
 ---
 
 ## Why this is hard
@@ -176,6 +186,7 @@ Sync In It/
   android/
     master/        # Kotlin app: session, capture, controller
     receiver/      # Kotlin + Oboe receiver
+    transport/     # Pure Kotlin/JVM TCP and UDP socket adapters
   ios/
     receiver/      # Swift + AVAudioEngine receiver
   protocol/        # wire format spec and test vectors
