@@ -8,7 +8,7 @@ on:
       - "core/src/**"
       - ".github/workflows/android-app.yml"
   push:
-    branches: [main, "feature/**"]
+    branches: [main, "feature/**", "fix/**"]
     paths:
       - "android/**"
       - "core/include/syit/**"

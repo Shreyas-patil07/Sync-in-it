@@ -190,13 +190,20 @@ class LanSessionBrowser(
             val token = attributes["token"]?.toString(Charsets.US_ASCII)?.uppercase()
             val host = serviceInfo.host
             val address = (host as? Inet4Address)?.hostAddress
+            val advertisedFingerprint = Regex("([0-9A-Fa-f]{4})(?: \\(\\d+\\))?$")
+                .find(serviceInfo.serviceName)
+                ?.groupValues
+                ?.getOrNull(1)
+                ?.uppercase()
 
             if (appId != APP_ID || version != "1" || token == null ||
                 token.length != MIN_TOKEN_LENGTH ||
                 !token.all { it.digitToIntOrNull(16) != null } ||
+                (advertisedFingerprint != null && !token.startsWith(advertisedFingerprint)) ||
                 address.isNullOrBlank() ||
                 serviceInfo.port !in 1..65_535
             ) {
+                onStatus("Ignored an invalid or stale nearby-host record: ${serviceInfo.serviceName}.")
                 return
             }
 
