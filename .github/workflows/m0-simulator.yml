@@ -1,5 +1,5 @@
 # SPDX-License-Identifier: Apache-2.0
-name: M0 simulator
+name: M0 simulator and native core
 
 on:
   push:
@@ -7,8 +7,8 @@ on:
   workflow_dispatch:
 
 jobs:
-  simulator-tests:
-    name: Python ${{ matrix.python-version }}
+  simulator-and-core:
+    name: Python ${{ matrix.python-version }} + C++17
     runs-on: ubuntu-latest
     strategy:
       fail-fast: false
@@ -21,11 +21,17 @@ jobs:
         uses: actions/setup-python@v5
         with:
           python-version: ${{ matrix.python-version }}
-      - name: Run unit tests
+      - name: Run Python unit and golden-vector tests
         env:
           PYTHONPATH: sim/src
         run: python -m unittest discover -s sim/tests -v
-      - name: Run deterministic scenario suite
+      - name: Configure C++17 timing core
+        run: cmake -S core -B build/core -DCMAKE_BUILD_TYPE=Release
+      - name: Build C++17 timing core
+        run: cmake --build build/core --config Release --parallel 2
+      - name: Run C++ golden-vector parity tests
+        run: ctest --test-dir build/core -C Release --output-on-failure
+      - name: Run deterministic simulator scenarios
         env:
           PYTHONPATH: sim/src
         run: python -m sync_in_it_sim --duration 60 --seed 7
