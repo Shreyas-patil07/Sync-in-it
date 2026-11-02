@@ -11,7 +11,8 @@ import java.net.SocketTimeoutException
 import java.util.concurrent.atomic.AtomicBoolean
 
 /** UDP envelope is fixed at 38 bytes by the protocol v1 time-sync codec. */
-data class ReceivedTimeSyncDatagram(val bytes: ByteArray, val source: InetSocketAddress)
+data class ReceivedTimeSyncDatagram(val bytes: ByteArray, val source: InetSocketAddress, val receivedAtNs: Long)
+data class ReceivedTimeSyncResponse(val bytes: ByteArray, val receivedAtNs: Long)
 
 class UdpTimeSyncClient(
     masterAddress: InetAddress,
@@ -42,15 +43,20 @@ class UdpTimeSyncClient(
     }
 
     @Throws(IOException::class, SocketTimeoutException::class)
-    fun receive(): ByteArray {
+    fun receive(): ByteArray = receiveTimed().bytes
+
+    /** Captures t4 immediately after DatagramSocket.receive returns. */
+    @Throws(IOException::class, SocketTimeoutException::class)
+    fun receiveTimed(): ReceivedTimeSyncResponse {
         check(!closed.get()) { "UDP time-sync client is closed" }
         val buffer = ByteArray(PACKET_SIZE + 1)
         val packet = DatagramPacket(buffer, buffer.size)
         socket.receive(packet)
+        val receivedAtNs = System.nanoTime()
         if (packet.length != PACKET_SIZE) {
             throw FrameProtocolException("time-sync response must be exactly $PACKET_SIZE bytes")
         }
-        return buffer.copyOf(PACKET_SIZE)
+        return ReceivedTimeSyncResponse(buffer.copyOf(PACKET_SIZE), receivedAtNs)
     }
 
     override fun close() {
@@ -85,11 +91,12 @@ class UdpTimeSyncServer(
         val buffer = ByteArray(UdpTimeSyncClient.PACKET_SIZE + 1)
         val packet = DatagramPacket(buffer, buffer.size)
         socket.receive(packet)
+        val receivedAtNs = System.nanoTime()
         if (packet.length != UdpTimeSyncClient.PACKET_SIZE) {
             throw FrameProtocolException("time-sync datagram must be exactly ${UdpTimeSyncClient.PACKET_SIZE} bytes")
         }
         val source = InetSocketAddress(packet.address, packet.port)
-        return ReceivedTimeSyncDatagram(buffer.copyOf(UdpTimeSyncClient.PACKET_SIZE), source)
+        return ReceivedTimeSyncDatagram(buffer.copyOf(UdpTimeSyncClient.PACKET_SIZE), source, receivedAtNs)
     }
 
     @Throws(IOException::class)
