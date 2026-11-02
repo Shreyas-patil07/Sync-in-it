@@ -14,7 +14,7 @@ ctest --test-dir build/core -C Release --output-on-failure
 
 ## Shared parity vectors
 
-`protocol/vectors/m0_timing.json` is the single source of truth for the M0 offset formula, lowest-RTT estimator, timeline rounding, DAC clock mapping and drift-controller decisions.
+`protocol/vectors/m0_timing.json` is the single source of truth for the M0 offset formula, lowest-RTT estimator and selected sample-span diagnostic, timeline rounding, DAC clock mapping and drift-controller decisions.
 
 - Python tests load the JSON file directly.
 - The CMake build runs `tools/generate_cpp_vectors.py` to generate a C++ header from the same JSON file.

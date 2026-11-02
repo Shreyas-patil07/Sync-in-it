@@ -16,7 +16,7 @@
 
 ## Status
 
-**M0 is in progress.** The Python reference simulator and a portable C++17 timing core are available. Both consume the same versioned timing vectors for offset estimation, timeline mapping, DAC clock mapping and drift-controller parity. The Android application and physical-device playback prototype are not implemented yet. The project website is informational. The current specifications are organized in [`docs/`](docs/), with original design references preserved in [`docs_original/`](docs_original/).
+**M0 is in progress.** The Python reference simulator uses adaptive clock acquisition: a 20-probe join burst, 500 ms retries until three consecutive estimator updates meet the stability gate, then a 2 s steady-state interval. A portable C++17 timing core and shared Python/C++ golden vectors are also available. The Android application and physical-device playback prototype are not implemented yet. The project website is informational. The current specifications are organized in [`docs/`](docs/), with original design references preserved in [`docs_original/`](docs_original/).
 
 | Milestone | Description | State |
 |---|---|---|
@@ -42,7 +42,7 @@ python -m unittest discover -s tests -v
 sync-in-it-sim --duration 60 --seed 7
 ```
 
-M0 outputs are simulated, not measurements from Android devices. The +30 ppm reference scenario is tested against the provisional 1 ms estimator and modeled playout-error gate. See [`sim/README.md`](sim/README.md) for metric definitions and limitations.
+M0 outputs are simulated, not measurements from Android devices. The default scenario run reports fixed-versus-adaptive acquisition comparisons for +30 ppm drift, high jitter and random packet loss. See [`sim/README.md`](sim/README.md) for gate definitions, probe overhead and limitations.
 
 ### Build and test the portable C++17 timing core
 

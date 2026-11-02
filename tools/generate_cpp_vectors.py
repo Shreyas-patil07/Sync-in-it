@@ -37,7 +37,7 @@ def generate(data: dict) -> str:
         "#include <vector>",
         "namespace golden {",
         "struct FourTimestampCase { const char* name; syit::SyncSample sample; std::int64_t expected_rtt_ns; std::int64_t expected_offset_ns; };",
-        "struct EstimatorCase { const char* name; std::vector<syit::SyncSample> samples; std::int64_t now_true_ns; std::int64_t receiver_now_ns; syit::EstimatorConfig config; double expected_offset_ns; bool has_expected_skew; double expected_skew_ppm; double expected_rtt_p50_ms; double expected_residual_rms_ms; std::size_t expected_samples_used; std::size_t expected_samples_seen; };",
+        "struct EstimatorCase { const char* name; std::vector<syit::SyncSample> samples; std::int64_t now_true_ns; std::int64_t receiver_now_ns; syit::EstimatorConfig config; double expected_offset_ns; bool has_expected_skew; double expected_skew_ppm; double expected_rtt_p50_ms; double expected_residual_rms_ms; std::size_t expected_samples_used; std::size_t expected_samples_seen; std::int64_t expected_selected_sample_span_ns; };",
         "struct TimelineCase { const char* name; std::int64_t master_time_ns; syit::TimelineAnchor anchor; std::int64_t sample_rate_hz; std::int64_t expected_sample_index; };",
         "struct DacClockCase { const char* name; std::int64_t sample_rate_hz; double rate_error_ppm; std::int64_t frame_origin; std::int64_t time_origin_ns; std::int64_t local_time_ns; std::int64_t expected_frame_position; std::int64_t frame_position; std::int64_t expected_local_time_ns; };",
         "struct DriftCase { std::int64_t error_frames; syit::DriftAction expected_action; std::int64_t expected_error_frames; };",
@@ -83,6 +83,7 @@ def generate(data: dict) -> str:
             cpp_double(expected["residual_rms_ms"]),
             str(expected["samples_used"]),
             str(expected["samples_seen"]),
+            str(expected["selected_sample_span_ns"]),
         ]
         lines.append("{" + ", ".join(values) + "},")
     lines.append("};")

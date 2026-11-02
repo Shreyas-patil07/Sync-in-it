@@ -156,6 +156,13 @@ EstimatorResult estimate_clock_offset(
         skew = -slope * 1'000'000.0;
     }
 
+    const auto [minimum_midpoint, maximum_midpoint] = std::minmax_element(
+        recent.begin(), recent.end(), [](const auto& left, const auto& right) {
+            return left.midpoint_ns < right.midpoint_ns;
+        });
+    const auto selected_sample_span_ns = checked_subtract(
+        maximum_midpoint->midpoint_ns, minimum_midpoint->midpoint_ns);
+
     return {
         offset_now,
         skew,
@@ -163,6 +170,7 @@ EstimatorResult estimate_clock_offset(
         std::sqrt(residual_sum_squares / static_cast<double>(recent.size())) / 1'000'000.0,
         recent.size(),
         samples_seen,
+        selected_sample_span_ns,
     };
 }
 

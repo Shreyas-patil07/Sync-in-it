@@ -250,7 +250,7 @@ Store explicit units in field names. Never mix nanoseconds and microseconds in t
 
 The shared M0 reference vectors are stored in `protocol/vectors/m0_timing.json`. They are consumed directly by the Python tests and converted to a generated C++ header by the CMake build. They cover:
 - Four-timestamp RTT and offset, including negative-floor behavior.
-- Lowest-RTT offset/skew regression, invalid/expired/future sample filtering and insufficient skew samples.
+- Lowest-RTT offset/skew regression, invalid/expired/future sample filtering, insufficient skew samples and selected-fit sample span.
 - Timeline mapping, paused anchors and ties-to-even rounding.
 - DAC frame/time conversion with positive and negative ppm drift.
 - Drift-controller dead-band, one-frame slip and hard-resync thresholds.

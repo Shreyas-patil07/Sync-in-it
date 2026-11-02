@@ -37,6 +37,7 @@ struct EstimatorResult {
     double residual_rms_ms{};
     std::size_t samples_used{};
     std::size_t samples_seen{};
+    Nanoseconds selected_sample_span_ns{};
 };
 
 enum class DriftAction {

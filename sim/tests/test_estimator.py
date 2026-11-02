@@ -43,7 +43,9 @@ class EstimatorTests(unittest.TestCase):
             duration_s=60,
             join_at_s=30,
         ).run()
-        self.assertEqual(result["samples_sent"], 35)
+        self.assertEqual(result["join_burst_probe_count"], 20)
+        self.assertGreater(result["fast_retry_probe_count"], 0)
+        self.assertGreater(result["samples_sent"], 35)
         self.assertLess(abs(result["offset_error_ms"]), 1.0)
 
     def test_estimator_rejects_empty_samples(self):
@@ -98,6 +100,46 @@ class EstimatorTests(unittest.TestCase):
         self.assertEqual(first, second)
         self.assertGreater(first["samples_lost"], 0)
 
+    def test_adaptive_acquisition_reaches_stability_faster_than_fixed_cadence(self):
+        kwargs = {
+            "receiver_clock": ClockModel(rate_error_ppm=30),
+            "network_profile": NetworkProfile(),
+            "seed": 8,
+            "duration_s": 60,
+        }
+        adaptive = ReceiverSimulation(**kwargs, adaptive_probe_schedule=True).run()
+        fixed = ReceiverSimulation(**kwargs, adaptive_probe_schedule=False).run()
+
+        self.assertTrue(adaptive["acquisition_stable_at_end"])
+        self.assertLess(adaptive["fit_residual_rms_ms"], 0.25)
+        self.assertLess(adaptive["convergence_time_s"], fixed["convergence_time_s"])
+        self.assertGreater(adaptive["fast_retry_probe_count"], 0)
+        self.assertGreater(adaptive["slow_probe_count"], 0)
+        self.assertGreater(adaptive["samples_sent"], fixed["samples_sent"])
+
+    def test_adaptive_acquisition_is_deterministic(self):
+        kwargs = {
+            "receiver_clock": ClockModel(rate_error_ppm=-40),
+            "network_profile": NetworkProfile(jitter_std_ms=0.8),
+            "seed": 29,
+            "duration_s": 45,
+        }
+        first = ReceiverSimulation(**kwargs).run()
+        second = ReceiverSimulation(**kwargs).run()
+        self.assertEqual(first, second)
+
+    def test_fixed_and_adaptive_schedules_share_network_events_at_common_times(self):
+        kwargs = {
+            "receiver_clock": ClockModel(rate_error_ppm=30),
+            "network_profile": NetworkProfile(jitter_std_ms=1.5, loss_probability=0.1),
+            "seed": 101,
+            "duration_s": 60,
+        }
+        adaptive = ReceiverSimulation(**kwargs, adaptive_probe_schedule=True)
+        fixed = ReceiverSimulation(**kwargs, adaptive_probe_schedule=False)
+        self.assertEqual(adaptive._probe(3_000_000_000), fixed._probe(3_000_000_000))
+
 
 if __name__ == "__main__":
+
     unittest.main()

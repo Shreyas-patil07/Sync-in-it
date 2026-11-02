@@ -61,6 +61,7 @@ class GoldenVectorTests(unittest.TestCase):
                 self.assertAlmostEqual(result.residual_rms_ms, expected["residual_rms_ms"], delta=1e-9)
                 self.assertEqual(result.samples_used, expected["samples_used"])
                 self.assertEqual(result.samples_seen, expected["samples_seen"])
+                self.assertEqual(result.selected_sample_span_ns, expected["selected_sample_span_ns"])
 
     def test_timeline_vectors(self):
         for item in self.vectors["timeline_cases"]:
