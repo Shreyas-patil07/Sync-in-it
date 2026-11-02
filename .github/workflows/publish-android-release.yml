@@ -46,8 +46,9 @@ jobs:
       - name: Require persistent preview signing key
         env:
           PREVIEW_KEYSTORE_BASE64: ${{ secrets.SYNCINIT_PREVIEW_KEYSTORE_BASE64 }}
+          PREVIEW_KEYSTORE_PASSWORD: ${{ secrets.SYNCINIT_PREVIEW_KEYSTORE_PASSWORD }}
         run: |
-          if [ -z "$PREVIEW_KEYSTORE_BASE64" ] || [ -z "${{ secrets.SYNCINIT_PREVIEW_KEYSTORE_PASSWORD }}" ]; then
+          if [ -z "$PREVIEW_KEYSTORE_BASE64" ] || [ -z "$PREVIEW_KEYSTORE_PASSWORD" ]; then
             echo "::error::Configure SYNCINIT_PREVIEW_KEYSTORE_BASE64 and SYNCINIT_PREVIEW_KEYSTORE_PASSWORD before publishing an updateable APK."
             exit 1
           fi
