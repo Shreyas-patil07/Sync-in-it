@@ -69,8 +69,8 @@ class ReceiverSessionClient(
                     NativeProtocol.decodeWelcomeFrame(welcomeFrame)
                 }
                 onStatus(
-                    "[DIAG $attemptId] WELCOME_ACCEPTED sessionId=\${welcome.sessionId} " +
-                        "receiverId=\${welcome.receiverId} audioPort=\${welcome.audioPort} timePort=\${welcome.timePort}"
+                    "[DIAG $attemptId] WELCOME_ACCEPTED sessionId=${welcome.sessionId} " +
+                        "receiverId=${welcome.receiverId} audioPort=${welcome.audioPort} timePort=${welcome.timePort}"
                 )
 
                 onStatus("Master accepted HELLO. Opening audio channel…")
@@ -88,8 +88,8 @@ class ReceiverSessionClient(
                         onStatus = onStatus,
                         onFailure = { error ->
                             if (!closed.get()) {
-                                onStatus("[DIAG $attemptId] AUDIO_PIPELINE_FAILURE \${NetworkDiagnostics.exceptionDetails(error)}")
-                                onStatus("Audio receiver failed: \${error.message ?: error.javaClass.simpleName}")
+                                onStatus("[DIAG $attemptId] AUDIO_PIPELINE_FAILURE ${NetworkDiagnostics.exceptionDetails(error)}")
+                                onStatus("Audio receiver failed: ${error.message ?: error.javaClass.simpleName}")
                                 close()
                             }
                         }
@@ -98,7 +98,7 @@ class ReceiverSessionClient(
                 audioPipeline = pipeline
                 diagnosticStage(attemptId, "AUDIO_PIPELINE_START") { pipeline.start() }
 
-                onStatus("[DIAG $attemptId] JOIN_TRANSPORT_READY control=\${control.localEndpoint}->\${control.remoteEndpoint} audio=\${audio.localEndpoint}->\${audio.remoteEndpoint}")
+                onStatus("[DIAG $attemptId] JOIN_TRANSPORT_READY control=${control.localEndpoint}->${control.remoteEndpoint} audio=${audio.localEndpoint}->${audio.remoteEndpoint}")
                 onStatus("Control and audio channels established. Receiving PCM16 while acquiring the master clock…")
                 runClockSync(
                     control,
@@ -110,9 +110,9 @@ class ReceiverSessionClient(
                 )
             } catch (error: Exception) {
                 if (!closed.get()) {
-                    onStatus("[DIAG $attemptId] JOIN_FAILED \${NetworkDiagnostics.exceptionDetails(error)}")
-                    onStatus("[DIAG $attemptId] NETWORK_AT_FAILURE\n\${NetworkDiagnostics.networkSnapshot(context, host)}")
-                    onStatus("Join failed: \${error.message ?: error.javaClass.simpleName}")
+                    onStatus("[DIAG $attemptId] JOIN_FAILED ${NetworkDiagnostics.exceptionDetails(error)}")
+                    onStatus("[DIAG $attemptId] NETWORK_AT_FAILURE\n${NetworkDiagnostics.networkSnapshot(context, host)}")
+                    onStatus("Join failed: ${error.message ?: error.javaClass.simpleName}")
                 }
             } finally {
                 closeResources()
@@ -128,7 +128,7 @@ class ReceiverSessionClient(
         readTimeoutMs: Int
     ): TcpFrameConnection {
         val startedAt = SystemClock.elapsedRealtime()
-        onStatus("[DIAG $attemptId] TCP_\${channel}_CONNECT_BEGIN remote=$host:$port connectTimeoutMs=$CONNECT_TIMEOUT_MS readTimeoutMs=$readTimeoutMs")
+        onStatus("[DIAG $attemptId] TCP_${channel}_CONNECT_BEGIN remote=$host:$port connectTimeoutMs=$CONNECT_TIMEOUT_MS readTimeoutMs=$readTimeoutMs")
         return try {
             val connection = TcpFrameConnection.connect(
                 host = host,
@@ -137,20 +137,20 @@ class ReceiverSessionClient(
                 readTimeoutMs = readTimeoutMs
             )
             onStatus(
-                "[DIAG $attemptId] TCP_\${channel}_CONNECT_OK " +
-                    "local=\${connection.localEndpoint} remote=\${connection.remoteEndpoint} " +
-                    "connected=\${connection.isConnected} elapsedMs=\${SystemClock.elapsedRealtime() - startedAt}"
+                "[DIAG $attemptId] TCP_${channel}_CONNECT_OK " +
+                    "local=${connection.localEndpoint} remote=${connection.remoteEndpoint} " +
+                    "connected=${connection.isConnected} elapsedMs=${SystemClock.elapsedRealtime() - startedAt}"
             )
             connection
         } catch (error: Exception) {
             onStatus(
-                "[DIAG $attemptId] TCP_\${channel}_CONNECT_FAIL remote=$host:$port " +
-                    "elapsedMs=\${SystemClock.elapsedRealtime() - startedAt} " +
+                "[DIAG $attemptId] TCP_${channel}_CONNECT_FAIL remote=$host:$port " +
+                    "elapsedMs=${SystemClock.elapsedRealtime() - startedAt} " +
                     NetworkDiagnostics.exceptionDetails(error)
             )
             onStatus(NetworkDiagnostics.networkSnapshot(context, host))
             throw IOException(
-                "$channel TCP connection to $host:$port failed (\${NetworkDiagnostics.exceptionDetails(error)})",
+                "$channel TCP connection to $host:$port failed (${NetworkDiagnostics.exceptionDetails(error)})",
                 error
             )
         }
@@ -161,12 +161,12 @@ class ReceiverSessionClient(
         onStatus("[DIAG $attemptId] STAGE_$stage BEGIN")
         return try {
             action().also {
-                onStatus("[DIAG $attemptId] STAGE_$stage OK elapsedMs=\${SystemClock.elapsedRealtime() - startedAt}")
+                onStatus("[DIAG $attemptId] STAGE_$stage OK elapsedMs=${SystemClock.elapsedRealtime() - startedAt}")
             }
         } catch (error: Exception) {
             onStatus(
                 "[DIAG $attemptId] STAGE_$stage FAIL " +
-                    "elapsedMs=\${SystemClock.elapsedRealtime() - startedAt} " +
+                    "elapsedMs=${SystemClock.elapsedRealtime() - startedAt} " +
                     NetworkDiagnostics.exceptionDetails(error)
             )
             throw error
