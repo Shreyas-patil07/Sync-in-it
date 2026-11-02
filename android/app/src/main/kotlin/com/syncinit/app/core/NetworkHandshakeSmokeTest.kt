@@ -2,7 +2,6 @@ package com.syncinit.app.core
 
 import com.syncinit.transport.TcpFrameConnection
 import com.syncinit.transport.TcpFrameServer
-import com.syncinit.transport.WireFrame
 import java.net.InetAddress
 import java.util.concurrent.ArrayBlockingQueue
 import java.util.concurrent.TimeUnit
