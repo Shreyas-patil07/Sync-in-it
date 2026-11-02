@@ -10,6 +10,7 @@ import com.syncinit.transport.UdpTimeSyncServer
 import java.io.Closeable
 import java.net.Inet4Address
 import java.net.InetAddress
+import java.net.InetSocketAddress
 import java.net.NetworkInterface
 import java.net.SocketException
 import java.net.SocketTimeoutException
@@ -106,6 +107,9 @@ class MasterSessionHost(private val onStatus: (String) -> Unit) : Closeable {
 
             val audio = checkNotNull(audioServer).accept()
             audioConnection = audio
+            check(audio.remoteAddress == control.remoteAddress) {
+                "audio TCP peer does not match the admitted control peer"
+            }
             val audioHello = audio.readFrame() ?: error("receiver closed before AUDIO_HELLO")
             check(audioHello.messageType == 0x03 && audioHello.flags == 0) {
                 "first audio-channel frame must be AUDIO_HELLO"
@@ -137,6 +141,7 @@ class MasterSessionHost(private val onStatus: (String) -> Unit) : Closeable {
             start()
         }
         var responseCount = 0
+        var admittedUdpPeer: InetSocketAddress? = null
         try {
             while (!closed.get()) {
                 val datagram = try {
@@ -150,13 +155,16 @@ class MasterSessionHost(private val onStatus: (String) -> Unit) : Closeable {
                     throw error
                 }
 
-                // The UDP peer must be the same IP that completed the TCP admission.
+                // The UDP peer must match the admitted TCP peer, including its client port.
                 if (datagram.source.address != control.remoteAddress) continue
+                val pinnedPeer = admittedUdpPeer
+                if (pinnedPeer != null && datagram.source != pinnedPeer) continue
 
                 val t3Ns = System.nanoTime()
                 val response = nativeSession?.timeSyncResponse(
                     datagram.bytes, datagram.receivedAtNs, t3Ns
                 ) ?: continue
+                if (admittedUdpPeer == null) admittedUdpPeer = datagram.source
                 server.sendTo(response, datagram.source)
 
                 responseCount += 1
