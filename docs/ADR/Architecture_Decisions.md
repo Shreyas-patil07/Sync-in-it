@@ -130,9 +130,10 @@ A decision is not validated merely because it is recorded. Changes to an accepte
 
 ## ADR-017 — Project license and third-party reuse
 
-**Status:** Open  
-**Context:** The original design references Snapcast as an architectural reference. Architectural inspiration does not mean code can be copied without license review.  
-**Decision required:** Select the repository license after checking dependencies and any copied or derived code. Review third-party licenses before importing source.
+**Status:** Accepted (owner may amend by a new ADR)  
+**Decision:** Source code, test vectors and website source are licensed under Apache-2.0. Documentation, specifications and measurement reports are licensed under CC BY 4.0. The project name, logo and brand images are not licensed under either and remain all rights reserved. Third-party components keep their own licenses and are listed in `THIRD_PARTY_NOTICES.md`. Rules for adding dependencies are in `LICENSING.md`.  
+**Rationale:** Apache-2.0 is permissive, includes a patent grant, and is compatible with the planned dependencies (Oboe, Opus, GoogleTest or Catch2, ZXing). CC BY 4.0 is the usual choice for reusable documentation. Snapcast is GPL-licensed and is used as an architectural reference only, so no GPL code enters the repository.  
+**Consequences:** No GPL or AGPL code may be copied or linked. New dependencies need a license check and a row in `THIRD_PARTY_NOTICES.md` in the same change. Binary releases must display required third-party notices. The copyright line in `NOTICE` should be reviewed by the owner. This record is not legal advice.
 
 ## 2. Decision review checklist
 
