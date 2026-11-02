@@ -85,7 +85,7 @@ class MainActivity : Activity() {
         content.addView(actionButton("Stop / disconnect") { stopConnections() })
 
         content.addView(TextView(this).apply {
-            text = "This build validates HELLO → WELCOME → AUDIO_HELLO over two TCP connections. UDP clock synchronization, READY/START, audio streaming and playback are not enabled yet."
+            text = "This build validates HELLO → WELCOME → AUDIO_HELLO over separate TCP channels and runs UDP clock acquisition using the shared C++ estimator. READY remains blocked until an audio buffer exists; streaming and playback are not enabled yet."
             textSize = 12f
             setPadding(0, 24, 0, 0)
         })
