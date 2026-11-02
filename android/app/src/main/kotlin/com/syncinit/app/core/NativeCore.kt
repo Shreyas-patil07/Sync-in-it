@@ -8,6 +8,12 @@ object NativeCore {
 
     external fun nativeCoreVersion(): Int
 
+    external fun nativeEncodeHelloFrame(token: ByteArray, platform: Int): ByteArray?
+    external fun nativeDecodeWelcomeFrame(encodedFrame: ByteArray): LongArray?
+    external fun nativeEncodeAudioHelloFrame(sessionId: Long, receiverId: Int): ByteArray?
+    external fun nativeOnHelloFrame(handle: Long, encodedFrame: ByteArray): Int
+    external fun nativeOnAudioHelloFrame(handle: Long, encodedFrame: ByteArray): Int
+
     external fun nativeCreateSession(
         sessionId: Long,
         receiverId: Int,
