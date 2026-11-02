@@ -2,6 +2,7 @@
 from __future__ import annotations
 
 from dataclasses import dataclass
+import math
 
 
 @dataclass(frozen=True, slots=True)
@@ -10,6 +11,10 @@ class ClockModel:
 
     offset_ns: int = 0
     rate_error_ppm: float = 0.0
+
+    def __post_init__(self) -> None:
+        if not math.isfinite(self.rate_error_ppm) or self.rate_error_ppm <= -1_000_000:
+            raise ValueError("rate_error_ppm must be finite and greater than -1,000,000")
 
     def read_ns(self, true_time_ns: int) -> int:
         rate = 1.0 + self.rate_error_ppm / 1_000_000.0
@@ -24,7 +29,23 @@ class NetworkProfile:
     spike_probability: float = 0.0
     spike_extra_ms: float = 20.0
     loss_probability: float = 0.0
+    burst_loss_probability: float = 0.0
+    burst_loss_min_packets: int = 2
+    burst_loss_max_packets: int = 5
     processing_ms: float = 0.2
+
+    def __post_init__(self) -> None:
+        for name in ("forward_mean_ms", "reverse_mean_ms", "jitter_std_ms", "spike_extra_ms", "processing_ms"):
+            value = getattr(self, name)
+            if not math.isfinite(value) or value < 0:
+                raise ValueError(f"{name} must be finite and non-negative")
+        for name in ("spike_probability", "loss_probability", "burst_loss_probability"):
+            if not 0.0 <= getattr(self, name) <= 1.0:
+                raise ValueError(f"{name} must be between 0 and 1")
+        if self.burst_loss_min_packets < 1:
+            raise ValueError("burst_loss_min_packets must be at least 1")
+        if self.burst_loss_max_packets < self.burst_loss_min_packets:
+            raise ValueError("burst_loss_max_packets must be >= burst_loss_min_packets")
 
 
 @dataclass(frozen=True, slots=True)

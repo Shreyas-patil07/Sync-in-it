@@ -4,6 +4,7 @@ import unittest
 from sync_in_it_sim.estimator import ClockOffsetEstimator
 from sync_in_it_sim.models import ClockModel, NetworkProfile, SyncSample
 from sync_in_it_sim.simulator import ReceiverSimulation
+from sync_in_it_sim.scenarios import run_scenarios
 
 
 class EstimatorTests(unittest.TestCase):
@@ -48,6 +49,54 @@ class EstimatorTests(unittest.TestCase):
     def test_estimator_rejects_empty_samples(self):
         with self.assertRaises(ValueError):
             ClockOffsetEstimator().estimate([], now_true_ns=0)
+
+    def test_fast_clock_reports_convergence_and_playout_metrics(self):
+        result = ReceiverSimulation(
+            receiver_clock=ClockModel(offset_ns=3_000_000, rate_error_ppm=30),
+            network_profile=NetworkProfile(jitter_std_ms=0.05),
+            duration_s=60,
+            dac_clock_rate_error_ppm=35,
+        ).run()
+        self.assertTrue(result["estimator_converged"])
+        self.assertIsNotNone(result["convergence_time_s"])
+        self.assertGreater(result["slip_count"], 0)
+        self.assertGreater(result["slips_per_minute"], 0)
+        self.assertLess(abs(result["offset_error_ms"]), 1.0)
+        self.assertLess(result["playout_error_p95_ms"], 1.0)
+        self.assertLess(result["playout_error_max_ms"], 1.0)
+        self.assertIsInstance(result["hard_resync_count"], int)
+
+    def test_documented_fast_clock_scenario_meets_one_ms_simulator_gate(self):
+        result = run_scenarios(seed=7)["fast_clock_30ppm"]
+        self.assertTrue(result["estimator_converged"])
+        self.assertLess(abs(result["offset_error_ms"]), 1.0)
+        self.assertLess(result["playout_error_p95_ms"], 1.0)
+        self.assertLess(result["playout_error_max_ms"], 1.0)
+
+    def test_severe_asymmetry_exercises_hard_resync_metric(self):
+        result = ReceiverSimulation(
+            receiver_clock=ClockModel(offset_ns=2_000_000, rate_error_ppm=10),
+            network_profile=NetworkProfile(forward_mean_ms=1.0, reverse_mean_ms=15.0, jitter_std_ms=0.2),
+            duration_s=60,
+        ).run()
+        self.assertGreater(abs(result["offset_error_ms"]), 5.0)
+        self.assertGreater(result["hard_resync_count"], 0)
+
+    def test_combined_scenario_is_deterministic(self):
+        first = ReceiverSimulation(
+            receiver_clock=ClockModel(rate_error_ppm=-25),
+            network_profile=NetworkProfile(burst_loss_probability=0.08, burst_loss_min_packets=3, burst_loss_max_packets=6),
+            seed=71,
+            duration_s=60,
+        ).run()
+        second = ReceiverSimulation(
+            receiver_clock=ClockModel(rate_error_ppm=-25),
+            network_profile=NetworkProfile(burst_loss_probability=0.08, burst_loss_min_packets=3, burst_loss_max_packets=6),
+            seed=71,
+            duration_s=60,
+        ).run()
+        self.assertEqual(first, second)
+        self.assertGreater(first["samples_lost"], 0)
 
 
 if __name__ == "__main__":

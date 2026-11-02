@@ -16,7 +16,7 @@
 
 ## Status
 
-**M0 is in progress.** A dependency-free Python reference simulator is available in [`sim/`](sim/). The Android application and physical-device playback prototype are not implemented yet. The project website is informational. The current specifications are organized in [`docs/`](docs/), with original design references preserved in [`docs_original/`](docs_original/).
+**M0 is in progress.** A dependency-free Python reference simulator is available in [`sim/`](sim/). It now covers burst loss and reports estimator convergence, frame-slip rate, hard resyncs, and modeled playout-error percentiles. The Android application and physical-device playback prototype are not implemented yet. The project website is informational. The current specifications are organized in [`docs/`](docs/), with original design references preserved in [`docs_original/`](docs_original/).
 
 | Milestone | Description | State |
 |---|---|---|
@@ -42,7 +42,7 @@ python -m unittest discover -s tests -v
 sync-in-it-sim --duration 60 --seed 7
 ```
 
-M0 outputs are simulated, not measurements from Android devices. See [`sim/README.md`](sim/README.md) for scope and limitations.
+M0 outputs are simulated, not measurements from Android devices. The +30 ppm reference scenario is tested against the provisional 1 ms estimator and modeled playout-error gate. See [`sim/README.md`](sim/README.md) for metric definitions and limitations.
 
 ---
 
