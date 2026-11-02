@@ -239,7 +239,7 @@ No physical-device synchronization results are recorded in this initial log. Add
 
 **Type:** Simulator / Drift-control experiment / CI verification  
 **Status:** In progress  
-**Branch:** \`feature/m0-resampler-comparison\`  
+**Branch:** `feature/m0-resampler-comparison`  
 **PR:** https://github.com/Shreyas-patil07/Sync-in-it/pull/7
 
 **Summary:**
@@ -275,12 +275,12 @@ No physical-device synchronization results are recorded in this initial log. Add
 
 **Type:** Simulator / Acceptance criteria / CI verification  
 **Status:** Implemented; awaiting PR review  
-**Branch:** \`feature/m0-scenario-acceptance-gates\`  
+**Branch:** `feature/m0-scenario-acceptance-gates`  
 **PR:** https://github.com/Shreyas-patil07/Sync-in-it/pull/10
 
 **Summary:**
-- Added \`sim/src/sync_in_it_sim/acceptance.py\` to evaluate the deterministic 60-second, seed-7 M0 scenario suite.
-- Added CLI \`--check-acceptance\`; it is restricted to the reference 60-second/seed-7 run and exits non-zero when a required criterion fails.
+- Added `sim/src/sync_in_it_sim/acceptance.py` to evaluate the deterministic 60-second, seed-7 M0 scenario suite.
+- Added CLI `--check-acceptance`; it is restricted to the reference 60-second/seed-7 run and exits non-zero when a required criterion fails.
 - Added a CI step that enforces the acceptance suite on every Python matrix job.
 - Split estimator accuracy from operational readiness. Three clean baseline scenarios must meet the strict operational fit gate. High-jitter, loss, burst-loss, RTT-spike, combined-impairment, moderate-asymmetry and late-join cases must remain not-ready when the strict residual condition is not met.
 - Added explicit degraded-path checks: moderate asymmetry must not be reported as ground-truth convergence; severe asymmetry must expose >5 ms bias and trigger a hard resync.
@@ -351,10 +351,10 @@ No physical-device synchronization results are recorded in this initial log. Add
 
 **Type:** Protocol implementation / bounded stream parsing  
 **Status:** Implemented; CI verification pending  
-**Branch:** \`feature/m1-bounded-tcp-framer\`
+**Branch:** `feature/m1-bounded-tcp-framer`
 
 **Summary:**
-- Added a Python \`FrameStreamDecoder\` and portable C++17 \`FrameStreamDecoder\` for arbitrary TCP byte fragments.
+- Added a Python `FrameStreamDecoder` and portable C++17 `FrameStreamDecoder` for arbitrary TCP byte fragments.
 - Handle split length prefixes, split payloads, byte-at-a-time input, multiple frames in one read, and aggregate reads larger than the per-frame limit.
 - Validate the four-byte length prefix immediately when complete; reject lengths below the fixed type/flags header or above 65,536 bytes.
 - Retain at most one incomplete frame per connection (maximum 65,540 bytes including the prefix); clear parser state on malformed lengths.
