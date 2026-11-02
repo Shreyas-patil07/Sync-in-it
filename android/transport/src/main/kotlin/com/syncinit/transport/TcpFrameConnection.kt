@@ -65,7 +65,13 @@ class TcpFrameConnection internal constructor(
     private val closed = AtomicBoolean(false)
 
     val isClosed: Boolean get() = closed.get() || socket.isClosed
+    val isConnected: Boolean get() = socket.isConnected && !socket.isClosed
     val remoteAddress: java.net.InetAddress get() = socket.inetAddress
+    val remotePort: Int get() = socket.port
+    val localAddress: String get() = socket.localAddress?.hostAddress ?: "unknown"
+    val localPort: Int get() = socket.localPort
+    val remoteEndpoint: String get() = "${remoteAddress.hostAddress}:$remotePort"
+    val localEndpoint: String get() = "$localAddress:$localPort"
 
     /** Returns null only for a clean EOF between frames. A truncated frame closes the socket. */
     @Throws(IOException::class, SocketTimeoutException::class)
@@ -162,6 +168,7 @@ class TcpFrameConnection internal constructor(
             require(port in 1..65_535) { "port must be between 1 and 65535" }
             validateSocketOptions(connectTimeoutMs, readTimeoutMs, maxFrameSize)
             val socket = Socket()
+            val startedAtNs = System.nanoTime()
             try {
                 socket.tcpNoDelay = true
                 socket.keepAlive = true
@@ -169,8 +176,15 @@ class TcpFrameConnection internal constructor(
                 socket.connect(InetSocketAddress(host, port), connectTimeoutMs)
                 return TcpFrameConnection(socket, maxFrameSize)
             } catch (e: Exception) {
+                val localEndpoint = "${socket.localAddress?.hostAddress ?: "unassigned"}:${socket.localPort}"
+                val elapsedMs = (System.nanoTime() - startedAtNs) / 1_000_000L
                 socket.close()
-                throw e
+                throw IOException(
+                    "TCP connect failed target=$host:$port local=$localEndpoint " +
+                        "timeoutMs=$connectTimeoutMs elapsedMs=$elapsedMs " +
+                        "cause=${e.javaClass.name}: ${e.message ?: "no message"}",
+                    e
+                )
             }
         }
 
@@ -212,6 +226,7 @@ class TcpFrameServer(
     private val closed = AtomicBoolean(false)
 
     val localPort: Int get() = server.localPort
+    val localBindAddress: String get() = server.inetAddress?.hostAddress ?: "unknown"
     val isListening: Boolean get() = server.isBound && !server.isClosed
 
     init {

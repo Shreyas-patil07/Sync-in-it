@@ -6,6 +6,8 @@ import java.net.DatagramPacket
 import java.net.DatagramSocket
 import java.net.InetAddress
 import java.net.Socket
+import java.net.ServerSocket
+import java.io.IOException
 import java.util.concurrent.ArrayBlockingQueue
 import java.util.concurrent.TimeUnit
 
@@ -55,6 +57,13 @@ private fun tcpRoundTrip() {
         }
         worker.start()
         TcpFrameConnection.connect("127.0.0.1", server.localPort, connectTimeoutMs = 3_000, readTimeoutMs = 3_000).use { client ->
+            expect(client.isConnected, "connected TCP socket exposes connected state")
+            expect(client.remoteAddress.hostAddress == "127.0.0.1", "TCP diagnostics expose remote address")
+            expect(client.remotePort == server.localPort, "TCP diagnostics expose remote port")
+            expect(client.localAddress == "127.0.0.1", "TCP diagnostics expose selected local address")
+            expect(client.localPort in 1..65_535, "TCP diagnostics expose ephemeral local port")
+            expect(client.remoteEndpoint == "127.0.0.1:${server.localPort}", "TCP diagnostics format remote endpoint")
+            expect(client.localEndpoint == "127.0.0.1:${client.localPort}", "TCP diagnostics format local endpoint")
             client.writeFrame(WireFrame(1, 2, byteArrayOf(3, 4)))
             client.writeFrame(WireFrame(5, 0, byteArrayOf(6)))
             val response = client.readFrame()
@@ -64,6 +73,24 @@ private fun tcpRoundTrip() {
         expect(!worker.isAlive, "TCP server worker completed")
         failure.poll()?.let { throw it }
     }
+}
+
+private fun tcpConnectFailureIncludesEndpointAndTiming() {
+    val loopback = InetAddress.getByName("127.0.0.1")
+    val unusedPort = ServerSocket(0, 1, loopback).use { it.localPort }
+    var failure: IOException? = null
+    try {
+        TcpFrameConnection.connect("127.0.0.1", unusedPort, connectTimeoutMs = 1_000)
+    } catch (error: IOException) {
+        failure = error
+    }
+    val error = failure ?: throw AssertionError("connection to a closed loopback port must fail")
+    expect(error.message.orEmpty().contains("target=127.0.0.1:$unusedPort"), "connect failure includes target endpoint")
+    val localEndpoint = Regex("local=([^ ]+)").find(error.message.orEmpty())?.groupValues?.get(1)
+    val localPort = localEndpoint?.substringAfterLast(':')?.toIntOrNull()
+    expect(localPort in -1..65_535, "connect failure includes local endpoint (port -1 means the OS had not assigned one; actual=$localEndpoint)")
+    expect(error.message.orEmpty().contains("elapsedMs="), "connect failure includes elapsed time")
+    expect(error.cause is java.net.ConnectException, "connect failure preserves the operating-system exception")
 }
 
 private fun tcpCoalescedFramesSingleWrite() {
@@ -162,6 +189,8 @@ private fun tcpRejectsOversizedAndTruncatedFrames() {
 private fun udpTimeSyncLoopback() {
     val loopback = InetAddress.getByName("127.0.0.1")
     UdpTimeSyncServer(loopback, 0, receiveTimeoutMs = 3_000).use { server ->
+        expect(server.isBound, "UDP diagnostics expose bound server state")
+        expect(server.localAddress == "127.0.0.1", "UDP diagnostics expose bound server address")
         val request = ByteArray(UdpTimeSyncClient.PACKET_SIZE) { it.toByte() }
         val response = ByteArray(UdpTimeSyncClient.PACKET_SIZE) { (255 - it).toByte() }
         val received = ArrayBlockingQueue<Boolean>(1)
@@ -176,6 +205,11 @@ private fun udpTimeSyncLoopback() {
         }
         worker.start()
         UdpTimeSyncClient(loopback, server.localPort, receiveTimeoutMs = 3_000).use { client ->
+            expect(client.isConnected, "connected UDP socket exposes connected state")
+            expect(client.localAddress == "127.0.0.1", "UDP diagnostics expose selected local address")
+            expect(client.localPort in 1..65_535, "UDP diagnostics expose ephemeral local port")
+            expect(client.remoteAddress == "127.0.0.1", "UDP diagnostics expose remote address")
+            expect(client.remotePort == server.localPort, "UDP diagnostics expose remote port")
             client.send(request)
             val timedResponse = client.receiveTimed()
             expect(timedResponse.bytes.contentEquals(response), "UDP time-sync response round-trips")
@@ -223,6 +257,7 @@ private fun udpRejectsMalformedDatagrams() {
 fun main() {
     encodedFrameCodecRoundTrip()
     tcpRoundTrip()
+    tcpConnectFailureIncludesEndpointAndTiming()
     tcpCoalescedFramesSingleWrite()
     tcpFragmentedRead()
     tcpRejectsOversizedAndTruncatedFrames()

@@ -88,6 +88,11 @@ class MasterSessionHost(context: Context, private val onStatus: (String) -> Unit
             // the service. A discovered DNS-SD record must never precede TCP readiness.
             check(controlListener.isListening) { "control TCP listener did not bind" }
             check(audioListener.isListening) { "audio TCP listener did not bind" }
+            onStatus(
+                "DIAG HOST_LISTENERS_BOUND control=${controlListener.localBindAddress}:${controlListener.localPort} " +
+                    "audio=${audioListener.localBindAddress}:${audioListener.localPort} udp=0.0.0.0:$TIME_PORT"
+            )
+            onStatus(NetworkDiagnostics.networkSnapshot(appContext))
             controlServer = controlListener
             audioServer = audioListener
             timeSyncServer = timeListener
@@ -101,9 +106,12 @@ class MasterSessionHost(context: Context, private val onStatus: (String) -> Unit
             advertiser = serviceAdvertiser
             serviceAdvertiser.start(serviceName, controlListener.localPort, token.toHex())
 
+            onStatus("DIAG HOST_READY controlPort=${controlListener.localPort} audioPort=${audioListener.localPort} timePort=$TIME_PORT controlListening=${controlListener.isListening} audioListening=${audioListener.isListening}")
             onStatus("TCP listener ready on port ${controlListener.localPort}. Advertising nearby session.")
             return HostInvitation(serviceName, controlListener.localPort)
         } catch (error: Exception) {
+            onStatus("DIAG HOST_START_FAILED ${NetworkDiagnostics.exceptionDetails(error)}")
+            onStatus("DIAG HOST_NETWORK_AT_FAILURE\n${NetworkDiagnostics.networkSnapshot(appContext)}")
             session?.close()
             control?.close()
             audio?.close()
@@ -122,11 +130,16 @@ class MasterSessionHost(context: Context, private val onStatus: (String) -> Unit
                 var audio: TcpFrameConnection? = null
                 try {
                     onStatus("Waiting for receiver HELLO on TCP $CONTROL_PORT…")
-                    val acceptedControl = checkNotNull(controlServer).accept()
+                    val listeningControl = checkNotNull(controlServer)
+                    onStatus("DIAG HOST_ACCEPT_WAIT controlPort=${listeningControl.localPort} listening=${listeningControl.isListening}")
+                    val acceptedControl = listeningControl.accept()
                     control = acceptedControl
                     controlConnection = acceptedControl
+                    onStatus("DIAG HOST_CONTROL_ACCEPTED local=${acceptedControl.localEndpoint} peer=${acceptedControl.remoteEndpoint}")
 
+                    onStatus("DIAG HOST_HELLO_READ_BEGIN peer=${acceptedControl.remoteEndpoint}")
                     val hello = acceptedControl.readFrame() ?: error("receiver closed before HELLO")
+                    onStatus("DIAG HOST_HELLO_RECEIVED peer=${acceptedControl.remoteEndpoint} messageType=0x${hello.messageType.toString(16)} flags=${hello.flags} payloadBytes=${hello.payload.size}")
                     check(hello.messageType == 0x01 && hello.flags == 0) {
                         "first control frame must be HELLO"
                     }
@@ -142,13 +155,18 @@ class MasterSessionHost(context: Context, private val onStatus: (String) -> Unit
                     acceptedControl.writeEncodedFrame(welcome)
                     onStatus("HELLO accepted. Waiting for the separate audio connection…")
 
-                    val acceptedAudio = checkNotNull(audioServer).accept()
+                    val listeningAudio = checkNotNull(audioServer)
+                    onStatus("DIAG HOST_AUDIO_ACCEPT_WAIT audioPort=${listeningAudio.localPort} listening=${listeningAudio.isListening}")
+                    val acceptedAudio = listeningAudio.accept()
                     audio = acceptedAudio
                     audioConnection = acceptedAudio
+                    onStatus("DIAG HOST_AUDIO_ACCEPTED local=${acceptedAudio.localEndpoint} peer=${acceptedAudio.remoteEndpoint}")
                     check(acceptedAudio.remoteAddress == acceptedControl.remoteAddress) {
                         "audio TCP peer does not match the admitted control peer"
                     }
+                    onStatus("DIAG HOST_AUDIO_HELLO_READ_BEGIN peer=${acceptedAudio.remoteEndpoint}")
                     val audioHello = acceptedAudio.readFrame() ?: error("receiver closed before AUDIO_HELLO")
+                    onStatus("DIAG HOST_AUDIO_HELLO_RECEIVED peer=${acceptedAudio.remoteEndpoint} messageType=0x${audioHello.messageType.toString(16)} flags=${audioHello.flags} payloadBytes=${audioHello.payload.size}")
                     check(audioHello.messageType == 0x03 && audioHello.flags == 0) {
                         "first audio-channel frame must be AUDIO_HELLO"
                     }
@@ -174,6 +192,8 @@ class MasterSessionHost(context: Context, private val onStatus: (String) -> Unit
                         break
                     }
 
+                    onStatus("DIAG HOST_JOIN_ATTEMPT_FAILED peer=${control?.remoteEndpoint ?: "unknown"} ${NetworkDiagnostics.exceptionDetails(error)}")
+                    onStatus("DIAG HOST_NETWORK_AT_JOIN_FAILURE\n${NetworkDiagnostics.networkSnapshot(appContext)}")
                     onStatus(
                         "Receiver join attempt failed: ${error.message ?: error.javaClass.simpleName}. " +
                             "Host remains available; retry from the receiver."
@@ -272,12 +292,17 @@ class MasterSessionHost(context: Context, private val onStatus: (String) -> Unit
 
     private fun runTimeSyncServer(control: TcpFrameConnection) {
         val server = checkNotNull(timeSyncServer) { "UDP time-sync listener was not started" }
+        onStatus("DIAG HOST_UDP_SOCKET_READY bind=0.0.0.0:${server.localPort} bound=true expectedPeer=${control.remoteEndpoint}")
 
         val controlReader = Thread({ readControlFrames(control) }, "syncinit-master-control-reader").apply {
             isDaemon = true
             start()
         }
         var responseCount = 0
+        var malformedUdpCount = 0
+        var rejectedUdpAddressCount = 0
+        var rejectedUdpPortCount = 0
+        var rejectedNativePacketCount = 0
         var admittedUdpPeer: InetSocketAddress? = null
         try {
             while (!closed.get()) {
@@ -285,7 +310,11 @@ class MasterSessionHost(context: Context, private val onStatus: (String) -> Unit
                     server.receive()
                 } catch (_: SocketTimeoutException) {
                     continue
-                } catch (_: FrameProtocolException) {
+                } catch (error: FrameProtocolException) {
+                    malformedUdpCount += 1
+                    if (malformedUdpCount == 1 || malformedUdpCount % 10 == 0) {
+                        onStatus("DIAG HOST_UDP_MALFORMED_DATAGRAM count=$malformedUdpCount ${NetworkDiagnostics.exceptionDetails(error)}")
+                    }
                     continue
                 } catch (error: SocketException) {
                     if (closed.get()) break
@@ -293,19 +322,44 @@ class MasterSessionHost(context: Context, private val onStatus: (String) -> Unit
                 }
 
                 // The UDP peer must match the admitted TCP peer, including its client port.
-                if (datagram.source.address != control.remoteAddress) continue
+                if (datagram.source.address != control.remoteAddress) {
+                    rejectedUdpAddressCount += 1
+                    if (rejectedUdpAddressCount == 1 || rejectedUdpAddressCount % 10 == 0) {
+                        onStatus("DIAG HOST_UDP_SOURCE_IP_REJECTED count=$rejectedUdpAddressCount source=${datagram.source} expectedPeer=${control.remoteEndpoint}")
+                    }
+                    continue
+                }
                 val pinnedPeer = admittedUdpPeer
-                if (pinnedPeer != null && datagram.source != pinnedPeer) continue
+                if (pinnedPeer != null && datagram.source != pinnedPeer) {
+                    rejectedUdpPortCount += 1
+                    if (rejectedUdpPortCount == 1 || rejectedUdpPortCount % 10 == 0) {
+                        onStatus("DIAG HOST_UDP_SOURCE_PORT_REJECTED count=$rejectedUdpPortCount source=${datagram.source} pinnedPeer=$pinnedPeer")
+                    }
+                    continue
+                }
 
                 val t3Ns = System.nanoTime()
                 val response = nativeSession?.timeSyncResponse(
                     datagram.bytes, datagram.receivedAtNs, t3Ns
-                ) ?: continue
-                if (admittedUdpPeer == null) admittedUdpPeer = datagram.source
+                )
+                if (response == null) {
+                    rejectedNativePacketCount += 1
+                    if (rejectedNativePacketCount == 1 || rejectedNativePacketCount % 10 == 0) {
+                        onStatus("DIAG HOST_UDP_NATIVE_PACKET_REJECTED count=$rejectedNativePacketCount source=${datagram.source} bytes=${datagram.bytes.size} reason=native codec/session rejected packet")
+                    }
+                    continue
+                }
+                if (admittedUdpPeer == null) {
+                    admittedUdpPeer = datagram.source
+                    onStatus("DIAG HOST_UDP_PEER_PINNED source=${datagram.source} controlPeer=${control.remoteEndpoint} payloadBytes=${datagram.bytes.size}")
+                }
+                val responseStartedAt = System.nanoTime()
                 server.sendTo(response, datagram.source)
+                val sendElapsedUs = (System.nanoTime() - responseStartedAt) / 1_000L
 
                 responseCount += 1
                 if (responseCount == 1 || responseCount % 20 == 0) {
+                    onStatus("DIAG HOST_UDP_RESPONSE_SENT count=$responseCount destination=${datagram.source} bytes=${response.size} sendElapsedUs=$sendElapsedUs")
                     onStatus("UDP time sync active · $responseCount validated requests answered.")
                 }
             }
