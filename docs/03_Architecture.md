@@ -127,6 +127,22 @@ The current `android/transport` module is a pure Kotlin/JVM adapter built on Jav
 
 The Gradle `check` task runs loopback TCP/UDP integration tests, including fragmented and coalesced TCP frames, oversized/truncated TCP frames, malformed UDP sizes and a request/response exchange. Passing loopback tests proves local socket behavior only; it does not prove Android permission/lifecycle behavior, Wi-Fi peer connectivity or synchronization on phones.
 
+
+### 4.7 Android application and JNI boundary
+
+The Android workspace is rooted at android/ and contains:
+
+- app/: the native Android launcher module, manifest and JNI bridge.
+- transport/: the pure Kotlin/JVM TCP/UDP socket adapter.
+
+The initial app requests only Internet and network-state/Wi-Fi-state permissions. It has no microphone, media-projection, notification or foreground-service flow because audio playback/capture has not been implemented.
+
+The app's CMake target compiles the shared protocol, typed control-message and receiver-session sources directly from core/. It does not call the desktop core/CMakeLists.txt, which requires Python for generated test vectors and registers desktop test executables. NativeCore loads libsyncinit_jni.so; NativeReceiverSession exposes a synchronized Kotlin wrapper around the C++ session lifecycle. The bridge currently supports HELLO, encoded WELCOME, AUDIO_HELLO, READY, arm, playback anchors and degraded/resynchronization transitions.
+
+Native session objects are stored behind opaque integer handles in a mutex-protected registry. Each session has its own mutex, and Kotlin calls are synchronized per wrapper. Do not expose handles to UI code. JNI calls and socket I/O must remain off the audio callback.
+
+On app launch, a temporary local session smoke test exercises HELLO → WELCOME → AUDIO_HELLO → READY → ARMED and closes the native session. This verifies bridge loading and local state transitions only. The app does not yet bind socket connections to these native sessions, generate invitations, play audio, or measure synchronization across physical phones.
+
 ## 5. Data and clock domains
 
 The system has at least three clock domains per receiver:
