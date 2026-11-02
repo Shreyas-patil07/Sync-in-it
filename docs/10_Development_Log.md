@@ -498,7 +498,7 @@ No physical-device synchronization results are recorded in this initial log. Add
 ### 2 November 2026 — Android nearby host discovery
 
 **Type:** Android LAN discovery / host advertising / UI join flow  
-**Status:** Implemented; Android CI validation pending  
+**Status:** Implemented; Android Gradle/JNI and native core CI passed  
 **Branch:** `feature/android-nearby-host-discovery`
 
 **Summary:**
@@ -514,6 +514,6 @@ No physical-device synchronization results are recorded in this initial log. Add
 
 **Network limitation:** Discovery requires all devices to be on the same local network and the access point to permit mDNS/multicast and client-to-client traffic. Guest/client-isolated Wi-Fi networks may block it. The current app targets API 36; targetSdk 37 must implement Android 17 local-network permission or a supported privacy-preserving service-picker path.
 
-**Verification:** Pending Android Gradle/NDK and Kotlin transport CI on this branch. No physical multi-device discovery result is claimed until tested on phones.
+**Verification:** [Android app/JNI workflow 41492793054](https://github.com/Shreyas-patil07/Sync-in-it/actions/runs/41492793054) passed: Gradle APK assembly, JNI/native C++ builds for arm64-v8a and x86_64, and Kotlin transport checks. [M0 simulator/native core workflow 41492792949](https://github.com/Shreyas-patil07/Sync-in-it/actions/runs/41492792949) passed across Python 3.11, 3.12 and 3.13. The debug APK is available as the Android workflow artifact. No physical multi-device discovery result is claimed until tested on phones.
 
 **Next action:** Install the same discovery-enabled build on two Android phones on the same private Wi-Fi, verify that each host appears in the other's Nearby Sessions list, and tap to join.
