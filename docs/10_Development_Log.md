@@ -371,17 +371,19 @@ No physical-device synchronization results are recorded in this initial log. Add
 ### 2 November 2026 — M1 bounded transport and time-sync primitives
 
 **Type:** Transport foundation / queueing / clock-sample correlation  
-**Status:** Implemented; CI verification pending  
-**Branch:** \`feature/m1-transport-primitives\`
+**Status:** Implemented; CI passed  
+**Branch:** `feature/m1-transport-primitives`
 
 **Summary:**
 - Added a thread-safe, non-blocking C++17 bounded frame queue with independent frame-count and byte budgets, close/drain semantics, and explicit rejection results.
 - Added a bounded UDP time-sync client that tracks outstanding sequence IDs, handles sequence wrap, validates response type/version/session/receiver/echoed t1, rejects replay/unsolicited responses, checks timestamp ordering and non-negative RTT, and supports cancellation/expiry.
 - Added a time-sync responder that binds requests to the session/receiver identity expected for the authenticated control connection.
-- Added conversion from an accepted four-timestamp exchange to the existing \`SyncSample\` estimator input.
+- Added conversion from an accepted four-timestamp exchange to the existing `SyncSample` estimator input.
 - Added native C++ regression tests and CMake/CTest registration.
 - Documented the platform boundary: native socket lifecycle remains in Android/Kotlin and iOS/Swift adapters; the shared core supplies portable queueing and protocol/session primitives.
 
-**Limitations:** No operating-system TCP/UDP sockets, connection retries, keepalive scheduler, authentication handshake, encryption, audio queue, Android app or physical-device exchange is implemented by this change. \`TimeSyncClient\` is single-owner-thread state; platform code must serialize access. Queue overflow is surfaced to callers and requires a deliberate policy.
+**Verification:** [GitHub Actions run 41461559269](https://github.com/Shreyas-patil07/Sync-in-it/actions/runs/41461559269) passed on Python 3.11, 3.12 and 3.13. The full Python unit suite, C++17 build and all four CTest targets, deterministic M0 scenarios, M0 acceptance gates and shared-Wi-Fi regression passed.
+
+**Limitations:** No operating-system TCP/UDP sockets, connection retries, keepalive scheduler, authentication handshake, encryption, audio queue, Android app or physical-device exchange is implemented by this change. `TimeSyncClient` is single-owner-thread state; platform code must serialize access. Queue overflow is surfaced to callers and requires a deliberate policy.
 
 **Next action:** Implement the native Android TCP/UDP socket adapter and receiver session state machine, then run an actual two-phone time-sync test. Do not claim M1 device synchronization complete until offset/RTT telemetry from physical phones is recorded.
