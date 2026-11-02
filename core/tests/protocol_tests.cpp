@@ -69,8 +69,9 @@ void test_time_sync_vectors() {
 void test_invalid_time_sync_packets() {
     const std::vector<std::vector<std::uint8_t>> bad = {
         {}, std::vector<std::uint8_t>(37U), std::vector<std::uint8_t>(39U),
-        std::vector<std::uint8_t>(38U, 0U)
-    };
+        std::vector<std::uint8_t>(38U, 0U),
+        [] { auto v = std::vector<std::uint8_t>(38U, 0U); v[0] = 0x53U; v[1] = 0x54U; v[2] = 2U; v[3] = 1U; return v; }(),
+        [] { auto v = std::vector<std::uint8_t>(38U, 0U); v[0] = 0x53U; v[1] = 0x54U; v[2] = 1U; v[3] = 3U; return v; }()
     for (std::size_t i = 0; i < bad.size(); ++i) {
         bool threw = false;
         try { (void)syit::decode_time_sync_packet(bad[i]); }

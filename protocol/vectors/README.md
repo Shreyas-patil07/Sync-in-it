@@ -14,7 +14,7 @@ Coverage:
 - A 960-frame silence chunk.
 - An unknown safely length-framed type and unknown outer flag bit.
 - Truncated prefix, undersized length, oversized frame and truncated body.
-- Fixed 38-byte UDP time-sync request/response, including 16-byte request padding and signed 64-bit nanosecond timestamps.
+- Fixed 38-byte UDP time-sync request/response, including 16-byte request padding, negative signed timestamps and maximum unsigned identifiers.
 
 All multibyte fields are little-endian. Frame decoding validates the prefix, maximum size and exact frame length. Unknown safely framed message types are preserved. Typed message payload validation belongs to the typed codec/session layer. UDP decoding validates size, magic, version and packet type; session and receiver identity validation belongs to the session layer.
 

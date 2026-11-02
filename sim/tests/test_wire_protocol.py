@@ -71,7 +71,7 @@ class WireProtocolVectorTests(unittest.TestCase):
                     self.assertEqual((decoded.t2_ns, decoded.t3_ns), (item["t2_ns"], item["t3_ns"]))
 
     def test_invalid_udp_packets_are_rejected(self):
-        bad_packets = (b"", bytes(37), bytes(39), b"XX" + bytes(36), b"ST\\x02\\x01" + bytes(34))
+        bad_packets = (b"", bytes(37), bytes(39), b"XX" + bytes(36), bytes((0x53, 0x54, 2, 1)) + bytes(34), bytes((0x53, 0x54, 1, 3)) + bytes(34))
         for packet in bad_packets:
             with self.subTest(prefix=packet[:4]), self.assertRaises(ProtocolError):
                 decode_time_sync_packet(packet)

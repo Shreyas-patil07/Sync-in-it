@@ -316,7 +316,7 @@ No physical-device synchronization results are recorded in this initial log. Add
 **Branch:** `feature/m1-wire-protocol-vectors`
 
 **Summary:**
-- Added canonical byte-level vectors for all 15 control message types, 960-frame PCM16 audio, gap and silence chunks, unknown framed messages, malformed frames, and UDP time-sync request/response packets.
+- Added canonical byte-level vectors for all 15 control message types, 960-frame PCM16 audio, gap and silence chunks, unknown framed messages, malformed frames, and UDP time-sync request/response packets, including negative timestamps and unsigned boundary values.
 - Added strict platform-neutral TCP framing and fixed-size UDP packet codecs in Python and portable C++17.
 - Added Python and C++ tests that consume the same JSON fixtures; CMake generates the C++ fixture header from that source.
 - Kept typed control-payload parsing, socket I/O, session authentication and encryption outside this framing-only change.

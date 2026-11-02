@@ -176,6 +176,17 @@
       "t2_ns": 1000050000,
       "t3_ns": 1000060000,
       "wire_hex": "53540102efcdab8934122a00000000ca9a3b00000000508d9b3b0000000060b49b3b00000000"
+    },
+    {
+      "name": "request_signed_timestamp_and_unsigned_maxima",
+      "type": 1,
+      "session_id": 4294967295,
+      "receiver_id": 65535,
+      "sequence": 4294967295,
+      "t1_ns": -1,
+      "t2_ns": 0,
+      "t3_ns": 0,
+      "wire_hex": "53540101ffffffffffffffffffffffffffffffffffff00000000000000000000000000000000"
     }
   ]
 }
