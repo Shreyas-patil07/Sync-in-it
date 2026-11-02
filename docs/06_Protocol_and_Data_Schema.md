@@ -2,7 +2,7 @@
 
 **Document status:** Draft normative v1 proposal  
 **Version:** 1.0  
-**Last updated:** 1 November 2026
+**Last updated:** 2 November 2026
 
 ## 1. Scope and terminology
 
@@ -101,7 +101,7 @@ Unknown anchor kinds must be rejected or ignored safely according to protocol co
 
 ## 6. Audio message
 
-Audio uses message type 0x80 over the audio TCP connection.
+Audio uses message type 0x80 over the audio TCP connection. It uses the common 4-byte length prefix, type byte and outer message-flags byte; the table below defines the audio payload. The payload's `flags` field is distinct from the outer message-flags byte.
 
 | Field | Size | Description |
 |---|---:|---|
@@ -153,6 +153,15 @@ For PCM16 stereo, a 960-frame chunk has 3,840 payload bytes. A receiver inserts 
 The request is padded to the response size to reduce one source of packet-size asymmetry. Packets with wrong magic, version, session ID or receiver ID are rejected.
 
 The receiver records t1 before send and t4 on response receipt. The master records t2 on request receipt and t3 immediately before response send.
+
+### 7.3 Version 1 datagram rules
+
+- Every time-sync datagram is exactly 38 bytes.
+- The magic bytes are the ASCII bytes `S`, `T` in that order.
+- The time-sync packet version byte is `1` for protocol v1.
+- The request's defined fields occupy 22 bytes; the sender appends 16 zero-filled padding bytes. Receivers ignore these padding bytes in v1.
+- The response's defined fields occupy all 38 bytes.
+- All multibyte fields use the little-endian convention from Section 1.1.
 
 ## 8. Protocol versioning and error codes
 
@@ -269,7 +278,7 @@ Before native protocol implementation, create shared vectors for:
 7. Truncated frame, invalid length and oversized frame.
 8. Little-endian edge values and signed timestamp handling.
 
-Both Python reference code and C++ encoders/decoders must pass the same vectors.
+Both Python reference code and C++ encoders/decoders must pass the same vectors. The initial framing-only fixtures are stored in `protocol/vectors/wire_protocol.json`; they cover TCP frame envelopes and fixed-size UDP packet envelopes. Typed payload field validation remains a subsequent protocol implementation task.
 ## 13. Outstanding protocol questions
 
 - Capacity definition: 10 total phones versus 10 receivers plus master.

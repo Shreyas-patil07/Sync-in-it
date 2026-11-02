@@ -1,14 +1,21 @@
-# M0 golden vectors
+# Shared protocol vectors
 
-`m0_timing.json` is the canonical, versioned test input for the Python reference and portable C++17 implementation. The JSON records frozen expected outputs as well as the inputs needed to reproduce each calculation.
+## M0 timing vectors
 
-Covered behavior:
-- Four-timestamp RTT and master-minus-receiver offset, including negative integer-floor behavior.
-- Lowest-RTT clock-offset/skew fitting, sample-window filtering, invalid RTT rejection, insufficient data for skew and selected-fit sample-span reporting.
-- Timeline sample-index mapping, pause behavior and ties-to-even rounding.
-- DAC frame/time conversion at positive and negative ppm rates.
-- Drift-controller dead-band, one-frame correction and hard-resync thresholds.
+`m0_timing.json` is the canonical test input for the Python reference and portable C++17 timing implementation.
 
-The Python tests load this JSON file directly. CMake generates a C++ header from this same file using `tools/generate_cpp_vectors.py`; generated files are build artifacts and must not be committed.
+## Wire protocol v1 vectors
 
-Schema changes require incrementing `schema_version` and updating both consumers. Expected values must be reviewed, not mechanically accepted merely because a generator produced them. The selected sample span is measured across the exact low-RTT subset used by the fit and is used by the acquisition-stability gate.
+`wire_protocol.json` is the canonical byte-level fixture set for `docs/06_Protocol_and_Data_Schema.md`.
+
+Coverage:
+- All 15 control message types, with payload values in documented wire order.
+- A 960-frame PCM16 stereo chunk at sample index 96,000 with the gap flag set.
+- A 960-frame silence chunk.
+- An unknown safely length-framed type and unknown outer flag bit.
+- Truncated prefix, undersized length, oversized frame and truncated body.
+- Fixed 38-byte UDP time-sync request/response, including 16-byte request padding, negative signed timestamps and maximum unsigned identifiers.
+
+All multibyte fields are little-endian. Frame decoding validates the prefix, maximum size and exact frame length. Unknown safely framed message types are preserved. Typed message payload validation belongs to the typed codec/session layer. UDP decoding validates size, magic, version and packet type; session and receiver identity validation belongs to the session layer.
+
+Python tests load the JSON directly. CMake generates the C++ vector header from the same JSON through `tools/generate_cpp_wire_vectors.py`; generated headers are build artifacts and must not be committed. Expected bytes must be reviewed against the protocol table before updating.

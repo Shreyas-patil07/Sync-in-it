@@ -307,3 +307,22 @@ No physical-device synchronization results are recorded in this initial log. Add
 
 **Next action:** Review and merge PR #10. After that, prepare the M1 Android protocol/session implementation while keeping the physical two-phone timing test as its exit gate.
 
+
+
+### 2 November 2026 — M1 wire protocol vectors and portable framing codec
+
+**Type:** Protocol foundation / Cross-language parity  
+**Status:** Implemented; awaiting CI and PR review  
+**Branch:** `feature/m1-wire-protocol-vectors`
+
+**Summary:**
+- Added canonical byte-level vectors for all 15 control message types, 960-frame PCM16 audio, gap and silence chunks, unknown framed messages, malformed frames, and UDP time-sync request/response packets, including negative timestamps and unsigned boundary values.
+- Added strict platform-neutral TCP framing and fixed-size UDP packet codecs in Python and portable C++17.
+- Added Python and C++ tests that consume the same JSON fixtures; CMake generates the C++ fixture header from that source.
+- Kept typed control-payload parsing, socket I/O, session authentication and encryption outside this framing-only change.
+
+**Verification:** Pending GitHub Actions on Python 3.11–3.13 and C++17.
+
+**Limitations:** The codecs implement the framing/packet envelope, not typed field-level encoding/decoding for each control payload. The 38-byte UDP packet size and version byte are the concrete encoding of the fixed padded request/response format. Session/receiver identity validation remains a session-layer responsibility. No Android sockets or physical devices are included in this slice.
+
+**Next action:** Build typed protocol payload codecs and stream/session transport adapters, then begin the M1 Android role/session shell.
