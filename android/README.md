@@ -54,6 +54,6 @@ The Kotlin transport handles socket lifecycle and TCP frame boundaries. HELLO, W
 
 ## Current scope and limitations
 
-This milestone demonstrates admission and separate control/audio TCP channel establishment. It does **not** yet implement UDP time-sync packet exchange, clock estimation, READY gating from measured synchronization, audio chunks, PCM buffering, playback, foreground service, QR onboarding, encryption or an actual two-phone verification result. The receiver stays in Synchronizing; the app must not claim synchronized playback.
+This milestone demonstrates admission on two TCP channels and the end-to-end UDP four-timestamp exchange using the shared C++ packet validator, request correlator, and clock estimator. It implements the simulator's provisional acquisition gate and keeps READY blocked until real audio buffering is available. It does **not** yet implement audio chunks, PCM buffering/rendering, playback, foreground service, QR onboarding, cryptographic transport protection, or an actual two-phone measurement result. The receiver stays in Synchronizing; the app must not claim synchronized playback.
 
 The session token is an admission credential, not cryptographic transport protection. Use this build only on a trusted local network.
