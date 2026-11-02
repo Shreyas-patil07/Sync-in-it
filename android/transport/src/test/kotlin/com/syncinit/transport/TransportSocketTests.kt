@@ -24,7 +24,7 @@ private fun frameWire(type: Int, flags: Int, payload: ByteArray): ByteArray {
 }
 
 private fun tcpRoundTrip() {
-    val loopback = InetAddress.getLoopbackAddress()
+    val loopback = InetAddress.getByName("127.0.0.1")
     TcpFrameServer(loopback, 0, acceptTimeoutMs = 3_000, connectionReadTimeoutMs = 3_000).use { server ->
         val failure = ArrayBlockingQueue<Throwable>(1)
         val worker = Thread {
@@ -52,7 +52,7 @@ private fun tcpRoundTrip() {
 }
 
 private fun tcpCoalescedFramesSingleWrite() {
-    val loopback = InetAddress.getLoopbackAddress()
+    val loopback = InetAddress.getByName("127.0.0.1")
     TcpFrameServer(loopback, 0, acceptTimeoutMs = 3_000, connectionReadTimeoutMs = 3_000).use { server ->
         val received = ArrayBlockingQueue<List<WireFrame>>(1)
         val failure = ArrayBlockingQueue<Throwable>(1)
@@ -80,7 +80,7 @@ private fun tcpCoalescedFramesSingleWrite() {
 }
 
 private fun tcpFragmentedRead() {
-    val loopback = InetAddress.getLoopbackAddress()
+    val loopback = InetAddress.getByName("127.0.0.1")
     TcpFrameServer(loopback, 0, acceptTimeoutMs = 3_000, connectionReadTimeoutMs = 3_000).use { server ->
         val received = ArrayBlockingQueue<WireFrame>(1)
         val failure = ArrayBlockingQueue<Throwable>(1)
@@ -104,7 +104,7 @@ private fun tcpFragmentedRead() {
 }
 
 private fun tcpRejectsOversizedAndTruncatedFrames() {
-    val loopback = InetAddress.getLoopbackAddress()
+    val loopback = InetAddress.getByName("127.0.0.1")
     TcpFrameServer(loopback, 0, acceptTimeoutMs = 3_000, connectionReadTimeoutMs = 3_000, maxFrameSize = 64).use { server ->
         val done = ArrayBlockingQueue<Throwable>(1)
         val worker = Thread {
@@ -145,7 +145,7 @@ private fun tcpRejectsOversizedAndTruncatedFrames() {
 }
 
 private fun udpTimeSyncLoopback() {
-    val loopback = InetAddress.getLoopbackAddress()
+    val loopback = InetAddress.getByName("127.0.0.1")
     UdpTimeSyncServer(loopback, 0, receiveTimeoutMs = 3_000).use { server ->
         val request = ByteArray(UdpTimeSyncClient.PACKET_SIZE) { it.toByte() }
         val response = ByteArray(UdpTimeSyncClient.PACKET_SIZE) { (255 - it).toByte() }
@@ -181,7 +181,7 @@ private fun udpTimeSyncLoopback() {
 }
 
 private fun udpRejectsMalformedDatagrams() {
-    val loopback = InetAddress.getLoopbackAddress()
+    val loopback = InetAddress.getByName("127.0.0.1")
     UdpTimeSyncServer(loopback, 0, receiveTimeoutMs = 3_000).use { server ->
         DatagramSocket().use { sender ->
             val malformed = ByteArray(39)
