@@ -6,6 +6,7 @@
 #include "syit/session.h"
 
 #include <array>
+#include <climits>
 #include <atomic>
 #include <cstdint>
 #include <memory>
