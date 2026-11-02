@@ -1,6 +1,5 @@
 package com.syncinit.app.network
 
-import com.syncinit.app.core.NativeCore
 import com.syncinit.app.core.NativeReceiverSession
 import com.syncinit.app.core.ReceiverSessionConfig
 import com.syncinit.app.core.ReceiverSessionResult
@@ -213,7 +212,6 @@ class MasterSessionHost(private val onStatus: (String) -> Unit) : Closeable {
 
     override fun close() {
         if (closed.compareAndSet(false, true)) {
-            finish.countDown()
             closeResources()
             executor.shutdownNow()
         }
