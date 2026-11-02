@@ -166,6 +166,8 @@ Each receiver opens separate control and audio TCP connections and uses UDP for 
 
 The real capacity limit depends on router airtime, retransmissions, interference and per-client performance. Theoretical throughput is not a substitute for a ten-device test.
 
+The Python M0 simulator includes a controlled shared-airtime approximation: each unicast audio segment and UDP time-sync packet traverses client-to-AP and AP-to-client hops on one half-duplex medium. Waiting clock-sync packets have priority over queued audio packets, with queue capacity reserved for control. It reports utilization, queue wait, control RTT, audio chunk latency, three-second playback-deadline misses and eight-second buffer overruns. This is a test model only; it is not a full 802.11 MAC and cannot establish capacity for a particular router.
+
 ## 8. Protocol and compatibility requirements
 
 - TCP messages use length-prefixed framing.
