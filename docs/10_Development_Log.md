@@ -474,7 +474,7 @@ No physical-device synchronization results are recorded in this initial log. Add
 ### 2 November 2026 — M1 Android UDP time-sync acquisition
 
 **Type:** UDP socket orchestration / shared native time-sync client, responder and estimator  
-**Status:** Implemented; CI validation pending  
+**Status:** Implemented; Android/Kotlin/core CI passed  
 **Branch:** `feature/m1-android-network-handshake`
 
 **Summary:**
@@ -490,6 +490,6 @@ No physical-device synchronization results are recorded in this initial log. Add
 
 **Limitations:** No audio packets, PCM buffer, renderer, playback start or foreground service are implemented. No result from two physical devices is claimed. The 0.25 ms / 10-second gate is a simulator-derived provisional acquisition threshold, not a measured phone guarantee. The 16-byte session token is not cryptographic transport protection; UDP should be used only on a trusted local network.
 
-**Verification:** Pending Android Gradle/NDK, Kotlin transport and native core CI on this updated PR head. The Android launch-time loopback smoke test is packaged but must execute on a physical device to validate runtime behavior.
+**Verification:** [Android app/JNI workflow 41485331389](https://github.com/Shreyas-patil07/Sync-in-it/actions/runs/41485331389) passed, including the NDK build for arm64-v8a and x86_64, APK assembly and Kotlin transport checks. [M0 simulator/native core workflow 41485331407](https://github.com/Shreyas-patil07/Sync-in-it/actions/runs/41485331407) passed across Python 3.11, 3.12 and 3.13. [Kotlin socket transport workflow 41484743007](https://github.com/Shreyas-patil07/Sync-in-it/actions/runs/41484743007) passed, including the UDP monotonic receive timestamp tests. The debug APK is uploaded as the Android workflow artifact. The launch-time native TCP/UDP loopback test is packaged in the APK but CI does not execute Android runtime code; it remains to be exercised on a physical device.
 
 **Next action:** Run this build on two physical Android phones on the same Wi-Fi network. Record accepted sample count, RTT p50, offset estimate, skew estimate, residual RMS and selected-sample span before beginning audio-buffer implementation.
