@@ -233,3 +233,39 @@ No physical-device synchronization results are recorded in this initial log. Add
 **Model limitations:** This is not a full IEEE 802.11 MAC. It omits CSMA/CA carrier sensing, rate adaptation, aggregation/block-ACK, OFDMA/MU-MIMO, hidden nodes, TCP congestion/retransmission, multicast and router-specific firmware queues. MAC retry exhaustion is treated as segment loss, so chunk-loss results are not application-level TCP loss predictions. The control-priority rule is a model approximation; actual Android socket/DSCP/WMM behavior must be measured. No phone/router/acoustic performance claim is made.
 
 **Next action:** Calibrate the model with packet captures and real LAN measurements before using it for capacity decisions.
+
+
+### 2 November 2026 — Frame-slip versus bounded-resampling comparison
+
+**Type:** Simulator / Drift-control experiment / CI verification  
+**Status:** In progress  
+**Branch:** \`feature/m0-resampler-comparison\`  
+**PR:** https://github.com/Shreyas-patil07/Sync-in-it/pull/7
+
+**Summary:**
+- Preserved the existing dead-band, one-frame drop/duplicate and hard-resync policy as the baseline.
+- Added an experimental bounded resampling controller to the Python simulator. It uses feed-forward rate compensation from a synthetic DAC/output-rate estimate, a four-second proportional phase-correction horizon, a ±500 ppm adjustment limit, a 1,000 ppm/s slew limit and the same 240-frame hard-resync gate.
+- Ran both strategies over the same initial phase error and effective rate mismatch. Added p95/maximum/final phase error, RMS/peak rate adjustment, saturation and hard-resync metrics.
+- Added tests for correction direction, rate/slew limits, invalid inputs, +2 ppm measurement bias and hard-resync behavior.
+- Updated the CLI and simulator/implementation documentation. The comparison is deliberately kept in the simulator; no production C++ or Android policy was changed.
+
+**Verification:**
+- GitHub Actions: 41/41 Python tests passed on Python 3.11, 3.12 and 3.13.
+- C++17 CMake build and shared Python/C++ golden-vector parity passed unchanged.
+- The deterministic 60-second simulator completed all clock scenarios and the 30-second shared-Wi-Fi suite.
+- In the +30 ppm receiver / +35 ppm DAC case, frame-slip correction reported 186.1 slips/min and 0.135 ms p95 phase error; bounded resampling reported 0.016 ms p95, 0.033 ms maximum and 66.6 ppm RMS / 74.3 ppm peak rate adjustment.
+- In the −40 ppm receiver / −30 ppm DAC case, frame-slip correction reported 205.4 slips/min and 0.125 ms p95; bounded resampling reported 0.039 ms p95 and 0.083 ms maximum.
+- Under high jitter, p95 changed from 0.096 ms (frame-slip) to 0.054 ms (resampling).
+- Under asymmetric delay, resampling p95 was 1.668 ms versus 0.123 ms for frame-slip; the resampler reached its 500 ppm adjustment limit. Under severe asymmetry, both policies recorded one hard resync.
+- The +2 ppm rate-estimate-bias test kept the 59-second final modeled phase error below the 0.02 ms test bound.
+
+**Result:** Bounded rate correction looks promising for steady clock-rate mismatch and avoids repeated discrete frame edits in this synthetic model. It is not universally better: a larger initial phase error caused by asymmetric delay can take too long to remove under the configured rate cap. The evidence supports separating initial phase alignment from long-term drift tracking, not replacing the current policy outright.
+
+**Risks or limitations:**
+- The initial A/B supplies an ideal synthetic DAC-rate estimate. The +2 ppm test is one bias sensitivity point, not a measurement distribution.
+- No PCM is rendered. Interpolation filter response, transient artifacts, aliasing, CPU/thermal load, callback deadlines, real DAC timestamp quality and acoustic output are not modeled.
+- Frame-slip p95/max and resampler p95/max are sampled phase-error diagnostics, not sound-quality measurements.
+- The candidate is not implemented in C++ or integrated into Android.
+
+**Next action:** Define scenario-level M0 acceptance thresholds, including separate limits for estimator convergence, steady-state phase tracking, resyncs and degraded/asymmetric network behavior. Keep the production correction policy open until PCM and physical-device testing.
+

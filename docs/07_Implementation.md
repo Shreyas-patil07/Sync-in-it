@@ -68,6 +68,8 @@ The shared vectors establish calculation parity, not physical timing accuracy. C
 
 The ground-truth convergence diagnostic requires three consecutive estimator updates with absolute offset error at or below 1 ms and absolute skew error at or below 5 ppm. The operational acquisition gate requires a skew estimate, at least 8 selected samples, a selected-sample span of at least 10 seconds, residual RMS below 0.25 ms, and three consecutive updates meeting those conditions. These are distinct simulator diagnostics: the runtime can observe fit quality and sample span, but cannot observe ground-truth estimator error. The playout metrics come from simplified 20 ms control-policy simulations. The candidate resampler uses an ideal synthetic DAC-rate estimate in the initial A/B; a biased-estimate sensitivity test is included. Neither policy models a production audio callback, PCM interpolation filters, subjective artifacts or acoustic measurements.
 
+M0 drift-control experiment (PR #7): the 60-second seed-7 CI comparison showed lower modeled phase-error p95 for the bounded resampling candidate in the nominal clock-drift and high-jitter cases, but worse p95 under asymmetric delay when the ±500 ppm adjustment limit was reached. The candidate uses an ideal synthetic rate estimate in the A/B. This is control-model evidence only; audio quality, filter behavior, runtime safety and physical-device performance remain untested. Results are recorded in `sim/README.md` and the development log.
+
 ### Phase 2 — Protocol and clock sync on two Android phones (M1)
 
 Deliverables:
