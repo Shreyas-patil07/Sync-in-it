@@ -10,7 +10,7 @@ type NavigablePage = Exclude<Page, 'not-found'>;
 
 function resolvePage(): Page {
   if (window.location.pathname === '/') return 'home';
-  if (window.location.pathname.replace(/\\/$/, '') === '/downloads') return 'downloads';
+  if (window.location.pathname.replace(/\/$/, '') === '/downloads') return 'downloads';
   return 'not-found';
 }
 
