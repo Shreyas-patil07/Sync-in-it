@@ -65,6 +65,7 @@ class TcpFrameConnection internal constructor(
     private val closed = AtomicBoolean(false)
 
     val isClosed: Boolean get() = closed.get() || socket.isClosed
+    val remoteAddress: java.net.InetAddress get() = socket.inetAddress
 
     /** Returns null only for a clean EOF between frames. A truncated frame closes the socket. */
     @Throws(IOException::class, SocketTimeoutException::class)
