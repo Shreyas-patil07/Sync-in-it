@@ -21,7 +21,3 @@ tasks.register<JavaExec>("transportTest") {
 tasks.named("check") {
     dependsOn("transportTest")
 }
-
-tasks.test {
-    failOnNoDiscoveredTests = false
-}
