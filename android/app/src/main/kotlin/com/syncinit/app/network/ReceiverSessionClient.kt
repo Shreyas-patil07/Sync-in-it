@@ -32,10 +32,11 @@ class ReceiverSessionClient(private val onStatus: (String) -> Unit) : Closeable 
     @Volatile private var controlConnection: TcpFrameConnection? = null
     @Volatile private var audioConnection: TcpFrameConnection? = null
 
-    fun connect(host: String, tokenHex: String) {
+    fun connect(host: String, tokenHex: String, controlPort: Int = MasterSessionHost.CONTROL_PORT) {
         check(!closed.get()) { "receiver client is closed" }
         check(started.compareAndSet(false, true)) { "receiver client has already started" }
         require(host.isNotBlank()) { "master address must not be blank" }
+        require(controlPort in 1..65_535) { "control port is invalid" }
         val token = tokenHex.decodeSessionToken()
 
         executor.execute {
@@ -43,7 +44,7 @@ class ReceiverSessionClient(private val onStatus: (String) -> Unit) : Closeable 
                 onStatus("Connecting to master $host…")
                 val control = TcpFrameConnection.connect(
                     host = host,
-                    port = MasterSessionHost.CONTROL_PORT,
+                    port = controlPort,
                     connectTimeoutMs = CONNECT_TIMEOUT_MS,
                     readTimeoutMs = HANDSHAKE_READ_TIMEOUT_MS
                 )
