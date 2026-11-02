@@ -596,7 +596,7 @@ No physical-device synchronization results are recorded in this initial log. Add
 ## 2026-11-03 — Android LAN debugger and connection-stage tracing
 
 **Type:** Android diagnostics / transport observability / test coverage  
-**Status:** Implemented on branch; CI and physical-device retest pending
+**Status:** Implemented; Android/JNI, Kotlin transport and Python/C++ CI passed; physical-device retest pending
 
 **Observed problem:** Two Redmi 9 Power devices fail to connect to each other in either host/receiver direction, while each can connect to the Redmi Note 12 Pro. Both Redmi 9 Power devices also work independently as host and receiver with the Note 12 Pro. The router isolation setting change did not resolve the pair-specific failure. The available screenshot showed a No route to host / EHOSTUNREACH failure while connecting to the advertised host control port. This is not evidence of an audio decoder or clock synchronization failure.
 
@@ -618,4 +618,4 @@ No physical-device synchronization results are recorded in this initial log. Add
 
 **Interpretation:** NO_ROUTE_TO_HOST means the OS rejected the route/neighbor path before TCP admission; CONNECTION_REFUSED means the peer IP was reachable but no listener accepted the target port; a 5-second timeout suggests silently dropped/filtered connection traffic; failure at WELCOME or AUDIO_HELLO indicates TCP is working and the investigation has moved into protocol/admission. Subnet equality alone does not prove peer-to-peer reachability or rule out AP isolation/firewall policy.
 
-**Validation:** Pending GitHub Android/JNI and Kotlin transport CI on this branch. The new debugger has not yet been run on the three physical phones. No root cause for the Redmi-to-Redmi pair is claimed until both devices' exported logs are compared.
+**Validation:** GitHub Actions passed the Android debug APK/NDK build, Kotlin transport integration tests, APK signature verification, and Python 3.11/3.12/3.13 plus C++17 simulator/core matrix on commit `95bae222277230c9ef9538553577a2cb3abd8ffd`. The updateable debug APK was uploaded as workflow artifact `sync-in-it-android-preview-e13a473ea69a3e88305bea56384c64ee4932c0ab` (run `41518255946`). The new debugger has not yet been run on the three physical phones. No root cause for the Redmi-to-Redmi pair is claimed until both devices' exported logs are compared.
