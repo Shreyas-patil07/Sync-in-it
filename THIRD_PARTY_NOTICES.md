@@ -4,17 +4,17 @@ This file lists third-party software, fonts and reference material connected to 
 
 Last updated: 2 November 2026.
 
-## 1. Referenced in the repository today (website)
+## 1. Referenced in the repository today (frontend)
 
 | Component | Use | License | Notes |
 |---|---|---|---|
-| React, React DOM (18.x) | Website runtime | MIT | Bundled into the website build |
-| lucide-react | Website icons | ISC | Some icons derive from Feather (MIT) |
-| TypeScript | Website build | Apache-2.0 | Development dependency |
-| Vite | Website build | MIT | Development dependency |
-| @vitejs/plugin-react | Website build | MIT | Development dependency |
+| React, React DOM (18.x) | Frontend runtime | MIT | Bundled into the frontend build |
+| lucide-react | Frontend icons | ISC | Some icons derive from Feather (MIT) |
+| TypeScript | Frontend build | Apache-2.0 | Development dependency |
+| Vite | Frontend build | MIT | Development dependency |
+| @vitejs/plugin-react | Frontend build | MIT | Development dependency |
 | @types/react, @types/react-dom | Type definitions | MIT | Development dependencies |
-| Inter, Outfit, DM Mono | Website fonts | SIL Open Font License 1.1 | Loaded from Google Fonts at runtime, not stored in this repository |
+| Inter, Outfit, DM Mono | Frontend fonts | SIL Open Font License 1.1 | Loaded from Google Fonts at runtime, not stored in this repository |
 
 ## 2. Planned dependencies (not yet in the repository)
 
@@ -47,7 +47,7 @@ Android SDK, NDK and iOS SDK/Xcode are used as build tools under their own terms
 
 1. Include the project `LICENSE` and `NOTICE`.
 2. Reproduce the notices of bundled third-party components (for example Apache-2.0 NOTICE text, BSD copyright lines) in an "Open source licenses" screen or accompanying file.
-3. For the website, generate a dependency license report from the lockfile before each deployment (a tool such as `license-checker` for npm) and confirm nothing outside the allowed list in LICENSING.md has appeared.
+3. For the frontend, generate a dependency license report from the lockfile before each deployment (a tool such as `license-checker` for npm) and confirm nothing outside the allowed list in LICENSING.md has appeared.
 4. For the Python tools, generate the equivalent report with `pip-licenses`.
 
 ## 5. Adding a dependency

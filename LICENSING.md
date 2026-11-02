@@ -6,10 +6,10 @@ Sync In It uses different licenses for different kinds of material. This file is
 
 | Material | Where | License | License file |
 |---|---|---|---|
-| Source code: C++ core, Android and iOS apps, Python simulator, tools, website source, build and CI scripts | `core/`, `android/`, `ios/`, `sim/`, `tools/`, `website/`, `.github/` | Apache License 2.0 | [`LICENSE`](LICENSE) |
+| Source code: C++ core, Android and iOS apps, Python simulator, tools, frontend source, build and CI scripts | `core/`, `android/`, `ios/`, `sim/`, `tools/`, `frontend/`, `.github/` | Apache License 2.0 | [`LICENSE`](LICENSE) |
 | Test vectors and generated test data | `protocol/vectors/` | Apache License 2.0 | [`LICENSE`](LICENSE) |
-| Documentation, specifications, diagrams, measurement reports | `docs/`, `docs_original/`, `protocol/*.md`, `README.md`, `website/README.md` | Creative Commons Attribution 4.0 International (CC BY 4.0) | [`LICENSE-DOCS`](LICENSE-DOCS) |
-| Project name, logo and brand images | `docs/images/`, `website/public/images/` | **All rights reserved.** Not covered by the Apache-2.0 or CC BY 4.0 grants | none |
+| Documentation, specifications, diagrams, measurement reports | `docs/`, `docs_original/`, `protocol/*.md`, `README.md`, `frontend/README.md` | Creative Commons Attribution 4.0 International (CC BY 4.0) | [`LICENSE-DOCS`](LICENSE-DOCS) |
+| Project name, logo and brand images | `docs/images/`, `frontend/public/images/` | **All rights reserved.** Not covered by the Apache-2.0 or CC BY 4.0 grants | none |
 | Third-party software and fonts | dependencies | Their own licenses | [`THIRD_PARTY_NOTICES.md`](THIRD_PARTY_NOTICES.md) |
 
 Attribution text required by Apache-2.0 is in [`NOTICE`](NOTICE).
