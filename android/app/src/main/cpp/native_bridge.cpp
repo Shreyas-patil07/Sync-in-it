@@ -66,11 +66,168 @@ jint state_code(syit::ReceiverSessionState state) {
     return static_cast<jint>(state);
 }
 
+bool copy_wire_frame(JNIEnv* env, jbyteArray wire_array, std::vector<std::uint8_t>& wire) {
+    if (wire_array == nullptr) {
+        throw_illegal_argument(env, "encoded frame must not be null");
+        return false;
+    }
+    const jsize length = env->GetArrayLength(wire_array);
+    if (length < 6 || static_cast<std::size_t>(length) > syit::kMaxFrameSize + 4U) {
+        throw_illegal_argument(env, "encoded frame length is outside the protocol bounds");
+        return false;
+    }
+    std::vector<jbyte> bytes(static_cast<std::size_t>(length));
+    env->GetByteArrayRegion(wire_array, 0, length, bytes.data());
+    if (env->ExceptionCheck()) return false;
+    wire.resize(bytes.size());
+    for (std::size_t i = 0; i < bytes.size(); ++i) {
+        wire[i] = static_cast<std::uint8_t>(bytes[i]);
+    }
+    return true;
+}
+
+jbyteArray make_byte_array(JNIEnv* env, const std::vector<std::uint8_t>& bytes) {
+    if (bytes.size() > static_cast<std::size_t>(INT32_MAX)) {
+        throw_illegal_argument(env, "encoded frame exceeds JNI array limit");
+        return nullptr;
+    }
+    jbyteArray output = env->NewByteArray(static_cast<jsize>(bytes.size()));
+    if (output == nullptr) return nullptr;
+    if (!bytes.empty()) {
+        env->SetByteArrayRegion(
+            output, 0, static_cast<jsize>(bytes.size()),
+            reinterpret_cast<const jbyte*>(bytes.data()));
+    }
+    return output;
+}
+
 }  // namespace
 
 extern "C" JNIEXPORT jint JNICALL
 Java_com_syncinit_app_core_NativeCore_nativeCoreVersion(JNIEnv*, jobject) {
     return 1;
+}
+
+extern "C" JNIEXPORT jbyteArray JNICALL
+Java_com_syncinit_app_core_NativeCore_nativeEncodeHelloFrame(
+    JNIEnv* env, jobject, jbyteArray token_array, jint platform) {
+    if (platform < 0 || platform > 255) {
+        throw_illegal_argument(env, "HELLO platform must fit in one byte");
+        return nullptr;
+    }
+    syit::Hello hello;
+    hello.proto_version = 1U;
+    hello.platform = static_cast<std::uint8_t>(platform);
+    hello.app_version = 1U;
+    hello.model = "Android";
+    if (!copy_token(env, token_array, hello.token)) return nullptr;
+    try {
+        const auto frame = syit::encode_control_message(syit::ControlMessage{hello});
+        return make_byte_array(env, syit::encode_frame(frame));
+    } catch (const std::exception& error) {
+        throw_illegal_argument(env, error.what());
+        return nullptr;
+    }
+}
+
+extern "C" JNIEXPORT jlongArray JNICALL
+Java_com_syncinit_app_core_NativeCore_nativeDecodeWelcomeFrame(
+    JNIEnv* env, jobject, jbyteArray wire_array) {
+    std::vector<std::uint8_t> wire;
+    if (!copy_wire_frame(env, wire_array, wire)) return nullptr;
+    try {
+        const auto frame = syit::decode_frame(wire);
+        const auto message = syit::decode_control_message(frame);
+        const auto* welcome = std::get_if<syit::Welcome>(&message);
+        if (welcome == nullptr) {
+            throw std::invalid_argument("expected a WELCOME control frame");
+        }
+        const std::array<jlong, 10> values{{
+            static_cast<jlong>(welcome->result),
+            static_cast<jlong>(welcome->receiver_id),
+            static_cast<jlong>(welcome->session_id),
+            static_cast<jlong>(welcome->sample_rate_hz),
+            static_cast<jlong>(welcome->channels),
+            static_cast<jlong>(welcome->chunk_frames),
+            static_cast<jlong>(welcome->codec),
+            static_cast<jlong>(welcome->audio_port),
+            static_cast<jlong>(welcome->time_port),
+            static_cast<jlong>(welcome->startup_lead_ms)
+        }};
+        jlongArray output = env->NewLongArray(static_cast<jsize>(values.size()));
+        if (output == nullptr) return nullptr;
+        env->SetLongArrayRegion(output, 0, static_cast<jsize>(values.size()), values.data());
+        return output;
+    } catch (const std::exception& error) {
+        throw_illegal_argument(env, error.what());
+        return nullptr;
+    }
+}
+
+extern "C" JNIEXPORT jbyteArray JNICALL
+Java_com_syncinit_app_core_NativeCore_nativeEncodeAudioHelloFrame(
+    JNIEnv* env, jobject, jlong session_id, jint receiver_id) {
+    if (session_id < 0 || static_cast<std::uint64_t>(session_id) > UINT32_MAX ||
+        receiver_id < 0 || receiver_id > 65'535) {
+        throw_illegal_argument(env, "AUDIO_HELLO identity contains an out-of-range value");
+        return nullptr;
+    }
+    try {
+        const syit::AudioHello hello{
+            static_cast<std::uint32_t>(session_id),
+            static_cast<std::uint16_t>(receiver_id)};
+        const auto frame = syit::encode_control_message(syit::ControlMessage{hello});
+        return make_byte_array(env, syit::encode_frame(frame));
+    } catch (const std::exception& error) {
+        throw_illegal_argument(env, error.what());
+        return nullptr;
+    }
+}
+
+extern "C" JNIEXPORT jint JNICALL
+Java_com_syncinit_app_core_NativeCore_nativeOnHelloFrame(
+    JNIEnv* env, jobject, jlong handle, jbyteArray wire_array) {
+    auto native_session = find_session(handle);
+    if (!native_session) return result_code(syit::ReceiverSessionResult::Closed);
+    std::vector<std::uint8_t> wire;
+    if (!copy_wire_frame(env, wire_array, wire)) {
+        return result_code(syit::ReceiverSessionResult::WrongState);
+    }
+    try {
+        const auto frame = syit::decode_frame(wire);
+        if (frame.flags != 0U) throw std::invalid_argument("HELLO frame flags must be zero");
+        const auto message = syit::decode_control_message(frame);
+        const auto* hello = std::get_if<syit::Hello>(&message);
+        if (hello == nullptr) throw std::invalid_argument("expected a HELLO control frame");
+        std::lock_guard<std::mutex> lock(native_session->mutex);
+        return result_code(native_session->session.on_hello(*hello));
+    } catch (const std::exception& error) {
+        throw_illegal_argument(env, error.what());
+        return result_code(syit::ReceiverSessionResult::WrongState);
+    }
+}
+
+extern "C" JNIEXPORT jint JNICALL
+Java_com_syncinit_app_core_NativeCore_nativeOnAudioHelloFrame(
+    JNIEnv* env, jobject, jlong handle, jbyteArray wire_array) {
+    auto native_session = find_session(handle);
+    if (!native_session) return result_code(syit::ReceiverSessionResult::Closed);
+    std::vector<std::uint8_t> wire;
+    if (!copy_wire_frame(env, wire_array, wire)) {
+        return result_code(syit::ReceiverSessionResult::WrongState);
+    }
+    try {
+        const auto frame = syit::decode_frame(wire);
+        if (frame.flags != 0U) throw std::invalid_argument("AUDIO_HELLO frame flags must be zero");
+        const auto message = syit::decode_control_message(frame);
+        const auto* hello = std::get_if<syit::AudioHello>(&message);
+        if (hello == nullptr) throw std::invalid_argument("expected an AUDIO_HELLO control frame");
+        std::lock_guard<std::mutex> lock(native_session->mutex);
+        return result_code(native_session->session.on_audio_hello(*hello));
+    } catch (const std::exception& error) {
+        throw_illegal_argument(env, error.what());
+        return result_code(syit::ReceiverSessionResult::WrongState);
+    }
 }
 
 extern "C" JNIEXPORT jlong JNICALL
