@@ -387,3 +387,21 @@ No physical-device synchronization results are recorded in this initial log. Add
 **Limitations:** No operating-system TCP/UDP sockets, connection retries, keepalive scheduler, authentication handshake, encryption, audio queue, Android app or physical-device exchange is implemented by this change. `TimeSyncClient` is single-owner-thread state; platform code must serialize access. Queue overflow is surfaced to callers and requires a deliberate policy.
 
 **Next action:** Implement the native Android TCP/UDP socket adapter and receiver session state machine, then run an actual two-phone time-sync test. Do not claim M1 device synchronization complete until offset/RTT telemetry from physical phones is recorded.
+
+
+### 2 November 2026 — M1 receiver control-session state machine
+
+**Type:** Protocol lifecycle / receiver admission and playback state  
+**Status:** Implemented; PR validation pending  
+**Branch:** `feature/m1-receiver-session-state`
+
+**Summary:**
+- Added a master-side C++17 `ReceiverSession` per control connection.
+- Enforced HELLO protocol-version, fixed-length session-token and platform checks before making WELCOME available.
+- Bound AUDIO_HELLO to the session and receiver IDs assigned in WELCOME; mismatches close the connection.
+- Enforced READY gates for stable clock, configured minimum buffered duration and maximum residual standard deviation.
+- Added valid anchor transitions for START, PAUSE, RESUME, SEEK and coordinated delay change.
+- Added DEGRADED → Synchronizing recovery requiring a fresh READY gate, plus terminal LEAVE/close behavior.
+- Added regression tests for successful flow, authentication/identity failures, invalid ordering, readiness gates, anchors and recovery.
+
+**Limitations:** This is a portable state machine, not a socket adapter or Android application. The caller remains responsible for per-connection event serialization, timeouts, admission capacity, receiver buffer allocation, cryptographic transport protection and physical-device validation.
