@@ -21,7 +21,6 @@ class ReceiverSessionClient(private val onStatus: (String) -> Unit) : Closeable 
         private const val JOIN_BURST_INTERVAL_MS = 50L
         private const val UNSTABLE_RETRY_INTERVAL_MS = 500L
         private const val STEADY_STATE_INTERVAL_MS = 2_000L
-        private const val ESTIMATOR_WINDOW_NS = 60_000_000_000L
     }
 
     private val closed = AtomicBoolean(false)
@@ -145,7 +144,7 @@ class ReceiverSessionClient(private val onStatus: (String) -> Unit) : Closeable 
                     val stable = lastMeasurement?.acquisitionStable == true &&
                         (lastMeasurement?.stableStreak ?: 0) >= 3
                     val intervalMs = when {
-                        probeAttempts < JOIN_BURST_PROBES -> JOIN_BURST_INTERVAL_MS
+                        probeAttempts <= JOIN_BURST_PROBES -> JOIN_BURST_INTERVAL_MS
                         stable -> STEADY_STATE_INTERVAL_MS
                         else -> UNSTABLE_RETRY_INTERVAL_MS
                     }
