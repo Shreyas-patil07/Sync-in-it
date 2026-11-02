@@ -46,36 +46,43 @@ jobs:
       - name: Build APK and run transport tests
         run: gradle -p android :app:assembleDebug :transport:check --stacktrace
 
-      - name: Prepare release asset
+      - name: Prepare release assets
         run: |
           mkdir -p release-assets
           cp android/app/build/outputs/apk/debug/app-debug.apk \
-            release-assets/SyncInIt-Android-preview-v0.1.0.apk
+            release-assets/SyncInIt-Android-preview-v0.2.0.apk
+          sha256sum release-assets/SyncInIt-Android-preview-v0.2.0.apk \
+            | awk '{print $1}' > release-assets/SHA256SUMS.txt
 
       - name: Create GitHub pre-release and upload APK
         env:
           GH_TOKEN: ${{ secrets.GITHUB_TOKEN }}
         run: |
           cat > release-notes.md <<'EOF'
-          ## Sync In It Android Preview v0.1.0
+          ## Sync In It Android Preview v0.2.0
 
-          This preview contains the initial Android launcher, native C++ receiver-session bridge (JNI), and the Kotlin TCP/UDP transport module.
+          This preview adds the Android one-master/one-receiver TCP admission flow and UDP clock-acquisition path.
 
-          ### Build
-          - Android SDK 36
-          - arm64-v8a and x86_64 native builds
-          - Debug APK
+          ### Included
+          - Android launcher with Host and Join modes for devices on the same local Wi-Fi network.
+          - Shared C++ protocol codecs and ReceiverSession state machine through JNI.
+          - Separate TCP control and audio-admission channels (audio streaming is not implemented yet).
+          - UDP four-timestamp time synchronization using the shared native TimeSyncResponder, TimeSyncClient and clock estimator.
+          - Adaptive acquisition: 20 probes at 50 ms spacing, 500 ms retries while unstable, then 2-second tracking after the provisional clock-stability gate passes.
+          - Native TCP/UDP loopback smoke checks on app startup.
+          - Native builds for arm64-v8a and x86_64.
 
-          ### Scope
-          This is an early engineering preview, not a production audio-streaming release. Socket-to-session orchestration, audio capture/playback, secure transport, and physical two-phone validation are not included yet.
+          ### Important limitations
+          This is an engineering preview, not a functional synchronized speaker release. No audio chunks, PCM buffering, audio rendering, playback service, encryption or acoustic synchronization validation are included. The receiver sends READY only after clock acquisition; the master rejects it while the reported audio buffer is 0 ms.
 
-          Install only on test devices. Android may ask you to allow installation from your browser or file manager.
+          Use only on a trusted private Wi-Fi network. The session token is an admission credential, not transport encryption. Physical two-phone clock validation is still required.
           EOF
 
-          gh release create "v0.1.0-preview.1" \
-            "release-assets/SyncInIt-Android-preview-v0.1.0.apk#SyncInIt-Android-preview-v0.1.0.apk" \
+          gh release create "v0.2.0-preview.1" \
+            "release-assets/SyncInIt-Android-preview-v0.2.0.apk#SyncInIt-Android-preview-v0.2.0.apk" \
+            "release-assets/SHA256SUMS.txt#SHA256SUMS.txt" \
             --repo "$GITHUB_REPOSITORY" \
             --target "$GITHUB_SHA" \
-            --title "Sync In It Android Preview v0.1.0" \
+            --title "Sync In It Android Preview v0.2.0" \
             --notes-file release-notes.md \
             --prerelease
