@@ -72,6 +72,7 @@ Every network-facing parser must:
 - Validate every variable-length field against remaining frame bytes.
 - Validate sample counts, channels, codec IDs and payload lengths.
 - Validate session ID and receiver ID on every relevant packet.
+- Enforce the receiver control-session state machine: reject out-of-order HELLO/AUDIO_HELLO/READY and playback anchors, close on version/token/platform or identity mismatch, and require fresh readiness checks after degradation.
 - Reject malformed timestamp values and impossible state transitions.
 - Handle unknown messages safely according to versioning rules.
 - Apply rate limits to connection attempts, invalid tokens and control messages.
@@ -156,6 +157,7 @@ Do not invent a custom encryption algorithm. Use established libraries and proto
 - [ ] Per-receiver buffers and queues are bounded.
 - [ ] Unknown message types cannot desynchronize the parser.
 - [ ] Receiver IDs are bound to their authenticated connections.
+- [ ] AUDIO_HELLO identity and READY/playback state transitions are enforced per connection.
 - [ ] Session shutdown invalidates credentials and releases resources.
 - [ ] Microphone and playback capture are visibly active only when expected.
 - [ ] Diagnostic export excludes tokens and audio by default.

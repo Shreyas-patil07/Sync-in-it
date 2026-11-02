@@ -101,6 +101,20 @@ Each TCP connection has its own `FrameStreamDecoder`. Control and audio traffic 
 
 The time-sync client tracks a bounded number of outstanding sequence IDs, validates response version/session/receiver/echoed t1, rejects duplicate or unsolicited responses, and expires stale requests. Its accepted four-timestamp exchange converts directly to the shared estimator's `SyncSample`. The client is owned by one network/control thread; platform adapters synchronize access if their callback model requires it.
 
+### 4.5 Receiver control-session state
+
+The master maintains one `ReceiverSession` per authenticated control connection. Its enforced path is:
+
+`AwaitingHello → AwaitingAudioHello → Synchronizing → Ready → Armed → Playing/Paused`
+
+- HELLO is accepted only once. Protocol version, session token and configured platform support are checked before WELCOME is exposed. Version, token or platform failures close the session.
+- AUDIO_HELLO must carry the session and receiver IDs assigned in WELCOME. Either mismatch closes the connection.
+- READY is accepted only after AUDIO_HELLO and only when the receiver reports a stable clock, at least the configured buffer depth, and residual standard deviation no greater than the configured limit. Failed readiness checks leave the receiver in Synchronizing.
+- The master arms only a Ready receiver. START, PAUSE, RESUME, SEEK and delay-change anchors are accepted only in their valid states and with consistent playing flags.
+- A degraded receiver returns to Synchronizing and must pass the complete READY gate again before it can be armed. LEAVE and explicit close are terminal.
+
+The session object is single-owner-thread state; the platform adapter must serialize events for each connection. Buffer and clock-quality thresholds are configuration, not hard-coded protocol truths. This state machine validates lifecycle and identity but does not authenticate the audio transport cryptographically or replace socket-level timeout and disconnect handling.
+
 ## 5. Data and clock domains
 
 The system has at least three clock domains per receiver:

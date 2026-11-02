@@ -34,6 +34,12 @@ Do not manually edit generated headers. Add or change a test case in the JSON fi
 
 These are transport primitives, not socket implementations. Android/Kotlin and iOS/Swift own socket lifecycle and call these components from network threads. They do not add cryptographic packet authentication or encryption.
 
+## Receiver control-session state
+
+`syit::ReceiverSession` enforces the master-side lifecycle for one receiver connection: HELLO token/version/platform validation, WELCOME assignment, AUDIO_HELLO session/receiver binding, and READY gating against configured clock-residual and buffer thresholds. It then validates the ARMED → PLAYING/PAUSED transitions driven by timeline anchors. DEGRADED receivers must repeat synchronization and readiness checks before they can be armed again.
+
+Each instance is single-owner-thread state. The caller still owns socket I/O, timeout policy, token generation, receiver-capacity admission and cryptographic transport protection. A successful token check is not encryption or protection from a LAN attacker.
+
 ## Scope and limitations
 
 This is a portable timing core, not a complete streaming/audio engine. It does not implement sockets, buffering, codec processing, native audio callbacks, DAC timestamp acquisition or acoustic calibration. Passing synthetic parity vectors demonstrates algorithm agreement, not device performance or acoustic synchronization. The drift controller remains the initial bounded frame-slip policy and needs listening tests before production use.
