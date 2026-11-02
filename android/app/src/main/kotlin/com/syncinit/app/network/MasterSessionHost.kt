@@ -1,7 +1,9 @@
 package com.syncinit.app.network
 
+import com.syncinit.app.audio.NativePcmJitterBuffer
 import android.content.Context
 import android.os.Build
+import com.syncinit.app.core.NativeCore
 import com.syncinit.app.core.NativeReceiverSession
 import com.syncinit.app.core.ReceiverSessionConfig
 import com.syncinit.app.core.ReceiverSessionResult
@@ -17,6 +19,8 @@ import java.net.SocketTimeoutException
 import java.security.SecureRandom
 import java.util.concurrent.Executors
 import java.util.concurrent.atomic.AtomicBoolean
+import kotlin.math.PI
+import kotlin.math.sin
 
 data class HostInvitation(
     val serviceName: String,
@@ -46,6 +50,7 @@ class MasterSessionHost(context: Context, private val onStatus: (String) -> Unit
     @Volatile private var nativeSession: NativeReceiverSession? = null
     @Volatile private var nativeSessionConfig: ReceiverSessionConfig? = null
     @Volatile private var advertiser: LanSessionAdvertiser? = null
+    @Volatile private var audioSenderThread: Thread? = null
 
     fun start(): HostInvitation {
         check(!closed.get()) { "host service is closed" }
@@ -154,7 +159,11 @@ class MasterSessionHost(context: Context, private val onStatus: (String) -> Unit
 
                     admitted = true
                     onStatus(
-                        "Receiver admitted · native state ${currentSession.state()} · starting UDP clock sync."
+                        "Receiver admitted · native state ${currentSession.state()} · starting PCM16 test audio and UDP clock sync."
+                    )
+                    startAudioTestStream(
+                        acceptedAudio,
+                        checkNotNull(nativeSessionConfig).sessionId
                     )
                     runTimeSyncServer(acceptedControl)
                     return
@@ -192,6 +201,73 @@ class MasterSessionHost(context: Context, private val onStatus: (String) -> Unit
             if (closed.compareAndSet(false, true)) executor.shutdownNow()
             closeResources()
         }
+    }
+
+    private fun startAudioTestStream(connection: TcpFrameConnection, sessionId: Long) {
+        val sender = Thread({
+            val sampleRate = 48_000
+            val channels = 2
+            val chunkFrames = 960
+            val chunkPeriodNs = 20_000_000L
+            var sequence = 0L
+            var sampleIndex = 0L
+            var nextDeadlineNs = System.nanoTime()
+
+            try {
+                onStatus("Streaming a 1 kHz timing-click test track to the receiver.")
+                while (!closed.get() && !connection.isClosed) {
+                    val pcm = ByteArray(chunkFrames * channels * 2)
+                    for (frameIndex in 0 until chunkFrames) {
+                        val absoluteSample = sampleIndex + frameIndex
+                        val positionInSecond = absoluteSample % sampleRate.toLong()
+                        val sample = if (positionInSecond < 1_440L) {
+                            (sin(2.0 * PI * 1_000.0 * positionInSecond / sampleRate) * 6_000.0).toInt()
+                        } else {
+                            0
+                        }
+                        for (channel in 0 until channels) {
+                            val offset = (frameIndex * channels + channel) * 2
+                            pcm[offset] = (sample and 0xff).toByte()
+                            pcm[offset + 1] = ((sample shr 8) and 0xff).toByte()
+                        }
+                    }
+
+                    val encoded = NativePcmJitterBuffer.encodeChunk(
+                        sessionId = sessionId,
+                        sequence = sequence,
+                        sampleIndex = sampleIndex,
+                        frames = chunkFrames,
+                        channels = channels,
+                        pcm16LittleEndian = pcm
+                    )
+                    connection.writeEncodedFrame(encoded)
+
+                    sequence = (sequence + 1L) and 0xffff_ffffL
+                    sampleIndex += chunkFrames
+                    nextDeadlineNs += chunkPeriodNs
+                    val remainingNs = nextDeadlineNs - System.nanoTime()
+                    if (remainingNs > 0L) {
+                        Thread.sleep(
+                            remainingNs / 1_000_000L,
+                            (remainingNs % 1_000_000L).toInt()
+                        )
+                    } else {
+                        nextDeadlineNs = System.nanoTime()
+                    }
+                }
+            } catch (error: InterruptedException) {
+                if (!closed.get()) Thread.currentThread().interrupt()
+            } catch (error: Exception) {
+                if (!closed.get()) {
+                    onStatus("PCM16 test stream stopped: ${error.message ?: error.javaClass.simpleName}")
+                    close()
+                }
+            }
+        }, "syncinit-master-audio-source").apply {
+            isDaemon = true
+        }
+        audioSenderThread = sender
+        sender.start()
     }
 
     private fun runTimeSyncServer(control: TcpFrameConnection) {
@@ -289,6 +365,8 @@ class MasterSessionHost(context: Context, private val onStatus: (String) -> Unit
     private fun closeResources() {
         closeQuietly(controlConnection)
         closeQuietly(audioConnection)
+        audioSenderThread?.interrupt()
+        audioSenderThread = null
         closeQuietly(controlServer)
         closeQuietly(audioServer)
         closeQuietly(timeSyncServer)
