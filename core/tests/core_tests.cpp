@@ -45,6 +45,8 @@ void test_estimator_vectors() {
         expect(close(result.residual_rms_ms, item.expected_residual_rms_ms, 1e-9), std::string(item.name) + ": residual RMS");
         expect(result.samples_used == item.expected_samples_used, std::string(item.name) + ": samples used");
         expect(result.samples_seen == item.expected_samples_seen, std::string(item.name) + ": samples seen");
+        expect(result.selected_sample_span_ns == item.expected_selected_sample_span_ns,
+               std::string(item.name) + ": selected sample span");
     }
 }
 

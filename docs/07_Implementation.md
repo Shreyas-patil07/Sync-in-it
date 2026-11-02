@@ -4,7 +4,7 @@
 **Version:** 1.4  
 **Last updated:** 2 November 2026
 
-**Current progress:** M0 is in progress. The Python reference simulator now has deterministic impairment scenarios and playout diagnostics. A portable C++17 timing core implements the four-timestamp offset formula, lowest-RTT offset/skew estimator, timeline sample mapping, DAC clock mapping and initial drift-controller policy. Both languages consume the shared `protocol/vectors/m0_timing.json` test vectors through direct Python loading and CMake-generated C++ test data. No phone synchronization or audio playback has been validated.
+**Current progress:** M0 is in progress. The Python reference simulator has deterministic impairment scenarios, playout diagnostics and adaptive acquisition cadence (500 ms while unstable, 2 s after three consecutive stable-fit updates). A portable C++17 timing core implements the four-timestamp offset formula, lowest-RTT offset/skew estimator, selected-fit sample-span reporting, timeline sample mapping, DAC clock mapping and the initial drift-controller policy. Both languages consume the shared `protocol/vectors/m0_timing.json` test vectors. No phone synchronization or audio playback has been validated.
 
 ## 1. Implementation strategy
 
@@ -38,6 +38,7 @@ Modules:
 - Simulated master and receiver monotonic clocks.
 - Configurable clock skew.
 - Network delay, jitter, asymmetry, packet loss and spikes.
+- Adaptive acquisition probes: 20 requests at 50 ms spacing, then 500 ms retries until three consecutive estimator updates meet the provisional gate, followed by 2 s steady-state probes.
 - Offset estimator.
 - DAC clock model.
 - Timeline and drift controller.
@@ -60,10 +61,11 @@ Exit gate:
 - The +30 ppm simulation case remains within the agreed 1 ms estimator/tracking gate.
 - Offset, skew, convergence time, slip rate, hard resync count and resulting playout error are reported.
 - The C++ timing implementation matches Python on the committed M0 golden vectors; C++/Python parity is a CI gate.
+- A fixed-versus-adaptive cadence A/B report covers +30 ppm drift, high jitter and random packet loss using the same time-indexed network outcomes at overlapping timestamps.
 
 The shared vectors establish calculation parity, not physical timing accuracy. C++ networking, audio callbacks, jitter buffering and acoustic measurement are not part of this core task.
 
-The convergence diagnostic requires three consecutive estimator updates with absolute offset error at or below 1 ms and absolute skew error at or below 5 ppm. The playout metrics come from a simplified 20 ms control-policy simulation; they are not acoustic measurements and do not model a production audio callback or continuous resampling.
+The ground-truth convergence diagnostic requires three consecutive estimator updates with absolute offset error at or below 1 ms and absolute skew error at or below 5 ppm. The operational acquisition gate requires a skew estimate, at least 8 selected samples, a selected-sample span of at least 10 seconds, residual RMS below 0.25 ms, and three consecutive updates meeting those conditions. These are distinct simulator diagnostics: the runtime can observe fit quality and sample span, but cannot observe ground-truth estimator error. The playout metrics come from a simplified 20 ms control-policy simulation; they are not acoustic measurements and do not model a production audio callback or continuous resampling.
 
 ### Phase 2 — Protocol and clock sync on two Android phones (M1)
 
@@ -312,7 +314,8 @@ Android and iOS CI may be expanded after native project skeletons exist. Physica
 1. Define and enforce scenario-level acceptance thresholds for the M0 simulator, including asymmetric-delay and degraded-sync behavior.
 2. Review the initial frame-slip controller against a performance-first audio-quality strategy; compare controlled rate adjustment/resampling before treating the policy as final.
 3. Extend cross-language vectors when estimator or timing behavior changes.
-4. Complete the M0 exit gate before beginning M1 Android networking.
+4. Validate retry traffic and acquisition behavior under packet-level shared-Wi-Fi contention before carrying this cadence into the Android runtime.
+5. Complete the M0 exit gate before beginning M1 Android networking.
 
 ## 11. Source documents
 

@@ -83,3 +83,4 @@ class EstimatorResult:
     residual_rms_ms: float
     samples_used: int
     samples_seen: int
+    selected_sample_span_ns: int

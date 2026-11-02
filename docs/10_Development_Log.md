@@ -179,3 +179,30 @@ No physical-device synchronization results are recorded in this initial log. Add
 **Risks or limitations:** The core does not yet implement networking, jitter buffering, native audio output, audio callback scheduling or acoustic calibration. The playout simulator remains a simplified controller model. The Python/C++ vectors prove matching calculations only for their covered cases. The JSON vectors are timing vectors, not the wire-message serialization vectors still required before M1 protocol work.
 
 **Next action:** Add scenario-level acceptance criteria and review higher-quality drift correction candidates before beginning M1 networking.
+
+
+### 2 November 2026 — Adaptive acquisition cadence and fair A/B benchmark
+
+**Type:** Simulator / Estimator diagnostics
+**Status:** In progress
+**Branch:** `feature/m0-adaptive-sync-acquisition`
+
+**Summary:**
+- Implemented the TRD acquisition cadence: 20 join probes at 50 ms spacing, 500 ms retries while unstable, then 2 s steady-state probes after three consecutive estimator updates meet the acquisition gate.
+- Added selected-fit sample-span reporting to Python and C++ estimator results with shared JSON golden-vector coverage.
+- The provisional simulator acquisition gate requires a skew estimate, at least 8 selected low-RTT samples, a selected-sample span of at least 10 seconds, and residual RMS below 0.25 ms for three consecutive updates. This is stricter than the TRD's initial <1 ms residual baseline.
+- Changed non-burst network scenarios to use deterministic time-indexed random streams. Fixed and adaptive A/B runs therefore see the same delay/loss outcome at overlapping probe timestamps. Burst-loss profiles retain sequential burst state and are not part of this A/B comparison.
+- Added fixed-versus-adaptive A/B reports for +30 ppm drift, high jitter and random packet loss.
+
+**Verification (local):**
+- Python 3.13: 26/26 tests passed.
+- GCC 14.2 Release: CMake build and CTest passed.
+- Clang 17 Release: CMake build and CTest passed.
+- Default 60-second run, seed 7: fixed versus adaptive ground-truth convergence was 21.0 s vs 7.5 s (+30 ppm), 53.0 s vs 32.0 s (high jitter), and 55.0 s vs 34.5 s (random packet loss). Probe counts were 50 vs 73, 50 vs 139, and 50 vs 139 respectively.
+- Across 40 seeds per 60-second profile, median convergence and success counts changed from 34.0 s (34/40) to 22.0 s (39/40) for +30 ppm; 41.0 s (21/40) to 26.0 s (39/40) for high jitter; and 48.0 s (18/40) to 29.0 s (36/40) for random packet loss.
+
+**Result:** Adaptive acquisition improved the synthetic ground-truth convergence distribution in these test profiles at the cost of more time-sync probes. The strict acquisition gate remained unmet at the end of the 40-run high-jitter and packet-loss samples, so those receivers continued retrying instead of being declared ready.
+
+**Risks or limitations:** The benchmark is synthetic. Shared Wi-Fi airtime contention, router queueing caused by additional control traffic, physical device clock behavior and audio output are not modeled. The strict acquisition gate has not been validated on phones. No physical-device timing or acoustic performance is claimed.
+
+**Next action:** Model shared-LAN contention and define scenario acceptance thresholds; then evaluate higher-quality drift correction before starting M1 networking.

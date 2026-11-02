@@ -71,6 +71,8 @@ class ClockOffsetEstimator:
         rtts_ms = [sample.rtt_ns / 1_000_000.0 for sample in selected]
 
         estimated_skew = -slope * 1_000_000.0 if len(selected) >= self.minimum_skew_samples else None
+        selected_midpoints = [sample.receiver_midpoint_ns for sample in selected]
+        selected_sample_span_ns = max(selected_midpoints) - min(selected_midpoints)
         return EstimatorResult(
             offset_ns=offset_now_ns,
             receiver_skew_ppm=estimated_skew,
@@ -78,4 +80,5 @@ class ClockOffsetEstimator:
             residual_rms_ms=residual_rms_ns / 1_000_000.0,
             samples_used=len(selected),
             samples_seen=len(recent),
+            selected_sample_span_ns=selected_sample_span_ns,
         )
