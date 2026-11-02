@@ -345,3 +345,22 @@ No physical-device synchronization results are recorded in this initial log. Add
 **Limitations:** This layer does not implement audio-chunk typed decoding, TCP stream accumulation, sockets, session-state enforcement, token authorization, or transport encryption. Those remain separate layers. No Android or physical-device behavior is claimed.
 
 **Next action:** Add a bounded TCP stream framer and then implement the platform-neutral control/time-sync transport session before Android UI integration.
+
+
+### 2 November 2026 — M1 bounded incremental TCP stream framer
+
+**Type:** Protocol implementation / bounded stream parsing  
+**Status:** Implemented; CI verification pending  
+**Branch:** \`feature/m1-bounded-tcp-framer\`
+
+**Summary:**
+- Added a Python \`FrameStreamDecoder\` and portable C++17 \`FrameStreamDecoder\` for arbitrary TCP byte fragments.
+- Handle split length prefixes, split payloads, byte-at-a-time input, multiple frames in one read, and aggregate reads larger than the per-frame limit.
+- Validate the four-byte length prefix immediately when complete; reject lengths below the fixed type/flags header or above 65,536 bytes.
+- Retain at most one incomplete frame per connection (maximum 65,540 bytes including the prefix); clear parser state on malformed lengths.
+- Added Python and C++ regression tests for every split point, coalesced frames, maximum-size frames, aggregate input and decoder recovery after malformed input.
+- Updated the protocol specification, core/simulator READMEs and project README to distinguish the implemented protocol foundation from unimplemented socket/session and physical-device work.
+
+**Limitations:** This component parses TCP byte streams only. It does not open sockets, schedule I/O, enforce session state, authenticate peers, parse audio payload fields, or guarantee bounded memory for the caller's returned collection of complete frames. Callers must use bounded socket-read chunks and bounded downstream queues. No Android or physical-device behavior is claimed.
+
+**Next action:** Implement the platform-neutral control/time-sync transport adapters with bounded queues, then connect them to the Android session shell. Keep the two-physical-phone time-sync test as the M1 exit gate.
