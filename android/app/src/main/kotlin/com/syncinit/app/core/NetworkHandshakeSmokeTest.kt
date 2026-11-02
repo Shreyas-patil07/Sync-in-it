@@ -2,6 +2,8 @@ package com.syncinit.app.core
 
 import com.syncinit.transport.TcpFrameConnection
 import com.syncinit.transport.TcpFrameServer
+import com.syncinit.transport.UdpTimeSyncClient
+import com.syncinit.transport.UdpTimeSyncServer
 import java.net.InetAddress
 import java.util.concurrent.ArrayBlockingQueue
 import java.util.concurrent.TimeUnit
@@ -78,10 +80,41 @@ object NetworkHandshakeSmokeTest {
                     check(nativeSession.state() == ReceiverSessionState.Synchronizing) {
                         "receiver did not enter Synchronizing after both TCP channels"
                     }
+
+                    UdpTimeSyncServer(loopback, 0, receiveTimeoutMs = 5_000).use { timeServer ->
+                        UdpTimeSyncClient(loopback, timeServer.localPort, receiveTimeoutMs = 5_000).use { timeClient ->
+                            NativeTimeSyncClient.create(sessionId, receiverId).use { nativeClock ->
+                                val t1Ns = System.nanoTime()
+                                val request = nativeClock.makeRequest(t1Ns)
+                                timeClient.send(request)
+
+                                val incoming = timeServer.receive()
+                                val response = checkNotNull(
+                                    nativeSession.timeSyncResponse(
+                                        incoming.bytes,
+                                        incoming.receivedAtNs,
+                                        System.nanoTime()
+                                    )
+                                ) { "native UDP responder rejected the loopback request" }
+                                timeServer.sendTo(response, incoming.source)
+
+                                val received = timeClient.receiveTimed()
+                                val measurement = checkNotNull(
+                                    nativeClock.acceptResponse(received.bytes, received.receivedAtNs)
+                                ) { "native UDP client rejected the loopback response" }
+                                check(measurement.samplesSeen == 1 && measurement.samplesUsed == 1) {
+                                    "native estimator did not retain the accepted time-sync sample"
+                                }
+                                check(!measurement.acquisitionStable && measurement.stableStreak == 0) {
+                                    "one time-sync sample must not satisfy the stability gate"
+                                }
+                            }
+                        }
+                    }
                 }
             }
         }
 
-        return "two-channel TCP + JNI handshake loopback passed"
+        return "two-channel TCP + JNI + UDP time-sync loopback passed"
     }
 }
