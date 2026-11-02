@@ -9,9 +9,9 @@ The Android workspace contains two Gradle modules:
 
 Pinned versions:
 
-- Android Gradle Plugin 9.5.0
-- Gradle 9.6.0
-- Kotlin 2.4.10
+- Android Gradle Plugin 8.13.2
+- Gradle 8.13
+- Kotlin 2.2.10
 - JDK 17
 - Android SDK 36
 - Android NDK 30.0.16248370
