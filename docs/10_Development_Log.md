@@ -33,7 +33,7 @@
 
 **Type:** Documentation / decision  
 **Status:** Completed  
-**Commit/PR:** [b2352de8e941ea64af3eeb4f61d74332d2c57445](https://github.com/Shreyas-patil07/Sync-in-it/commit/b2352de8e941ea64af3eeb4f61d74332d2c57445)  
+**Commit/PR:** [74b6b5b157faee051a737466dda2ed56b74b5f5a](https://github.com/Shreyas-patil07/Sync-in-it/commit/74b6b5b157faee051a737466dda2ed56b74b5f5a)  
 **Summary:** Added `LICENSE` (Apache-2.0), `LICENSE-DOCS` (CC BY 4.0), `NOTICE`, `LICENSING.md` and `THIRD_PARTY_NOTICES.md`; updated the README license section and accepted ADR-017.  
 **Verification:** All five root licensing files are present; README license references resolve; ADR-017 records the split-license decision.  
 **Result:** Code, documentation, brand assets and third-party components have an explicit licensing map.  
