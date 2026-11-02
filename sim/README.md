@@ -43,6 +43,29 @@ Add \`--json\` for a machine-readable report. The \`--lan\` mode runs shared air
 
 The five cases compare fixed and adaptive probes under identical deterministic audio, clocks and per-packet retry outcomes: 3, 6 and 10 receivers at 72 Mbps, plus 10 receivers at 36 and 24 Mbps. PHY rates are scenario inputs, not measured throughput.
 
+## Corrected 30-second CI benchmark (`--duration 30 --seed 7`)
+
+The following numbers are from the corrected event scheduler. The join-burst response handler schedules follow-up probes only for post-join acquisition transactions; the 20 join probes do not spawn duplicate retry chains.
+
+| Load | Policy | Airtime utilization | Audio p95 | Chunk loss* | Probes |
+|---|---|---:|---:|---:|---:|
+| 3 receivers, 72 Mbps | Fixed | 24.6% | 5.02 ms | 0% | 105 |
+| 3 receivers, 72 Mbps | Adaptive | 24.7% | 5.03 ms | 0% | 174 |
+| 6 receivers, 72 Mbps | Fixed | 49.6% | 10.00 ms | 0% | 210 |
+| 6 receivers, 72 Mbps | Adaptive | 49.9% | 10.02 ms | 0% | 346 |
+| 10 receivers, 72 Mbps | Fixed | 82.8% | 16.58 ms | 0% | 350 |
+| 10 receivers, 72 Mbps | Adaptive | 83.2% | 16.68 ms | 0% | 571 |
+| 10 receivers, 36 Mbps | Fixed | 100% | 195.59 ms | 26.953% | 350 |
+| 10 receivers, 36 Mbps | Adaptive | 100% | 199.48 ms | 27.440% | 557 |
+| 10 receivers, 24 Mbps | Fixed | 100% | 278.90 ms | 49.140% | 350 |
+| 10 receivers, 24 Mbps | Adaptive | 100% | 281.44 ms | 49.387% | 558 |
+
+All five load cases reported every receiver meeting the operational acquisition gate by the end of 30 seconds. No delivered chunk exceeded the 3-second playback deadline in this run. At 72 Mbps, adaptive probes added 0.1–0.4 percentage points of airtime and only a small audio-p95 increase. At 36/24 Mbps, the channel was already saturated under fixed probing; adaptive traffic added further queue pressure but did not materially change the saturation state.
+
+*Chunk-loss percentages are modeled segment loss from MAC retry exhaustion or bounded queue overflow. They are not predictions of application-level loss over TCP, because TCP retransmission and head-of-line recovery are not modeled. The PHY rates and retry probabilities are assumptions, not physical measurements.
+
+
+
 ## Assumptions and limits
 
 This is a controlled airtime/queueing approximation, not a full IEEE 802.11 implementation. It does not model CSMA/CA carrier sensing between independent transmitters, contention windows changing with retry count, OFDMA/MU-MIMO, aggregation/block-ACK, rate adaptation, hidden nodes, band/channel selection, TCP congestion control, TCP retransmission/head-of-line behavior, multicast or router-specific firmware queues. The two-hop unicast path is serialized over one shared medium, while real APs may schedule and aggregate frames differently.
