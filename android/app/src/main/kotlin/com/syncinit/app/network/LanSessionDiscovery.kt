@@ -5,6 +5,7 @@ import android.net.nsd.NsdManager
 import android.net.nsd.NsdServiceInfo
 import android.net.wifi.WifiManager
 import java.io.Closeable
+import java.net.Inet4Address
 import java.util.concurrent.atomic.AtomicBoolean
 
 data class NearbySession(
@@ -180,11 +181,12 @@ class LanSessionBrowser(
 
             val attributes = serviceInfo.attributes
             val appId = attributes["app"]?.toString(Charsets.US_ASCII)
+            val version = attributes["ver"]?.toString(Charsets.US_ASCII)
             val token = attributes["token"]?.toString(Charsets.US_ASCII)?.uppercase()
             val host = serviceInfo.host
-            val address = host?.hostAddress
+            val address = (host as? Inet4Address)?.hostAddress
 
-            if (appId != APP_ID || token == null ||
+            if (appId != APP_ID || version != "1" || token == null ||
                 token.length != MIN_TOKEN_LENGTH ||
                 !token.all { it.digitToIntOrNull(16) != null } ||
                 address.isNullOrBlank() ||
