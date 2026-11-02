@@ -98,6 +98,13 @@ def run_scenarios(*, duration_s: float = 60.0, seed: int = 7) -> dict[str, dict[
         "playout_error_max_ms": max(float(item["playout_error_max_ms"]) for item in fanout_results if item["playout_error_max_ms"] is not None),
         "hard_resync_count": sum(int(item["hard_resync_count"]) for item in fanout_results if item["hard_resync_count"] is not None),
         "slip_count": sum(int(item["slip_count"]) for item in fanout_results if item["slip_count"] is not None),
+        "resampler_playout_error_p95_ms": statistics.fmean(float(item["resampler_playout_error_p95_ms"]) for item in fanout_results if item["resampler_playout_error_p95_ms"] is not None),
+        "resampler_playout_error_max_ms": max(float(item["resampler_playout_error_max_ms"]) for item in fanout_results if item["resampler_playout_error_max_ms"] is not None),
+        "resampler_playout_error_final_ms": statistics.fmean(float(item["resampler_playout_error_final_ms"]) for item in fanout_results if item["resampler_playout_error_final_ms"] is not None),
+        "resampler_rate_adjustment_rms_ppm": statistics.fmean(float(item["resampler_rate_adjustment_rms_ppm"]) for item in fanout_results if item["resampler_rate_adjustment_rms_ppm"] is not None),
+        "resampler_rate_adjustment_max_abs_ppm": max(float(item["resampler_rate_adjustment_max_abs_ppm"]) for item in fanout_results if item["resampler_rate_adjustment_max_abs_ppm"] is not None),
+        "resampler_rate_saturated_pct": statistics.fmean(float(item["resampler_rate_saturated_pct"]) for item in fanout_results if item["resampler_rate_saturated_pct"] is not None),
+        "resampler_hard_resync_count": sum(int(item["resampler_hard_resync_count"]) for item in fanout_results if item["resampler_hard_resync_count"] is not None),
     }
     profile_comparisons = {}
     comparison_profiles = {
