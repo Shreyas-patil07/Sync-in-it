@@ -299,6 +299,10 @@ class MasterSessionHost(context: Context, private val onStatus: (String) -> Unit
             start()
         }
         var responseCount = 0
+        var malformedUdpCount = 0
+        var rejectedUdpAddressCount = 0
+        var rejectedUdpPortCount = 0
+        var rejectedNativePacketCount = 0
         var admittedUdpPeer: InetSocketAddress? = null
         try {
             while (!closed.get()) {
@@ -306,7 +310,11 @@ class MasterSessionHost(context: Context, private val onStatus: (String) -> Unit
                     server.receive()
                 } catch (_: SocketTimeoutException) {
                     continue
-                } catch (_: FrameProtocolException) {
+                } catch (error: FrameProtocolException) {
+                    malformedUdpCount += 1
+                    if (malformedUdpCount == 1 || malformedUdpCount % 10 == 0) {
+                        onStatus("DIAG HOST_UDP_MALFORMED_DATAGRAM count=$malformedUdpCount ${NetworkDiagnostics.exceptionDetails(error)}")
+                    }
                     continue
                 } catch (error: SocketException) {
                     if (closed.get()) break
@@ -314,14 +322,33 @@ class MasterSessionHost(context: Context, private val onStatus: (String) -> Unit
                 }
 
                 // The UDP peer must match the admitted TCP peer, including its client port.
-                if (datagram.source.address != control.remoteAddress) continue
+                if (datagram.source.address != control.remoteAddress) {
+                    rejectedUdpAddressCount += 1
+                    if (rejectedUdpAddressCount == 1 || rejectedUdpAddressCount % 10 == 0) {
+                        onStatus("DIAG HOST_UDP_SOURCE_IP_REJECTED count=$rejectedUdpAddressCount source=${datagram.source} expectedPeer=${control.remoteEndpoint}")
+                    }
+                    continue
+                }
                 val pinnedPeer = admittedUdpPeer
-                if (pinnedPeer != null && datagram.source != pinnedPeer) continue
+                if (pinnedPeer != null && datagram.source != pinnedPeer) {
+                    rejectedUdpPortCount += 1
+                    if (rejectedUdpPortCount == 1 || rejectedUdpPortCount % 10 == 0) {
+                        onStatus("DIAG HOST_UDP_SOURCE_PORT_REJECTED count=$rejectedUdpPortCount source=${datagram.source} pinnedPeer=$pinnedPeer")
+                    }
+                    continue
+                }
 
                 val t3Ns = System.nanoTime()
                 val response = nativeSession?.timeSyncResponse(
                     datagram.bytes, datagram.receivedAtNs, t3Ns
-                ) ?: continue
+                )
+                if (response == null) {
+                    rejectedNativePacketCount += 1
+                    if (rejectedNativePacketCount == 1 || rejectedNativePacketCount % 10 == 0) {
+                        onStatus("DIAG HOST_UDP_NATIVE_PACKET_REJECTED count=$rejectedNativePacketCount source=${datagram.source} bytes=${datagram.bytes.size} reason=native codec/session rejected packet")
+                    }
+                    continue
+                }
                 if (admittedUdpPeer == null) {
                     admittedUdpPeer = datagram.source
                     onStatus("DIAG HOST_UDP_PEER_PINNED source=${datagram.source} controlPeer=${control.remoteEndpoint} payloadBytes=${datagram.bytes.size}")
