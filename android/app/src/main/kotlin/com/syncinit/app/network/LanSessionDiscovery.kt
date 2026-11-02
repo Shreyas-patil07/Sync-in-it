@@ -103,8 +103,10 @@ class LanSessionBrowser(
     private val appContext = context.applicationContext
     private val manager = appContext.getSystemService(Context.NSD_SERVICE) as NsdManager
     private val closed = AtomicBoolean(false)
-    private val resolving = HashSet<String>()
+    private val pendingResolutions = LinkedHashMap<String, NsdServiceInfo>()
+    private val unavailable = HashSet<String>()
     private val resolved = HashSet<String>()
+    private var resolvingKey: String? = null
     private var discoveryListener: NsdManager.DiscoveryListener? = null
     private var multicastLock: WifiManager.MulticastLock? = null
 
@@ -123,21 +125,18 @@ class LanSessionBrowser(
                 if (closed.get() || serviceInfo.serviceName.isBlank()) return
                 val key = serviceInfo.serviceName
                 synchronized(this@LanSessionBrowser) {
-                    if (key in resolving || key in resolved) return
-                    resolving += key
-                }
-                try {
-                    manager.resolveService(serviceInfo, createResolveListener(key))
-                } catch (error: RuntimeException) {
-                    synchronized(this@LanSessionBrowser) { resolving.remove(key) }
-                    onStatus("Could not resolve nearby host $key.")
+                    if (key in resolved || key == resolvingKey || key in pendingResolutions) return
+                    unavailable.remove(key)
+                    pendingResolutions[key] = serviceInfo
+                    resolveNextLocked()
                 }
             }
 
             override fun onServiceLost(serviceInfo: NsdServiceInfo) {
                 val key = serviceInfo.serviceName
                 synchronized(this@LanSessionBrowser) {
-                    resolving.remove(key)
+                    unavailable += key
+                    pendingResolutions.remove(key)
                     resolved.remove(key)
                 }
                 onSessionLost(key)
@@ -172,12 +171,18 @@ class LanSessionBrowser(
 
     private fun createResolveListener(key: String) = object : NsdManager.ResolveListener {
         override fun onResolveFailed(serviceInfo: NsdServiceInfo, errorCode: Int) {
-            synchronized(this@LanSessionBrowser) { resolving.remove(key) }
+            synchronized(this@LanSessionBrowser) {
+                if (resolvingKey == key) resolvingKey = null
+                resolveNextLocked()
+            }
         }
 
         override fun onServiceResolved(serviceInfo: NsdServiceInfo) {
-            synchronized(this@LanSessionBrowser) { resolving.remove(key) }
-            if (closed.get()) return
+            synchronized(this@LanSessionBrowser) {
+                if (resolvingKey == key) resolvingKey = null
+                resolveNextLocked()
+                if (closed.get() || key in unavailable) return
+            }
 
             val attributes = serviceInfo.attributes
             val appId = attributes["app"]?.toString(Charsets.US_ASCII)
@@ -242,7 +247,24 @@ class LanSessionBrowser(
     override fun close() {
         if (!closed.compareAndSet(false, true)) return
         stopDiscovery()
-        resolving.clear()
+        pendingResolutions.clear()
+        unavailable.clear()
         resolved.clear()
+        resolvingKey = null
+    }
+
+    /** NsdManager limits outstanding resolutions; resolve one discovered host at a time. */
+    private fun resolveNextLocked() {
+        if (closed.get() || resolvingKey != null) return
+        val next = pendingResolutions.entries.firstOrNull() ?: return
+        pendingResolutions.remove(next.key)
+        resolvingKey = next.key
+        try {
+            manager.resolveService(next.value, createResolveListener(next.key))
+        } catch (error: RuntimeException) {
+            resolvingKey = null
+            onStatus("Could not resolve nearby host ${next.key}.")
+            resolveNextLocked()
+        }
     }
 }
