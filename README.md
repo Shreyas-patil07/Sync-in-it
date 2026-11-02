@@ -40,7 +40,10 @@ cd sim
 python -m pip install -e .
 python -m unittest discover -s tests -v
 sync-in-it-sim --duration 60 --seed 7
+sync-in-it-sim --lan --duration 60 --seed 7
 ```
+
+The `--lan` mode compares fixed and adaptive clock probing while audio streams share one modeled Wi-Fi channel. It reports airtime utilization, audio p95 latency, group-delay misses, control RTT, queue waits, retries and drops. These outputs are synthetic, not router/device measurements.
 
 M0 outputs are simulated, not measurements from Android devices. The default scenario run reports fixed-versus-adaptive acquisition comparisons for +30 ppm drift, high jitter and random packet loss. See [`sim/README.md`](sim/README.md) for gate definitions, probe overhead and limitations.
 

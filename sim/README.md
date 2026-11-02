@@ -1,75 +1,64 @@
-# Sync In It — M0 timing simulator
+# Sync In It — M0 timing and network simulator
 
-A dependency-free Python reference model for clock synchronization and playout timing. It is not an audio player and does not claim that phone hardware has been validated.
+A dependency-free Python reference model for clock synchronization, playout timing and shared-Wi-Fi load. It is not an audio player and does not claim that phone hardware has been validated.
 
 ## Run
 
-From this directory, install the local package and run the tests and scenarios:
+From this directory:
 
-```bash
+\`\`\`bash
 python -m pip install -e .
 python -m unittest discover -s tests -v
 sync-in-it-sim --duration 60 --seed 7
-```
+sync-in-it-sim --lan --duration 60 --seed 7
+\`\`\`
 
-For a no-install run on macOS or Linux, use the source tree explicitly:
+For a no-install run on macOS/Linux:
 
-```bash
+\`\`\`bash
 PYTHONPATH=src python -m unittest discover -s tests -v
-PYTHONPATH=src python -m sync_in_it_sim --duration 60 --seed 7
-```
+PYTHONPATH=src python -m sync_in_it_sim --lan --duration 60 --seed 7
+\`\`\`
 
-For PowerShell on Windows:
+For PowerShell:
 
-```powershell
+\`\`\`powershell
 $env:PYTHONPATH = "src"
 python -m unittest discover -s tests -v
-python -m sync_in_it_sim --duration 60 --seed 7
-```
+python -m sync_in_it_sim --lan --duration 60 --seed 7
+\`\`\`
 
-Add `--json` to emit the complete machine-readable scenario report.
+Add \`--json\` for a machine-readable report. The \`--lan\` mode runs shared airtime scenarios separately from the clock-only suite.
 
-## Modeled behavior
+## Shared Wi-Fi model
 
-- Independent master and receiver monotonic clocks with offset and rate error.
-- Four-timestamp NTP-style exchanges with directional delay, jitter, asymmetric paths, RTT spikes, independent packet loss and contiguous burst loss.
-- Lowest-RTT sample selection, robust linear offset fit, receiver-skew estimate and selected-fit sample-span reporting.
-- Adaptive probe cadence: 20 join probes 50 ms apart, 500 ms retries while unstable, then 2 s steady-state intervals after three consecutive stable estimator updates.
-- Estimator convergence time: first point with three consecutive estimates at or below 1 ms offset error and 5 ppm skew error.
-- A 48 kHz sample-index timeline and a parameterized DAC clock model.
-- A simplified 20 ms playout-tracking loop that applies the current one-frame drop/duplicate and hard-resync policy.
-- Slip count/rate, hard-resync count, and p95/maximum/final modeled playout error.
-- Deterministic scenarios so regressions can be reproduced, including late join, severe asymmetry and a synthetic ten-receiver fan-out.
-- Fixed-2 s versus adaptive-acquisition A/B comparisons for +30 ppm drift, high jitter and random packet loss. For profiles without burst loss, time-indexed random streams make overlapping probe timestamps use the same network outcome in both schedules.
+- One half-duplex Wi-Fi channel and an access point forwarding unicast traffic.
+- Each 20 ms stereo PCM16 chunk is 3,840 bytes and is split into 1,460-byte TCP payload segments by default.
+- Each segment traverses client-to-AP and AP-to-client transmissions on the same shared airtime server.
+- Each hop consumes payload airtime, MAC overhead, preamble, acknowledgement and random contention backoff; bounded MAC retries can occur.
+- Router forwarding delay separates the hops. All receivers share the same transmission queue.
+- Waiting clock-sync packets have strict priority over waiting audio packets. An in-flight frame is not preempted; queue space is reserved for control traffic.
+- Adaptive probes run against timestamps and estimator samples generated inside the shared LAN model, not against an isolated pre-computed stability time.
+- Reports include audio p95/max latency, three-second group-delay deadline misses, eight-second buffer-capacity overruns, chunk/segment loss, control RTT, per-class queue waits, medium utilization, retries, queue drops and estimator acquisition state.
 
-## Interpreting the tracking metrics
+The five cases compare fixed and adaptive probes under identical deterministic audio, clocks and per-packet retry outcomes: 3, 6 and 10 receivers at 72 Mbps, plus 10 receivers at 36 and 24 Mbps. PHY rates are scenario inputs, not measured throughput.
 
-The playout loop is an M0 control-policy model, not a sample-accurate audio engine. It projects the fitted receiver clock rate and a configured DAC rate error onto a 20 ms loop, back-projects the final estimator offset error to the simulated playback start, and applies the existing `DriftController` decisions. Error percentiles/maxima are sampled immediately before each correction. This is useful for deterministic policy regression tests, not evidence of acoustic synchronization or real-time audio quality.
+## Assumptions and limits
 
-The convergence threshold is a ground-truth simulator diagnostic, not a runtime signal available to a phone. `null` means that the simulation did not meet the threshold for three consecutive estimator updates.
+This is a controlled airtime/queueing approximation, not a full IEEE 802.11 implementation. It does not model CSMA/CA carrier sensing between independent transmitters, contention windows changing with retry count, OFDMA/MU-MIMO, aggregation/block-ACK, rate adaptation, hidden nodes, band/channel selection, TCP congestion control, TCP retransmission/head-of-line behavior, multicast or router-specific firmware queues. The two-hop unicast path is serialized over one shared medium, while real APs may schedule and aggregate frames differently.
 
-`acquisition_stable_at_s` is the operational simulator gate: a skew estimate must exist, at least 8 selected low-RTT samples must span at least 10 seconds, selected-fit residual RMS must be below 0.25 ms, and these conditions must hold for three consecutive estimator updates. The 0.25 ms threshold is a provisional simulator performance gate, stricter than the TRD's initial <1 ms residual baseline. An unstable receiver remains on the 500 ms retry cadence; a stable one backs off to 2 seconds.
+MAC retry exhaustion is treated as segment loss; subsequent TCP retransmission is not modeled. Therefore chunk-loss figures indicate exhausted modeled MAC retries or queue overflow, not expected application-level loss of a real TCP stream. Late-chunk and queue-delay values are directional indicators, not predictions for a particular router.
 
-## Default cadence comparison
+The control-priority policy is an explicit approximation of the TRD requirement that control traffic must not sit behind a large audio transfer. The actual app must validate socket scheduling, DSCP/WMM behavior and bounded queue policies on physical hardware.
 
-For `--duration 60 --seed 7`, fixed and adaptive schedules use the same profile, seed and time-indexed network events at overlapping probe timestamps:
+## Metric interpretation
 
-| Profile | Fixed convergence | Adaptive convergence | Probes: fixed → adaptive |
-|---|---:|---:|---:|
-| +30 ppm clock drift | 21.0 s | 7.5 s | 50 → 73 |
-| High jitter | 53.0 s | 32.0 s | 50 → 139 |
-| Random packet loss | 55.0 s | 34.5 s | 50 → 139 |
+- \`medium_utilization_pct\`: share of simulated time spent transmitting Wi-Fi frames; sustained values near 100% indicate little spare airtime.
+- \`audio_latency_p95_ms\`: p95 time from chunk generation until all segments complete the two-hop path.
+- \`audio_deadline_miss_pct\`: delivered chunks arriving later than the configured 3-second live group delay.
+- \`audio_buffer_overrun_pct\`: delivered chunks arriving later than the 8-second jitter-buffer capacity.
+- \`control_rtt_p95_ms\`: p95 four-timestamp probe RTT, excluding master processing.
+- \`audio_queue_wait_p95_ms\` and \`control_queue_wait_p95_ms\`: p95 wait before each hop enters the shared airtime server.
+- A/B deltas are adaptive minus fixed; positive audio latency/deadline deltas mean adaptive probing worsened that metric.
 
-A separate 40-seed, 60-second comparison showed the following median ground-truth convergence times and successful-convergence counts:
-
-| Profile | Fixed | Adaptive |
-|---|---:|---:|
-| +30 ppm | 34.0 s (34/40) | 22.0 s (39/40) |
-| High jitter | 41.0 s (21/40) | 26.0 s (39/40) |
-| Random packet loss | 48.0 s (18/40) | 29.0 s (36/40) |
-
-The adaptive schedule sent about 99, 139 and 139 probes per 60-second run on average for those profiles, versus 50 for the fixed schedule. The strict acquisition gate was not met at the end of the 40-run high-jitter and packet-loss samples, so those receivers kept retrying instead of being declared ready. This improves the simulator's ground-truth convergence distribution at a real probe-traffic cost. The 40-seed results are synthetic and do not include shared Wi-Fi airtime contention.
-
-## Scope and limitations
-
-M0 is a simulation gate. It cannot validate Android scheduler behavior, Wi-Fi chipset behavior, Oboe/AAudio timestamps, DAC presentation semantics, acoustic propagation or speaker hardware. The ten-receiver fan-out uses independent simulated paths; it does not model shared Wi-Fi airtime contention. Values in the scenario report are simulated outputs, not measurements from phones. The estimator is a Python reference implementation; shared golden vectors, C++ parity and physical-device calibration remain outstanding. The simplified frame-slip policy also does not implement continuous resampling/slew correction or a real audio callback.
+All results are synthetic. A ten-phone performance claim requires real AP/device measurements including router model, band/channel, negotiated link rates, retries, RSSI, interference, TCP receive timing and audio-buffer telemetry.

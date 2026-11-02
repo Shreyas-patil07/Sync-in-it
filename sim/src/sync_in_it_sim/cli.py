@@ -4,19 +4,55 @@ from __future__ import annotations
 import argparse
 import json
 
+from .lan import run_shared_wifi_scenarios
 from .scenarios import run_scenarios
 
 
+def _print_lan_results(results: dict) -> None:
+    print("Sync In It shared Wi-Fi contention model")
+    print(
+        f"{'Load case':<25} {'Policy':<9} {'Util %':>8} {'Audio p95':>11} "
+        f"{'Late %':>9} {'Loss %':>9} {'Ctrl RTT p95':>14} {'Probes':>8} {'Q drop':>8}"
+    )
+    for name, comparison in results.items():
+        for policy in ("fixed", "adaptive"):
+            item = comparison[policy]
+            print(
+                f"{name:<25} {policy:<9} {item['medium_utilization_pct']:>8.1f} "
+                f"{(item['audio_latency_p95_ms'] or 0.0):>11.2f} "
+                f"{item['audio_deadline_miss_pct']:>9.3f} "
+                f"{item['audio_chunk_loss_pct']:>9.3f} "
+                f"{(item['control_rtt_p95_ms'] or 0.0):>14.2f} "
+                f"{item['probe_count']:>8} "
+                f"{item['queue_drops_audio'] + item['queue_drops_control']:>8}"
+            )
+        delta = comparison["delta"]
+        print(
+            f"  adaptive - fixed: audio p95 {delta['audio_latency_p95_ms']!s} ms, "
+            f"deadline misses {delta['audio_deadline_miss_pct']!s} pp, "
+            f"control RTT p95 {delta['control_rtt_p95_ms']!s} ms, "
+            f"probes {delta['probe_count']:+d}"
+        )
+
+
 def main() -> None:
-    parser = argparse.ArgumentParser(description="Run Sync In It M0 clock-sync scenarios")
+    parser = argparse.ArgumentParser(description="Run Sync In It M0 clock/LAN simulations")
     parser.add_argument("--duration", type=float, default=60.0, help="simulation duration in seconds")
     parser.add_argument("--seed", type=int, default=7, help="deterministic random seed")
     parser.add_argument("--json", action="store_true", help="emit machine-readable JSON")
+    parser.add_argument("--lan", action="store_true", help="run shared Wi-Fi airtime/queue scenarios only")
     args = parser.parse_args()
 
-    results = run_scenarios(duration_s=args.duration, seed=args.seed)
+    if args.lan:
+        results = run_shared_wifi_scenarios(duration_s=args.duration, seed=args.seed)
+    else:
+        results = run_scenarios(duration_s=args.duration, seed=args.seed)
+
     if args.json:
         print(json.dumps(results, indent=2, sort_keys=True))
+        return
+    if args.lan:
+        _print_lan_results(results)
         return
 
     print(f"Sync In It M0 simulation — {args.duration:g}s, seed {args.seed}")
@@ -44,7 +80,6 @@ def main() -> None:
             f"{name:<24} {receiver_count:>4} {result['offset_error_ms']:>15.3f} {skew_text:>11} "
             f"{convergence_text:>9} {slips_text:>9} {resync_text:>7} {p95_text:>21}"
         )
-
 
     if comparison is not None:
         print("\nAcquisition cadence A/B (same profile, seed and duration):")

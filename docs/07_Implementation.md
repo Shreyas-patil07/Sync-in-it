@@ -4,7 +4,7 @@
 **Version:** 1.4  
 **Last updated:** 2 November 2026
 
-**Current progress:** M0 is in progress. The Python reference simulator has deterministic impairment scenarios, playout diagnostics and adaptive acquisition cadence (500 ms while unstable, 2 s after three consecutive stable-fit updates). A portable C++17 timing core implements the four-timestamp offset formula, lowest-RTT offset/skew estimator, selected-fit sample-span reporting, timeline sample mapping, DAC clock mapping and the initial drift-controller policy. Both languages consume the shared `protocol/vectors/m0_timing.json` test vectors. No phone synchronization or audio playback has been validated.
+**Current progress:** M0 is in progress. The Python reference simulator has deterministic impairment scenarios, playout diagnostics, adaptive acquisition cadence and a shared-airtime Wi-Fi queue model. The LAN model places per-receiver PCM TCP segments and UDP time-sync probes on one half-duplex AP medium, with bounded retries, router forwarding delay, priority control queueing and per-hop metrics. A portable C++17 timing core and shared vectors cover offset/skew estimation, timeline mapping, DAC clock mapping and drift decisions. No phone synchronization or audio playback has been validated.
 
 ## 1. Implementation strategy
 
@@ -38,6 +38,7 @@ Modules:
 - Simulated master and receiver monotonic clocks.
 - Configurable clock skew.
 - Network delay, jitter, asymmetry, packet loss and spikes.
+- Shared single-channel LAN queue: per-receiver PCM TCP segment fan-out, two-hop AP airtime, bounded MAC retries, control priority, and audio deadline/buffer metrics.
 - Adaptive acquisition probes: 20 requests at 50 ms spacing, then 500 ms retries until three consecutive estimator updates meet the provisional gate, followed by 2 s steady-state probes.
 - Offset estimator.
 - DAC clock model.
@@ -314,8 +315,9 @@ Android and iOS CI may be expanded after native project skeletons exist. Physica
 1. Define and enforce scenario-level acceptance thresholds for the M0 simulator, including asymmetric-delay and degraded-sync behavior.
 2. Review the initial frame-slip controller against a performance-first audio-quality strategy; compare controlled rate adjustment/resampling before treating the policy as final.
 3. Extend cross-language vectors when estimator or timing behavior changes.
-4. Validate retry traffic and acquisition behavior under packet-level shared-Wi-Fi contention before carrying this cadence into the Android runtime.
-5. Complete the M0 exit gate before beginning M1 Android networking.
+4. Calibrate the shared-airtime model against packet captures and real AP/device measurements; it omits full CSMA/CA, TCP retransmission and router-specific scheduling.
+5. Validate retry traffic and acquisition behavior under measured shared-Wi-Fi contention before carrying this cadence into the Android runtime.
+6. Complete the M0 exit gate before beginning M1 Android networking.
 
 ## 11. Source documents
 
