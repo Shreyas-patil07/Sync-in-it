@@ -16,7 +16,7 @@
 
 ## Status
 
-**M0 is in progress.** A dependency-free Python reference simulator is available in [`sim/`](sim/). It now covers burst loss and reports estimator convergence, frame-slip rate, hard resyncs, and modeled playout-error percentiles. The Android application and physical-device playback prototype are not implemented yet. The project website is informational. The current specifications are organized in [`docs/`](docs/), with original design references preserved in [`docs_original/`](docs_original/).
+**M0 is in progress.** The Python reference simulator and a portable C++17 timing core are available. Both consume the same versioned timing vectors for offset estimation, timeline mapping, DAC clock mapping and drift-controller parity. The Android application and physical-device playback prototype are not implemented yet. The project website is informational. The current specifications are organized in [`docs/`](docs/), with original design references preserved in [`docs_original/`](docs_original/).
 
 | Milestone | Description | State |
 |---|---|---|
@@ -43,6 +43,18 @@ sync-in-it-sim --duration 60 --seed 7
 ```
 
 M0 outputs are simulated, not measurements from Android devices. The +30 ppm reference scenario is tested against the provisional 1 ms estimator and modeled playout-error gate. See [`sim/README.md`](sim/README.md) for metric definitions and limitations.
+
+### Build and test the portable C++17 timing core
+
+Requires CMake 3.20+, a C++17 compiler and Python 3.11+.
+
+```bash
+cmake -S core -B build/core -DCMAKE_BUILD_TYPE=Release
+cmake --build build/core --config Release --parallel 2
+ctest --test-dir build/core -C Release --output-on-failure
+```
+
+The build generates its C++ test data from [`protocol/vectors/m0_timing.json`](protocol/vectors/m0_timing.json). The Python test suite loads that same JSON directly. Passing parity tests proves algorithm agreement on the supplied vectors; it does not prove physical-device or acoustic synchronization.
 
 ---
 

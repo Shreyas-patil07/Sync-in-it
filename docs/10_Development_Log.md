@@ -153,3 +153,29 @@ No physical-device synchronization results are recorded in this initial log. Add
 **Risks or limitations:** Playout tracking is a simplified 20 ms control-policy model, not a sample-accurate audio engine. Its error statistics are synthetic and sampled before each correction. The ten-receiver fan-out still models independent paths, not shared Wi-Fi airtime contention. The current one-frame slip policy does not implement continuous resampling/slew correction. GitHub Actions matrix results must be checked after the PR is opened.
 
 **Next action:** Define shared estimator/timing golden vectors and implement the matching C++17 reference before starting M1 networking.
+
+
+### 2 November 2026 — Portable C++17 timing core and shared M0 golden vectors
+
+**Type:** Implementation / Cross-language parity  
+**Status:** In progress  
+**Branch:** `feature/m0-cpp-golden-parity`
+
+**Summary:**
+- Added the initial portable C++17 timing library under `core/`, built with CMake and no third-party runtime dependency.
+- Implemented four-timestamp RTT/offset calculation, lowest-RTT filtering and linear skew estimation, timeline sample mapping, DAC frame/time mapping, and the initial bounded frame-slip/hard-resync decision policy.
+- Added `protocol/vectors/m0_timing.json` as the shared expected-value source for both languages. Python tests read it directly; CMake generates a C++ test header from it.
+- Added C++ invalid-input checks and CI jobs for C++17 build/parity across the existing Python 3.11–3.13 matrix.
+
+**Verification (local):**
+- Python 3.13: 23/23 tests passed.
+- GCC 14.2, Release: CMake build and CTest passed.
+- Clang 17, Release: CMake build and CTest passed.
+- The shared vectors cover positive/negative offset arithmetic, low-RTT skew fitting with outlier rejection, time-window filtering, insufficient skew samples, timeline tie rounding, DAC drift in both directions, and drift-controller thresholds.
+- The existing 60-second simulator run still produces 12 deterministic scenario reports.
+
+**Result:** The first cross-language timing baseline is implemented and locally verified. It is not yet a complete M0 exit: the branch CI must pass, scenario acceptance thresholds still need to be explicit, and the drift-correction policy needs audio-quality evaluation. No physical-device, Android, acoustic or real-time callback result is claimed.
+
+**Risks or limitations:** The core does not yet implement networking, jitter buffering, native audio output, audio callback scheduling or acoustic calibration. The playout simulator remains a simplified controller model. The Python/C++ vectors prove matching calculations only for their covered cases. The JSON vectors are timing vectors, not the wire-message serialization vectors still required before M1 protocol work.
+
+**Next action:** Add scenario-level acceptance criteria and review higher-quality drift correction candidates before beginning M1 networking.
