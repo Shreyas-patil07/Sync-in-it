@@ -72,6 +72,7 @@ void test_invalid_time_sync_packets() {
         std::vector<std::uint8_t>(38U, 0U),
         [] { auto v = std::vector<std::uint8_t>(38U, 0U); v[0] = 0x53U; v[1] = 0x54U; v[2] = 2U; v[3] = 1U; return v; }(),
         [] { auto v = std::vector<std::uint8_t>(38U, 0U); v[0] = 0x53U; v[1] = 0x54U; v[2] = 1U; v[3] = 3U; return v; }()
+    };
     for (std::size_t i = 0; i < bad.size(); ++i) {
         bool threw = false;
         try { (void)syit::decode_time_sync_packet(bad[i]); }
