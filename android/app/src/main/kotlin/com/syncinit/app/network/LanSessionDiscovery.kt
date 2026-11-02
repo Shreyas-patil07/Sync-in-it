@@ -225,7 +225,9 @@ class LanSessionBrowser(
                 onStatus("Ignored an invalid or stale nearby-host record: ${serviceInfo.serviceName}.")
                 return
             }
-            onStatus("DIAG NSD_PEER_ROUTE ${NetworkDiagnostics.networkSnapshot(appContext, address)}")
+            val resolvedAddress = requireNotNull(address) { "validated NSD record has no IPv4 address" }
+            val resolvedToken = requireNotNull(token) { "validated NSD record has no session token" }
+            onStatus("DIAG NSD_PEER_ROUTE ${NetworkDiagnostics.networkSnapshot(appContext, resolvedAddress)}")
 
             synchronized(this@LanSessionBrowser) {
                 if (closed.get() || !resolved.add(key)) return
@@ -233,9 +235,9 @@ class LanSessionBrowser(
             onSessionFound(
                 NearbySession(
                     serviceName = serviceInfo.serviceName,
-                    hostAddress = address,
+                    hostAddress = resolvedAddress,
                     controlPort = serviceInfo.port,
-                    sessionToken = token
+                    sessionToken = resolvedToken
                 )
             )
         }
