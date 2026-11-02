@@ -4,7 +4,7 @@
 **Version:** 1.4  
 **Last updated:** 2 November 2026
 
-**Current progress:** M0 is in progress. The Python reference simulator has deterministic impairment scenarios, playout diagnostics, adaptive acquisition cadence and a shared-airtime Wi-Fi queue model. The LAN model places per-receiver PCM TCP segments and UDP time-sync probes on one half-duplex AP medium, with bounded retries, router forwarding delay, priority control queueing and per-hop metrics. A portable C++17 timing core and shared vectors cover offset/skew estimation, timeline mapping, DAC clock mapping and drift decisions. No phone synchronization or audio playback has been validated.
+**Current progress:** M0 is in progress. The Python reference simulator has deterministic impairment scenarios, playout diagnostics, adaptive acquisition cadence, a shared-airtime Wi-Fi queue model, and an experimental A/B comparison of frame-slip correction against bounded resampling control. The LAN model places per-receiver PCM TCP segments and UDP time-sync probes on one half-duplex AP medium, with bounded retries, router forwarding delay, priority control queueing and per-hop metrics. A portable C++17 timing core and shared vectors cover offset/skew estimation, timeline mapping, DAC clock mapping and the initial frame-slip decision policy. No phone synchronization or audio playback has been validated.
 
 ## 1. Implementation strategy
 
@@ -66,7 +66,9 @@ Exit gate:
 
 The shared vectors establish calculation parity, not physical timing accuracy. C++ networking, audio callbacks, jitter buffering and acoustic measurement are not part of this core task.
 
-The ground-truth convergence diagnostic requires three consecutive estimator updates with absolute offset error at or below 1 ms and absolute skew error at or below 5 ppm. The operational acquisition gate requires a skew estimate, at least 8 selected samples, a selected-sample span of at least 10 seconds, residual RMS below 0.25 ms, and three consecutive updates meeting those conditions. These are distinct simulator diagnostics: the runtime can observe fit quality and sample span, but cannot observe ground-truth estimator error. The playout metrics come from a simplified 20 ms control-policy simulation; they are not acoustic measurements and do not model a production audio callback or continuous resampling.
+The ground-truth convergence diagnostic requires three consecutive estimator updates with absolute offset error at or below 1 ms and absolute skew error at or below 5 ppm. The operational acquisition gate requires a skew estimate, at least 8 selected samples, a selected-sample span of at least 10 seconds, residual RMS below 0.25 ms, and three consecutive updates meeting those conditions. These are distinct simulator diagnostics: the runtime can observe fit quality and sample span, but cannot observe ground-truth estimator error. The playout metrics come from simplified 20 ms control-policy simulations. The candidate resampler uses an ideal synthetic DAC-rate estimate in the initial A/B; a biased-estimate sensitivity test is included. Neither policy models a production audio callback, PCM interpolation filters, subjective artifacts or acoustic measurements.
+
+M0 drift-control experiment (PR #7): the 60-second seed-7 CI comparison showed lower modeled phase-error p95 for the bounded resampling candidate in the nominal clock-drift and high-jitter cases, but worse p95 under asymmetric delay when the ±500 ppm adjustment limit was reached. The candidate uses an ideal synthetic rate estimate in the A/B. This is control-model evidence only; audio quality, filter behavior, runtime safety and physical-device performance remain untested. Results are recorded in `sim/README.md` and the development log.
 
 ### Phase 2 — Protocol and clock sync on two Android phones (M1)
 
@@ -313,7 +315,7 @@ Android and iOS CI may be expanded after native project skeletons exist. Physica
 ## 10. Immediate next engineering actions
 
 1. Define and enforce scenario-level acceptance thresholds for the M0 simulator, including asymmetric-delay and degraded-sync behavior.
-2. Review the initial frame-slip controller against a performance-first audio-quality strategy; compare controlled rate adjustment/resampling before treating the policy as final.
+2. **Simulation comparison implemented:** benchmark frame-slip correction against bounded rate-controlled resampling. Review the results and limitations; do not select a production policy until PCM artifacts, callback safety and physical-device output timestamps are tested.
 3. Extend cross-language vectors when estimator or timing behavior changes.
 4. Calibrate the shared-airtime model against packet captures and real AP/device measurements; it omits full CSMA/CA, TCP retransmission and router-specific scheduling.
 5. Validate retry traffic and acquisition behavior under measured shared-Wi-Fi contention before carrying this cadence into the Android runtime.

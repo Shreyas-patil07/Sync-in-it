@@ -66,6 +66,32 @@ All five load cases reported every receiver meeting the operational acquisition 
 
 
 
+## Drift-correction comparison
+
+The clock-only simulator reports two playout-control candidates on the same estimated initial phase error and effective rate mismatch:
+
+- **Frame-slip baseline:** the existing dead band, one-frame drop/duplicate decisions and hard-resync threshold.
+- **Bounded resampling candidate:** a 20 ms control loop with feed-forward compensation from a synthetic DAC/output-rate estimate, a proportional phase trim spread over a four-second horizon, a ±500 ppm adjustment limit and a 1,000 ppm/s slew limit. It retains the same 240-frame (5 ms) hard-resync gate.
+
+The resampling candidate reports p95/maximum/final modeled phase error, RMS/peak rate adjustment, rate-limit saturation and hard-resync count. The baseline reports p95/maximum/final modeled phase error, frame slips per minute and hard-resync count.
+
+**Interpretation limits:** the initial A/B uses an ideal rate estimate so it is an optimistic control-loop comparison, not a claim about achievable DAC measurement precision. Unit tests add a +2 ppm estimate bias to check sensitivity. Neither simulation renders PCM or models interpolation filters, transient artifacts, aliasing, callback scheduling, CPU/thermal cost or measured output timestamps. It cannot establish that resampling sounds better than frame slips. The candidate is not wired into the C++ core or Android audio path.
+
+### Initial comparison results (60 seconds, seed 7)
+
+| Scenario | Frame slips/min | Slip p95/max (ms) | Resampler p95/max (ms) | Rate RMS/peak (ppm) | Hard resync slip/resampler |
+|---|---:|---:|---:|---:|---:|
+| +30 ppm receiver, +35 ppm DAC | 186.1 | 0.135 / 0.135 | 0.016 / 0.033 | 66.6 / 74.3 | 0 / 0 |
+| −40 ppm receiver, −30 ppm DAC | 205.4 | 0.125 / 0.125 | 0.039 / 0.083 | 73.1 / 74.4 | 0 / 0 |
+| High jitter | 120.0 | 0.096 / 0.117 | 0.054 / 0.112 | 43.7 / 45.3 | 0 / 0 |
+| Asymmetric delay | 260.3 | 0.123 / 3.085 | 1.668 / 3.085 | 123.8 / 500.0 | 0 / 0 |
+| Severe asymmetric delay | 0.0 | 0.021 / 6.963 | 0.000 / 6.963 | 0.2 / 0.2 | 1 / 1 |
+| Combined impairment | 235.9 | 0.126 / 0.563 | 0.280 / 0.565 | 87.2 / 213.3 | 0 / 0 |
+
+For the clock-drift-dominated cases, the bounded resampling model reduces the reported phase-error p95 and removes discrete frame-slip events. The improvement is not universal: under asymmetric delay the resampler reaches its ±500 ppm limit and has a worse p95 than the frame-slip baseline. The severe-asymmetry maximum includes the initial pre-resync phase error because samples are recorded before the first control action.
+
+**Engineering interpretation:** keep initial phase alignment and steady-state clock tracking conceptually separate. A future design may use a coordinated playback anchor or coarse correction for initial alignment, then continuous rate adjustment for DAC/clock drift, with hard resync reserved for exceptional errors. This is a candidate architecture, not a selected production policy.
+
 ## Assumptions and limits
 
 This is a controlled airtime/queueing approximation, not a full IEEE 802.11 implementation. It does not model CSMA/CA carrier sensing between independent transmitters, contention windows changing with retry count, OFDMA/MU-MIMO, aggregation/block-ACK, rate adaptation, hidden nodes, band/channel selection, TCP congestion control, TCP retransmission/head-of-line behavior, multicast or router-specific firmware queues. The two-hop unicast path is serialized over one shared medium, while real APs may schedule and aggregate frames differently.
