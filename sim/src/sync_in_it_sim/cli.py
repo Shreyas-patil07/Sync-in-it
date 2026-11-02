@@ -12,7 +12,7 @@ def _print_lan_results(results: dict) -> None:
     print("Sync In It shared Wi-Fi contention model")
     print(
         f"{'Load case':<25} {'Policy':<9} {'Util %':>8} {'Audio p95':>11} "
-        f"{'Late %':>9} {'Loss %':>9} {'Ctrl RTT p95':>14} {'Probes':>8} {'Q drop':>8}"
+        f"{'Late %':>9} {'Loss %':>9} {'Ctrl RTT p95':>14} {'Stable':>7} {'Fast/Slow':>11} {'Probes':>8} {'Q drop':>8}"
     )
     for name, comparison in results.items():
         for policy in ("fixed", "adaptive"):
@@ -23,6 +23,8 @@ def _print_lan_results(results: dict) -> None:
                 f"{item['audio_deadline_miss_pct']:>9.3f} "
                 f"{item['audio_chunk_loss_pct']:>9.3f} "
                 f"{(item['control_rtt_p95_ms'] or 0.0):>14.2f} "
+                f"{item['acquisition_stable_receivers']:>7} "
+                f"{item['probe_fast_retry_count']}/{item['probe_steady_count']: <8} "
                 f"{item['probe_count']:>8} "
                 f"{item['queue_drops_audio'] + item['queue_drops_control']:>8}"
             )

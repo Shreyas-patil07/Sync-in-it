@@ -54,6 +54,18 @@ class SharedWifiSimulationTests(unittest.TestCase):
         self.assertGreater(result["medium_utilization_pct"], 90.0)
         self.assertGreater(result["audio_deadline_miss_pct"] + result["audio_chunk_loss_pct"], 0.0)
 
+    def test_adaptive_probe_scheduler_backs_off_after_stable_acquisition(self):
+        result = SharedWifiSimulation(
+            receiver_count=1,
+            duration_s=24,
+            seed=53,
+            config=SharedWifiConfig(phy_rate_mbps=72, retry_probability=0.0),
+            adaptive_probes=True,
+        ).run()
+        self.assertEqual(result["acquisition_stable_receivers"], 1)
+        self.assertGreater(result["probe_fast_retry_count"], 0)
+        self.assertGreater(result["probe_steady_count"], 0)
+
     def test_adaptive_sync_increases_probe_load_without_changing_audio_workload(self):
         clocks = [
             ClockModel(offset_ns=-1_000_000, rate_error_ppm=30),

@@ -38,4 +38,4 @@ jobs:
       - name: Run shared Wi-Fi airtime and queue scenarios
         env:
           PYTHONPATH: sim/src
-        run: python -m sync_in_it_sim --lan --duration 10 --seed 7
+        run: python -m sync_in_it_sim --lan --duration 30 --seed 7
