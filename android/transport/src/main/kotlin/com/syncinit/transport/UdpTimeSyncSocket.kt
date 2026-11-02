@@ -34,6 +34,10 @@ class UdpTimeSyncClient(
     }
 
     val localPort: Int get() = socket.localPort
+    val localAddress: String get() = socket.localAddress?.hostAddress ?: "unknown"
+    val remoteAddress: String get() = socket.inetAddress?.hostAddress ?: "unknown"
+    val remotePort: Int get() = socket.port
+    val isConnected: Boolean get() = socket.isConnected && !socket.isClosed
 
     @Throws(IOException::class)
     fun send(request: ByteArray) {
@@ -84,6 +88,8 @@ class UdpTimeSyncServer(
     }
 
     val localPort: Int get() = socket.localPort
+    val localAddress: String get() = socket.localAddress?.hostAddress ?: "unknown"
+    val isBound: Boolean get() = socket.isBound && !socket.isClosed
 
     @Throws(IOException::class, SocketTimeoutException::class)
     fun receive(): ReceivedTimeSyncDatagram {
