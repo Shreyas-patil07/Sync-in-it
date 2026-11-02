@@ -63,6 +63,8 @@ The portable C++17 library contains timing and stream logic:
 - Codec interfaces (PCM first, Opus later).
 - Telemetry event structures.
 - Small concurrency primitives for safe parameter publication.
+- Bounded, non-blocking frame queues for network-thread handoff.
+- UDP time-sync request/response correlation, identity validation and pending-request expiry.
 
 The core must compile and run on a desktop without Android or iOS SDKs. Platform-specific audio and lifecycle code must not leak into core modules.
 
@@ -90,6 +92,14 @@ Kotlin handles user interface and lifecycle. JNI connects to the shared C++ core
 ### 4.3 iOS receiver
 
 The iOS application is receiver-only in the current scope. Swift handles interface, permission and audio-session lifecycle. AVAudioEngine renders output. An Objective-C++ bridge adapts the shared C++ core. iOS must implement the same protocol semantics and timeline rules as Android receivers.
+
+## 4.4 Platform transport boundary
+
+The shared C++ core owns wire encoding/decoding, incremental TCP framing, bounded frame-queue primitives and time-sync request correlation. It does not own operating-system sockets. Android/Kotlin and iOS/Swift adapters own bind/connect/read/write/close operations and call the core from their network/control threads.
+
+Each TCP connection has its own `FrameStreamDecoder`. Control and audio traffic use separate bounded queues and budgets so bulk audio cannot consume control capacity. Queue insertion is non-blocking and rejects the newest frame when full; the adapter must record the rejection and apply an explicit backpressure or disconnect policy. Do not silently drop time-sync/control messages or route any network queue through the audio callback.
+
+The time-sync client tracks a bounded number of outstanding sequence IDs, validates response version/session/receiver/echoed t1, rejects duplicate or unsolicited responses, and expires stale requests. Its accepted four-timestamp exchange converts directly to the shared estimator's `SyncSample`. The client is owned by one network/control thread; platform adapters synchronize access if their callback model requires it.
 
 ## 5. Data and clock domains
 
