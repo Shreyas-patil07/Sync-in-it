@@ -405,3 +405,23 @@ No physical-device synchronization results are recorded in this initial log. Add
 - Added regression tests for successful flow, authentication/identity failures, invalid ordering, readiness gates, anchors and recovery.
 
 **Limitations:** This is a portable state machine, not a socket adapter or Android application. The caller remains responsible for per-connection event serialization, timeouts, admission capacity, receiver buffer allocation, cryptographic transport protection and physical-device validation.
+
+
+### 2 November 2026 — M1 Kotlin/JVM TCP and UDP socket adapter
+
+**Type:** Platform transport / socket lifecycle / loopback integration tests  
+**Status:** Implemented; local tests passed, CI pending  
+**Branch:** `feature/m1-kotlin-socket-transport`
+
+**Summary:**
+- Added a pure Kotlin/JVM transport module under `android/transport`; it uses Java networking APIs and is intended for the Android application, but is not itself an Android app.
+- Added a master-side TCP listener and receiver-side TCP client with independent per-connection frame reads, 4-byte little-endian length validation, a 65,536-byte maximum frame bound, clean EOF/truncation handling, synchronized writes, TCP_NODELAY, keepalive and configurable timeouts.
+- Added master-side UDP time-sync listening and receiver-side connected UDP client sockets. Both enforce the protocol's exact 38-byte v1 datagram envelope; the client socket filters inbound datagrams to the configured master endpoint.
+- Added local loopback tests for TCP request/response, one-write coalesced frames, byte-fragmented frames, oversized and truncated TCP input, UDP request/response and invalid UDP sizes.
+- Added an independent GitHub Actions workflow for the Kotlin module so the transport checks do not run the Vercel frontend build.
+
+**Verification:** Local Kotlin/JVM compilation with `kotlinc` and five consecutive executions of the loopback test runner passed. Gradle/GitHub Actions validation is pending.
+
+**Limitations:** No Android application module, manifest, runtime permission handling, foreground service, JNI bridge, C++ state-machine binding, authenticated transport encryption, retry scheduler, bounded outgoing queue or physical-phone test is included. The Kotlin TCP frame envelope must remain byte-compatible with the C++ core and shared protocol vectors. UDP packet content validation and four-timestamp correlation remain in the protocol/session layer.
+
+**Next action:** Add the Android application shell and JNI bridge, connect socket events to the C++ `ReceiverSession` and `TimeSyncClient`, then validate a two-phone local-Wi-Fi join and time-sync exchange.

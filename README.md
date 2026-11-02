@@ -16,7 +16,7 @@
 
 ## Status
 
-**M0 remains in progress; M1 protocol integration is underway.** The Python reference simulator uses adaptive clock acquisition: a 20-probe join burst, 500 ms retries until three consecutive estimator updates meet the stability gate, then a 2 s steady-state interval. A portable C++17 timing core and shared Python/C++ golden vectors are also available. The M1 implementation now includes shared TCP/UDP wire codecs, typed control-message codecs, a bounded incremental TCP frame decoder in Python and C++, bounded C++ transport primitives for frame queues and time-sync exchange correlation, and a master-side receiver session state machine covering HELLO, AUDIO_HELLO, READY, playback anchors, degradation and re-synchronization. Native Android/iOS socket adapters and physical-device synchronization are still pending; the Android application and physical-device playback prototype are not implemented yet. The project website is informational. The current specifications are organized in [`docs/`](docs/), with original design references preserved in [`docs_original/`](docs_original/).
+**M0 remains in progress; M1 protocol integration is underway.** The Python reference simulator uses adaptive clock acquisition: a 20-probe join burst, 500 ms retries until three consecutive estimator updates meet the stability gate, then a 2 s steady-state interval. A portable C++17 timing core and shared Python/C++ golden vectors are also available. The M1 implementation now includes shared TCP/UDP wire codecs, typed control-message codecs, a bounded incremental TCP frame decoder in Python and C++, bounded C++ transport primitives for frame queues and time-sync exchange correlation, and a master-side receiver session state machine covering HELLO, AUDIO_HELLO, READY, playback anchors, degradation and re-synchronization. A Kotlin/JVM TCP/UDP socket adapter now provides master-side listeners, receiver-side clients and loopback tests. It is not yet wired into an Android application or the C++ JNI bridge; native Android app integration, iOS sockets and physical-device synchronization remain pending. The project website is informational. The current specifications are organized in [`docs/`](docs/), with original design references preserved in [`docs_original/`](docs_original/).
 
 | Milestone | Description | State |
 |---|---|---|
@@ -58,6 +58,16 @@ ctest --test-dir build/core -C Release --output-on-failure
 ```
 
 The build generates its C++ test data from [`protocol/vectors/m0_timing.json`](protocol/vectors/m0_timing.json). The Python test suite loads that same JSON directly. Passing parity tests proves algorithm agreement on the supplied vectors; it does not prove physical-device or acoustic synchronization.
+
+### Build and test the Kotlin/JVM socket transport
+
+Requires JDK 17 and Gradle 8.10.2 or newer.
+
+```bash
+gradle -p android/transport check
+```
+
+This compiles the JVM-compatible TCP/UDP adapter and runs loopback integration tests. It does not build an Android APK.
 
 ---
 
@@ -176,6 +186,7 @@ Sync In It/
   android/
     master/        # Kotlin app: session, capture, controller
     receiver/      # Kotlin + Oboe receiver
+    transport/     # Pure Kotlin/JVM TCP and UDP socket adapters
   ios/
     receiver/      # Swift + AVAudioEngine receiver
   protocol/        # wire format spec and test vectors
