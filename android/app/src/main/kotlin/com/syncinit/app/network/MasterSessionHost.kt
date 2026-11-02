@@ -1,5 +1,6 @@
 package com.syncinit.app.network
 
+import com.syncinit.app.audio.NativePcmJitterBuffer
 import android.content.Context
 import android.os.Build
 import com.syncinit.app.core.NativeCore
