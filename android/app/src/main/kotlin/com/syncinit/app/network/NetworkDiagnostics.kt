@@ -46,6 +46,8 @@ internal object NetworkDiagnostics {
             appendLine("network.interfaces=${activeInterfaces()}")
             if (peerAddress != null) {
                 appendLine("peer.address=$peerAddress")
+                appendLine("peer.isOwnInterfaceAddress=${properties?.linkAddresses?.any { it.address.hostAddress == peerAddress } ?: "unknown"}")
+                appendLine("peer.addressScope=${addressScope(peerAddress)}")
                 appendLine("peer.subnetRelation=${subnetRelation(properties, peerAddress)}")
                 appendLine("peer.routingHint=${routingHint(properties, peerAddress)}")
             }
@@ -105,6 +107,18 @@ internal object NetworkDiagnostics {
             .ifBlank { "no-up-non-loopback-interface" }
     } catch (error: Exception) {
         "unavailable(${error.javaClass.simpleName}:${error.message ?: "no message"})"
+    }
+
+    private fun addressScope(peerAddress: String): String {
+        val address = parseIpv4(peerAddress) ?: return "UNKNOWN_NON_IPV4_OR_INVALID"
+        return when {
+            address.isAnyLocalAddress -> "UNSPECIFIED"
+            address.isLoopbackAddress -> "LOOPBACK"
+            address.isLinkLocalAddress -> "LINK_LOCAL"
+            address.isSiteLocalAddress -> "PRIVATE_IPV4"
+            address.isMulticastAddress -> "MULTICAST"
+            else -> "PUBLIC_OR_OTHER"
+        }
     }
 
     private fun subnetRelation(properties: LinkProperties?, peerAddress: String): String {
