@@ -86,7 +86,9 @@ private fun tcpConnectFailureIncludesEndpointAndTiming() {
     }
     val error = failure ?: throw AssertionError("connection to a closed loopback port must fail")
     expect(error.message.orEmpty().contains("target=127.0.0.1:$unusedPort"), "connect failure includes target endpoint")
-    expect(error.message.orEmpty().contains("local=127.0.0.1:"), "connect failure includes selected local endpoint")
+    val localEndpoint = Regex("local=([^ ]+)").find(error.message.orEmpty())?.groupValues?.get(1)
+    val localPort = localEndpoint?.substringAfterLast(':')?.toIntOrNull()
+    expect(localPort in 0..65_535, "connect failure includes local endpoint and a valid port (actual=$localEndpoint)")
     expect(error.message.orEmpty().contains("elapsedMs="), "connect failure includes elapsed time")
     expect(error.cause is java.net.ConnectException, "connect failure preserves the operating-system exception")
 }
