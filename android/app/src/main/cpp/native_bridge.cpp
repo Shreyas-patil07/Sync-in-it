@@ -1,6 +1,7 @@
 // SPDX-License-Identifier: Apache-2.0
 #include <jni.h>
 
+#include "syit/audio.h"
 #include "syit/estimator.h"
 #include "syit/messages.h"
 #include "syit/protocol.h"
@@ -33,6 +34,18 @@ struct NativeSession {
     syit::ReceiverSession session;
 };
 
+
+struct NativePcmBuffer {
+    NativePcmBuffer(std::size_t capacity_frames, std::uint8_t channels, std::uint32_t session_id)
+        : session_id(session_id), channels(channels), buffer(capacity_frames, channels) {}
+
+    const std::uint32_t session_id;
+    const std::uint8_t channels;
+    std::mutex initialization_mutex;
+    bool initialized{false};
+    syit::PcmJitterBuffer buffer;
+};
+
 struct NativeTimeSyncClient {
     NativeTimeSyncClient(std::uint32_t session_id, std::uint16_t receiver_id)
         : client(session_id, receiver_id) {}
@@ -49,6 +62,16 @@ std::atomic<jlong> g_next_handle{1};
 std::mutex g_clock_clients_mutex;
 std::unordered_map<jlong, std::shared_ptr<NativeTimeSyncClient>> g_clock_clients;
 std::atomic<jlong> g_next_clock_client_handle{1};
+std::mutex g_pcm_buffers_mutex;
+std::unordered_map<jlong, std::shared_ptr<NativePcmBuffer>> g_pcm_buffers;
+std::atomic<jlong> g_next_pcm_buffer_handle{1};
+
+std::shared_ptr<NativePcmBuffer> find_pcm_buffer(jlong handle) {
+    if (handle <= 0) return {};
+    std::lock_guard<std::mutex> lock(g_pcm_buffers_mutex);
+    const auto found = g_pcm_buffers.find(handle);
+    return found == g_pcm_buffers.end() ? std::shared_ptr<NativePcmBuffer>{} : found->second;
+}
 
 void throw_illegal_argument(JNIEnv* env, const char* message) {
     jclass exception_class = env->FindClass("java/lang/IllegalArgumentException");
@@ -673,4 +696,186 @@ Java_com_syncinit_app_core_NativeCore_nativeCloseSession(JNIEnv*, jobject, jlong
     }
     std::lock_guard<std::mutex> lock(native_session->mutex);
     native_session->session.close();
+}
+
+
+extern "C" JNIEXPORT jlong JNICALL
+Java_com_syncinit_app_core_NativeCore_nativeCreatePcmBuffer(
+    JNIEnv* env, jobject, jlong capacity_frames, jint channels, jlong session_id) {
+    if (capacity_frames <= 0 || capacity_frames > 480'000 ||
+        channels < 1 || channels > 2 ||
+        session_id < 0 || static_cast<std::uint64_t>(session_id) > UINT32_MAX) {
+        throw_illegal_argument(env, "PCM jitter buffer configuration is outside the supported range");
+        return 0;
+    }
+    try {
+        auto buffer = std::make_shared<NativePcmBuffer>(
+            static_cast<std::size_t>(capacity_frames),
+            static_cast<std::uint8_t>(channels),
+            static_cast<std::uint32_t>(session_id));
+        const jlong handle = g_next_pcm_buffer_handle.fetch_add(1);
+        if (handle <= 0) throw std::overflow_error("PCM buffer handle space exhausted");
+        std::lock_guard<std::mutex> lock(g_pcm_buffers_mutex);
+        g_pcm_buffers.emplace(handle, std::move(buffer));
+        return handle;
+    } catch (const std::exception& error) {
+        throw_illegal_argument(env, error.what());
+        return 0;
+    }
+}
+
+extern "C" JNIEXPORT jint JNICALL
+Java_com_syncinit_app_core_NativeCore_nativeInsertPcmFrame(
+    JNIEnv* env, jobject, jlong handle, jbyteArray wire_array) {
+    auto native_buffer = find_pcm_buffer(handle);
+    if (!native_buffer) return static_cast<jint>(syit::JitterInsertResult::InvalidChunk);
+
+    std::vector<std::uint8_t> wire;
+    if (!copy_wire_frame(env, wire_array, wire)) {
+        return static_cast<jint>(syit::JitterInsertResult::InvalidChunk);
+    }
+
+    try {
+        const auto frame = syit::decode_frame(wire);
+        const auto chunk = syit::decode_audio_chunk(frame);
+        if (chunk.session_id != native_buffer->session_id ||
+            chunk.channels != native_buffer->channels) {
+            return static_cast<jint>(syit::JitterInsertResult::InvalidChunk);
+        }
+
+        {
+            std::lock_guard<std::mutex> lock(native_buffer->initialization_mutex);
+            if (!native_buffer->initialized) {
+                native_buffer->buffer.reset(chunk.sample_index);
+                native_buffer->initialized = true;
+            }
+        }
+        return static_cast<jint>(native_buffer->buffer.insert(chunk));
+    } catch (const std::exception&) {
+        return static_cast<jint>(syit::JitterInsertResult::InvalidChunk);
+    }
+}
+
+extern "C" JNIEXPORT jlongArray JNICALL
+Java_com_syncinit_app_core_NativeCore_nativePcmBufferStats(
+    JNIEnv* env, jobject, jlong handle) {
+    auto native_buffer = find_pcm_buffer(handle);
+    if (!native_buffer) return nullptr;
+
+    jlong contiguous = 0;
+    jlong next_sample_index = 0;
+    jlong missing_frames = 0;
+    {
+        std::lock_guard<std::mutex> lock(native_buffer->initialization_mutex);
+        if (native_buffer->initialized) {
+            contiguous = static_cast<jlong>(native_buffer->buffer.contiguous_buffered_frames());
+            next_sample_index = static_cast<jlong>(native_buffer->buffer.next_sample_index());
+            missing_frames = static_cast<jlong>(native_buffer->buffer.missing_frames_total());
+        }
+    }
+
+    const std::array<jlong, 3> values{{contiguous, next_sample_index, missing_frames}};
+    jlongArray output = env->NewLongArray(static_cast<jsize>(values.size()));
+    if (output == nullptr) return nullptr;
+    env->SetLongArrayRegion(output, 0, static_cast<jsize>(values.size()), values.data());
+    return output;
+}
+
+extern "C" JNIEXPORT jlong JNICALL
+Java_com_syncinit_app_core_NativeCore_nativeReadPcmBuffer(
+    JNIEnv* env, jobject, jlong handle, jshortArray output_array) {
+    auto native_buffer = find_pcm_buffer(handle);
+    if (!native_buffer) {
+        throw_illegal_argument(env, "PCM jitter buffer handle is closed");
+        return 0;
+    }
+    if (output_array == nullptr) {
+        throw_illegal_argument(env, "PCM output array must not be null");
+        return 0;
+    }
+
+    const jsize output_samples = env->GetArrayLength(output_array);
+    if (output_samples <= 0 || output_samples > 16'384 ||
+        output_samples % static_cast<jsize>(native_buffer->channels) != 0) {
+        throw_illegal_argument(env, "PCM output array must contain a bounded number of complete frames");
+        return 0;
+    }
+
+    {
+        std::lock_guard<std::mutex> lock(native_buffer->initialization_mutex);
+        if (!native_buffer->initialized) {
+            throw_illegal_argument(env, "PCM jitter buffer has not received its first audio chunk");
+            return 0;
+        }
+    }
+
+    const auto frames = static_cast<std::size_t>(
+        output_samples / static_cast<jsize>(native_buffer->channels));
+    std::vector<std::int16_t> samples(static_cast<std::size_t>(output_samples), 0);
+    const auto next = native_buffer->buffer.next_sample_index();
+    const auto result = native_buffer->buffer.read(
+        next, frames, samples.data(), samples.size());
+    env->SetShortArrayRegion(
+        output_array, 0, output_samples,
+        reinterpret_cast<const jshort*>(samples.data()));
+    if (env->ExceptionCheck()) return 0;
+    return static_cast<jlong>(result.missing_frames);
+}
+
+extern "C" JNIEXPORT void JNICALL
+Java_com_syncinit_app_core_NativeCore_nativeClosePcmBuffer(
+    JNIEnv*, jobject, jlong handle) {
+    std::lock_guard<std::mutex> lock(g_pcm_buffers_mutex);
+    g_pcm_buffers.erase(handle);
+}
+
+extern "C" JNIEXPORT jbyteArray JNICALL
+Java_com_syncinit_app_core_NativeCore_nativeEncodePcmChunkFrame(
+    JNIEnv* env,
+    jobject,
+    jlong session_id,
+    jlong sequence,
+    jlong sample_index,
+    jint frames,
+    jint channels,
+    jbyteArray pcm_array) {
+    if (session_id < 0 || static_cast<std::uint64_t>(session_id) > UINT32_MAX ||
+        sequence < 0 || static_cast<std::uint64_t>(sequence) > UINT32_MAX ||
+        sample_index < 0 || frames <= 0 || frames > 65'535 ||
+        channels < 1 || channels > 2 || pcm_array == nullptr) {
+        throw_illegal_argument(env, "PCM chunk metadata contains an out-of-range value");
+        return nullptr;
+    }
+
+    const jsize payload_size = env->GetArrayLength(pcm_array);
+    if (payload_size < 0 || payload_size > static_cast<jsize>(syit::kMaxFrameSize)) {
+        throw_illegal_argument(env, "PCM chunk payload exceeds the frame limit");
+        return nullptr;
+    }
+
+    std::vector<jbyte> raw(static_cast<std::size_t>(payload_size));
+    if (payload_size > 0) {
+        env->GetByteArrayRegion(pcm_array, 0, payload_size, raw.data());
+        if (env->ExceptionCheck()) return nullptr;
+    }
+
+    try {
+        syit::AudioChunk chunk;
+        chunk.session_id = static_cast<std::uint32_t>(session_id);
+        chunk.sequence = static_cast<std::uint32_t>(sequence);
+        chunk.sample_index = static_cast<syit::SampleIndex>(sample_index);
+        chunk.frames = static_cast<std::uint16_t>(frames);
+        chunk.codec = syit::kAudioCodecPcm16;
+        chunk.channels = static_cast<std::uint8_t>(channels);
+        chunk.payload.resize(static_cast<std::size_t>(payload_size));
+        for (jsize index = 0; index < payload_size; ++index) {
+            chunk.payload[static_cast<std::size_t>(index)] =
+                static_cast<std::uint8_t>(raw[static_cast<std::size_t>(index)]);
+        }
+        const auto frame = syit::encode_audio_chunk(chunk);
+        return make_byte_array(env, syit::encode_frame(frame));
+    } catch (const std::exception& error) {
+        throw_illegal_argument(env, error.what());
+        return nullptr;
+    }
 }
