@@ -26,6 +26,31 @@ gradle -p android :transport:check
 
 The app currently targets API 36 and supports arm64-v8a and x86_64 builds. The CMake project compiles the protocol/message codecs and `ReceiverSession` sources directly from `core/`; it intentionally does not invoke the desktop CMake project, which requires Python to generate test vectors and also defines desktop test executables.
 
+## Updateable preview APK signing
+
+Android only installs an APK over an existing app when the **application ID is identical**, the **signing certificate is identical**, and the new APK's **versionCode is higher**. Preview builds intentionally keep the existing `com.syncinit.app.debug` application ID by retaining `applicationIdSuffix = ".debug"`.
+
+GitHub Actions must use one persistent keystore for every preview APK. Do not commit the keystore or passwords. The workflows read these repository Actions secrets:
+
+- `SYNCINIT_PREVIEW_KEYSTORE_BASE64`: Base64-encoded JKS file.
+- `SYNCINIT_PREVIEW_KEYSTORE_PASSWORD`: the JKS password and the key password.
+
+Create the keystore once on a trusted computer (PowerShell on Windows):
+
+```powershell
+keytool -genkeypair -v -keystore syncinit-preview.jks -storetype JKS -alias syncinit-preview -keyalg RSA -keysize 3072 -validity 10000
+[Convert]::ToBase64String([IO.File]::ReadAllBytes((Resolve-Path .\syncinit-preview.jks))) | Set-Clipboard
+```
+
+When `keytool` asks for the key password, press Enter to reuse the keystore password. Back up `syncinit-preview.jks securely outside the repository; losing it means future APKs cannot update existing installs. Then open **GitHub → repository Settings → Secrets and variables → Actions → New repository secret** and add:
+
+1. `SYNCINIT_PREVIEW_KEYSTORE_BASE64` — paste the clipboard contents.
+2. `SYNCINIT_PREVIEW_KEYSTORE_PASSWORD` — enter the password used when creating the keystore.
+
+After both secrets exist, run the **Android app and JNI** workflow again from the Actions tab. It will sign the APK with the persistent key and publish the artifact. The release workflow also requires the same key. Each CI build receives a new timestamp-based `versionCode`, so a later APK can replace an earlier install.
+
+**One-time migration warning:** older APKs were signed with disposable GitHub-runner debug keys. Their private keys were not retained, so a persistent-key APK cannot be guaranteed to update those installs. Expect to uninstall the currently installed preview once, install the first persistent-key build, and then install every later preview directly over it without uninstalling. The package ID remains the same after this migration.
+
 ## Native session bridge
 
 `NativeCore` loads `libsyncinit_jni.so`. `NativeReceiverSession` provides a synchronized Kotlin facade around the C++ `syit::ReceiverSession` API. The current bridge supports:
