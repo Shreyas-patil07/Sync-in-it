@@ -1,12 +1,16 @@
 // SPDX-License-Identifier: Apache-2.0
 #include <jni.h>
 
+#include "syit/estimator.h"
 #include "syit/messages.h"
 #include "syit/protocol.h"
 #include "syit/session.h"
+#include "syit/transport.h"
 
 #include <array>
 #include <climits>
+#include <cmath>
+#include <limits>
 #include <atomic>
 #include <cstdint>
 #include <memory>
@@ -20,15 +24,30 @@ namespace {
 
 struct NativeSession {
     explicit NativeSession(syit::ReceiverSessionConfig config)
-        : session(std::move(config)) {}
+        : time_sync_responder(config.session_id, config.receiver_id),
+          session(std::move(config)) {}
 
+    syit::TimeSyncResponder time_sync_responder;
     std::mutex mutex;
     syit::ReceiverSession session;
+};
+
+struct NativeTimeSyncClient {
+    NativeTimeSyncClient(std::uint32_t session_id, std::uint16_t receiver_id)
+        : client(session_id, receiver_id) {}
+
+    std::mutex mutex;
+    syit::TimeSyncClient client;
+    std::vector<syit::SyncSample> samples;
+    std::size_t stable_streak{0U};
 };
 
 std::mutex g_registry_mutex;
 std::unordered_map<jlong, std::shared_ptr<NativeSession>> g_sessions;
 std::atomic<jlong> g_next_handle{1};
+std::mutex g_clock_clients_mutex;
+std::unordered_map<jlong, std::shared_ptr<NativeTimeSyncClient>> g_clock_clients;
+std::atomic<jlong> g_next_clock_client_handle{1};
 
 void throw_illegal_argument(JNIEnv* env, const char* message) {
     jclass exception_class = env->FindClass("java/lang/IllegalArgumentException");
@@ -43,6 +62,13 @@ std::shared_ptr<NativeSession> find_session(jlong handle) {
     std::lock_guard<std::mutex> lock(g_registry_mutex);
     const auto found = g_sessions.find(handle);
     return found == g_sessions.end() ? std::shared_ptr<NativeSession>{} : found->second;
+}
+
+std::shared_ptr<NativeTimeSyncClient> find_clock_client(jlong handle) {
+    if (handle <= 0) return {};
+    std::lock_guard<std::mutex> lock(g_clock_clients_mutex);
+    const auto found = g_clock_clients.find(handle);
+    return found == g_clock_clients.end() ? std::shared_ptr<NativeTimeSyncClient>{} : found->second;
 }
 
 bool copy_token(JNIEnv* env, jbyteArray token_array, std::array<std::uint8_t, 16>& token) {
@@ -99,6 +125,33 @@ jbyteArray make_byte_array(JNIEnv* env, const std::vector<std::uint8_t>& bytes) 
             output, 0, static_cast<jsize>(bytes.size()),
             reinterpret_cast<const jbyte*>(bytes.data()));
     }
+    return output;
+}
+
+bool copy_binary_array(
+    JNIEnv* env,
+    jbyteArray array,
+    std::vector<std::uint8_t>& bytes,
+    std::size_t expected_size) {
+    if (array == nullptr) return false;
+    const jsize length = env->GetArrayLength(array);
+    if (length < 0 || static_cast<std::size_t>(length) != expected_size) return false;
+    std::vector<jbyte> raw(expected_size);
+    if (expected_size != 0U) {
+        env->GetByteArrayRegion(array, 0, length, raw.data());
+        if (env->ExceptionCheck()) return false;
+    }
+    bytes.resize(expected_size);
+    for (std::size_t i = 0; i < expected_size; ++i) {
+        bytes[i] = static_cast<std::uint8_t>(raw[i]);
+    }
+    return true;
+}
+
+jdoubleArray make_double_array(JNIEnv* env, const std::array<jdouble, 8>& values) {
+    jdoubleArray output = env->NewDoubleArray(static_cast<jsize>(values.size()));
+    if (output == nullptr) return nullptr;
+    env->SetDoubleArrayRegion(output, 0, static_cast<jsize>(values.size()), values.data());
     return output;
 }
 
@@ -364,6 +417,188 @@ Java_com_syncinit_app_core_NativeCore_nativeOnReady(
         static_cast<std::uint32_t>(buffered_ms),
         sync_stable == JNI_TRUE,
         static_cast<std::uint32_t>(residual_std_us)}));
+}
+
+extern "C" JNIEXPORT jint JNICALL
+Java_com_syncinit_app_core_NativeCore_nativeOnReadyFrame(
+    JNIEnv* env, jobject, jlong handle, jbyteArray wire_array) {
+    auto native_session = find_session(handle);
+    if (!native_session) return result_code(syit::ReceiverSessionResult::Closed);
+    std::vector<std::uint8_t> wire;
+    if (!copy_wire_frame(env, wire_array, wire)) {
+        return result_code(syit::ReceiverSessionResult::WrongState);
+    }
+    try {
+        const auto frame = syit::decode_frame(wire);
+        if (frame.flags != 0U) throw std::invalid_argument("READY frame flags must be zero");
+        const auto message = syit::decode_control_message(frame);
+        const auto* ready = std::get_if<syit::Ready>(&message);
+        if (ready == nullptr) throw std::invalid_argument("expected a READY control frame");
+        std::lock_guard<std::mutex> lock(native_session->mutex);
+        return result_code(native_session->session.on_ready(*ready));
+    } catch (const std::exception& error) {
+        throw_illegal_argument(env, error.what());
+        return result_code(syit::ReceiverSessionResult::WrongState);
+    }
+}
+
+extern "C" JNIEXPORT jbyteArray JNICALL
+Java_com_syncinit_app_core_NativeCore_nativeEncodeReadyFrame(
+    JNIEnv* env, jobject, jlong buffered_ms, jboolean sync_stable, jlong residual_std_us) {
+    if (buffered_ms < 0 || static_cast<std::uint64_t>(buffered_ms) > UINT32_MAX ||
+        residual_std_us < 0 || static_cast<std::uint64_t>(residual_std_us) > UINT32_MAX) {
+        throw_illegal_argument(env, "READY metrics are outside the wire range");
+        return nullptr;
+    }
+    try {
+        const syit::Ready ready{
+            static_cast<std::uint32_t>(buffered_ms),
+            sync_stable == JNI_TRUE,
+            static_cast<std::uint32_t>(residual_std_us)};
+        const auto frame = syit::encode_control_message(syit::ControlMessage{ready});
+        return make_byte_array(env, syit::encode_frame(frame));
+    } catch (const std::exception& error) {
+        throw_illegal_argument(env, error.what());
+        return nullptr;
+    }
+}
+
+extern "C" JNIEXPORT jbyteArray JNICALL
+Java_com_syncinit_app_core_NativeCore_nativeTimeSyncResponseFrame(
+    JNIEnv* env,
+    jobject,
+    jlong handle,
+    jbyteArray packet_array,
+    jlong t2_ns,
+    jlong t3_ns) {
+    auto native_session = find_session(handle);
+    if (!native_session || t2_ns < 0 || t3_ns < t2_ns) return nullptr;
+    std::vector<std::uint8_t> bytes;
+    if (!copy_binary_array(env, packet_array, bytes, syit::kTimeSyncPacketSize)) return nullptr;
+    try {
+        const auto request = syit::decode_time_sync_packet(bytes);
+        syit::TimeSyncPacket response;
+        const auto result = native_session->time_sync_responder.make_response(
+            request, static_cast<syit::Nanoseconds>(t2_ns),
+            static_cast<syit::Nanoseconds>(t3_ns), response);
+        if (result != syit::TimeSyncRequestStatus::Prepared) return nullptr;
+        return make_byte_array(env, syit::encode_time_sync_response(response));
+    } catch (const std::exception&) {
+        return nullptr;
+    }
+}
+
+extern "C" JNIEXPORT jlong JNICALL
+Java_com_syncinit_app_core_NativeCore_nativeCreateTimeSyncClient(
+    JNIEnv* env, jobject, jlong session_id, jint receiver_id) {
+    if (session_id < 0 || static_cast<std::uint64_t>(session_id) > UINT32_MAX ||
+        receiver_id < 0 || receiver_id > 65'535) {
+        throw_illegal_argument(env, "time-sync client identity contains an out-of-range value");
+        return 0;
+    }
+    try {
+        auto client = std::make_shared<NativeTimeSyncClient>(
+            static_cast<std::uint32_t>(session_id), static_cast<std::uint16_t>(receiver_id));
+        const jlong handle = g_next_clock_client_handle.fetch_add(1);
+        if (handle <= 0) throw std::overflow_error("time-sync client handle space exhausted");
+        std::lock_guard<std::mutex> lock(g_clock_clients_mutex);
+        g_clock_clients.emplace(handle, std::move(client));
+        return handle;
+    } catch (const std::exception& error) {
+        throw_illegal_argument(env, error.what());
+        return 0;
+    }
+}
+
+extern "C" JNIEXPORT jbyteArray JNICALL
+Java_com_syncinit_app_core_NativeCore_nativeMakeTimeSyncRequest(
+    JNIEnv* env, jobject, jlong handle, jlong t1_ns) {
+    auto native_client = find_clock_client(handle);
+    if (!native_client || t1_ns < 0) return nullptr;
+    std::lock_guard<std::mutex> lock(native_client->mutex);
+    syit::TimeSyncPacket request;
+    if (!native_client->client.make_request(static_cast<syit::Nanoseconds>(t1_ns), request)) {
+        return nullptr;
+    }
+    try {
+        return make_byte_array(env, syit::encode_time_sync_request(request));
+    } catch (const std::exception&) {
+        native_client->client.cancel_request(request.sequence);
+        return nullptr;
+    }
+}
+
+extern "C" JNIEXPORT void JNICALL
+Java_com_syncinit_app_core_NativeCore_nativeExpireTimeSyncRequests(
+    JNIEnv*, jobject, jlong handle, jlong earlier_than_ns) {
+    auto native_client = find_clock_client(handle);
+    if (!native_client || earlier_than_ns < 0) return;
+    std::lock_guard<std::mutex> lock(native_client->mutex);
+    native_client->client.expire_before(static_cast<syit::Nanoseconds>(earlier_than_ns));
+}
+
+extern "C" JNIEXPORT jdoubleArray JNICALL
+Java_com_syncinit_app_core_NativeCore_nativeAcceptTimeSyncResponse(
+    JNIEnv* env, jobject, jlong handle, jbyteArray packet_array, jlong t4_ns) {
+    auto native_client = find_clock_client(handle);
+    if (!native_client || t4_ns < 0) return nullptr;
+    std::vector<std::uint8_t> bytes;
+    if (!copy_binary_array(env, packet_array, bytes, syit::kTimeSyncPacketSize)) return nullptr;
+
+    try {
+        const auto response = syit::decode_time_sync_packet(bytes);
+        std::lock_guard<std::mutex> lock(native_client->mutex);
+        syit::TimeSyncExchange exchange;
+        if (native_client->client.accept_response(
+                response, static_cast<syit::Nanoseconds>(t4_ns), exchange) !=
+            syit::TimeSyncResponseStatus::Accepted) {
+            return nullptr;
+        }
+
+        native_client->samples.push_back(exchange.to_sync_sample(static_cast<syit::Nanoseconds>(t4_ns)));
+        constexpr syit::Nanoseconds kEstimatorWindowNs = 60'000'000'000LL;
+        native_client->samples.erase(
+            std::remove_if(
+                native_client->samples.begin(), native_client->samples.end(),
+                [t4_ns](const syit::SyncSample& sample) {
+                    return sample.received_at_true_ns > t4_ns ||
+                        static_cast<long double>(t4_ns) - sample.received_at_true_ns >
+                            static_cast<long double>(kEstimatorWindowNs);
+                }),
+            native_client->samples.end());
+
+        const auto fit = syit::estimate_clock_offset(
+            native_client->samples,
+            static_cast<syit::Nanoseconds>(t4_ns),
+            static_cast<syit::Nanoseconds>(t4_ns));
+        const bool stable_fit =
+            fit.receiver_skew_ppm.has_value() &&
+            fit.samples_used >= 8U &&
+            fit.selected_sample_span_ns >= 10'000'000'000LL &&
+            fit.residual_rms_ms < 0.25;
+        native_client->stable_streak = stable_fit ? native_client->stable_streak + 1U : 0U;
+
+        const auto skew = fit.receiver_skew_ppm.value_or(
+            std::numeric_limits<double>::quiet_NaN());
+        return make_double_array(env, {{
+            fit.offset_ns,
+            skew,
+            fit.rtt_p50_ms,
+            fit.residual_rms_ms,
+            static_cast<jdouble>(fit.samples_used),
+            static_cast<jdouble>(fit.samples_seen),
+            static_cast<jdouble>(fit.selected_sample_span_ns),
+            static_cast<jdouble>(native_client->stable_streak)
+        }});
+    } catch (const std::exception&) {
+        return nullptr;
+    }
+}
+
+extern "C" JNIEXPORT void JNICALL
+Java_com_syncinit_app_core_NativeCore_nativeCloseTimeSyncClient(JNIEnv*, jobject, jlong handle) {
+    std::lock_guard<std::mutex> lock(g_clock_clients_mutex);
+    g_clock_clients.erase(handle);
 }
 
 extern "C" JNIEXPORT jint JNICALL
