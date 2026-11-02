@@ -137,7 +137,54 @@ class MasterSessionHost(context: Context, private val onStatus: (String) -> Unit
                     check(audioHello.messageType == 0x03 && audioHello.flags == 0) {
                         "first audio-channel frame must be AUDIO_HELLO"
                     }
-                    val audioResult = currentSession.onAudioHelloFrame(audioHe    private fun runTimeSyncServer(control: TcpFrameConnection) {
+                    val audioResult = currentSession.onAudioHelloFrame(audioHello.toEncodedBytes())
+                    check(audioResult == ReceiverSessionResult.Accepted) {
+                        "AUDIO_HELLO rejected: $audioResult"
+                    }
+
+                    admitted = true
+                    onStatus(
+                        "Receiver admitted · native state ${currentSession.state()} · starting UDP clock sync."
+                    )
+                    runTimeSyncServer(control)
+                    return
+                } catch (error: Exception) {
+                    if (closed.get()) break
+                    if (admitted) {
+                        onStatus("Admitted receiver disconnected: ${error.message ?: error.javaClass.simpleName}")
+                        break
+                    }
+
+                    onStatus(
+                        "Receiver join attempt failed: ${error.message ?: error.javaClass.simpleName}. " +
+                            "Host remains available; retry from the receiver."
+                    )
+                    closeQuietly(control)
+                    closeQuietly(audio)
+                    if (controlConnection === control) controlConnection = null
+                    if (audioConnection === audio) audioConnection = null
+
+                    nativeSession?.close()
+                    val config = nativeSessionConfig
+                    if (config == null) {
+                        onStatus("Host session could not reset after a failed join attempt.")
+                        break
+                    }
+                    nativeSession = try {
+                        NativeReceiverSession.create(config.copy(token = config.token.copyOf()))
+                    } catch (resetError: Exception) {
+                        onStatus("Host session reset failed: ${resetError.message ?: resetError.javaClass.simpleName}")
+                        break
+                    }
+                }
+            }
+        } finally {
+            if (closed.compareAndSet(false, true)) executor.shutdownNow()
+            closeResources()
+        }
+    }
+
+    private fun runTimeSyncServer(control: TcpFrameConnection) {
         val server = checkNotNull(timeSyncServer) { "UDP time-sync listener was not started" }
 
         val controlReader = Thread({ readControlFrames(control) }, "syncinit-master-control-reader").apply {
