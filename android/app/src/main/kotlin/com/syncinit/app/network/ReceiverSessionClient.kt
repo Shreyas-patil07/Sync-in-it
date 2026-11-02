@@ -7,6 +7,8 @@ import com.syncinit.transport.FrameProtocolException
 import com.syncinit.transport.UdpTimeSyncClient
 import java.io.Closeable
 import java.net.InetAddress
+import java.net.PortUnreachableException
+import java.io.IOException
 import java.net.SocketTimeoutException
 import java.util.concurrent.Executors
 import java.util.concurrent.atomic.AtomicBoolean
@@ -93,6 +95,7 @@ class ReceiverSessionClient(private val onStatus: (String) -> Unit) : Closeable 
                 var probeAttempts = 0
                 var lastMeasurement: com.syncinit.app.core.ClockSyncMeasurement? = null
                 var readySent = false
+                var consecutiveUnreachable = 0
 
                 while (!closed.get()) {
                     nativeClock.expireRequestsBefore(System.nanoTime())
@@ -109,6 +112,7 @@ class ReceiverSessionClient(private val onStatus: (String) -> Unit) : Closeable 
                             nativeClock.expireRequestsBefore(System.nanoTime() + 1L)
                             onStatus("Ignoring an invalid or uncorrelated UDP time-sync response.")
                         } else {
+                            consecutiveUnreachable = 0
                             lastMeasurement = measurement
                             onStatus(
                                 "Clock acquisition · probes $probeAttempts · " +
@@ -134,6 +138,20 @@ class ReceiverSessionClient(private val onStatus: (String) -> Unit) : Closeable 
                                 )
                             }
                         }
+                    } catch (error: PortUnreachableException) {
+                        nativeClock.expireRequestsBefore(System.nanoTime() + 1L)
+                        consecutiveUnreachable += 1
+                        if (consecutiveUnreachable >= 5) {
+                            throw IOException(
+                                "Master UDP time-sync port $timePort is unreachable after 5 probes. " +
+                                    "Check that both phones are on the same LAN and client isolation is disabled.",
+                                error
+                            )
+                        }
+                        onStatus(
+                            "Master UDP time-sync port $timePort is temporarily unreachable " +
+                                "($consecutiveUnreachable/5); retrying."
+                        )
                     } catch (_: SocketTimeoutException) {
                         nativeClock.expireRequestsBefore(System.nanoTime() + 1L)
                         onStatus("UDP time-sync response timed out; retrying.")
