@@ -78,6 +78,8 @@ Run `gradle -p android :app:assembleDebug` to build the debug APK and `gradle -p
 
 The Android workspace and JNI boundary are documented in [android/README.md](android/README.md). The Android CI workflow publishes the debug APK as a short-lived artifact. Launching the debug app runs a small native session smoke test. It validates JNI/session wiring only; it does not connect phones or play audio.
 
+For in-place APK updates, preview builds must be signed with the same persistent keystore and use a higher `versionCode`. Configure the two GitHub Actions secrets documented in [android/README.md](android/README.md) before downloading the updateable preview artifact or publishing a release. The package ID remains `com.syncinit.app.debug` for preview builds. Existing CI APKs signed with disposable runner keys may require one final uninstall/reinstall to migrate to the persistent signing key; future builds signed with that key install over the existing app.
+
 ---
 
 ## Why this is hard
