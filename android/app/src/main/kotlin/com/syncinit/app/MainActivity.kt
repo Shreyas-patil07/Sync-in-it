@@ -14,6 +14,7 @@ import android.widget.ScrollView
 import android.widget.TextView
 import com.syncinit.app.core.NativeCore
 import com.syncinit.app.core.NativeSessionSmokeTest
+import com.syncinit.app.core.NetworkHandshakeSmokeTest
 import com.syncinit.app.network.MasterSessionHost
 import com.syncinit.app.network.ReceiverSessionClient
 
@@ -161,7 +162,7 @@ class MainActivity : Activity() {
     }
 
     private fun nativeStatus(): String = try {
-        "Native C++ core API ${NativeCore.nativeCoreVersion()} · ${NativeSessionSmokeTest.run()}"
+        "Native C++ core API ${NativeCore.nativeCoreVersion()} · ${NativeSessionSmokeTest.run()} · ${NetworkHandshakeSmokeTest.run()}"
     } catch (error: LinkageError) {
         "Native C++ core failed to load: ${error.message ?: "unknown linker error"}"
     } catch (error: Exception) {
