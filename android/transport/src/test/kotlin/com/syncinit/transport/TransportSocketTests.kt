@@ -40,6 +40,7 @@ private fun encodedFrameCodecRoundTrip() {
 private fun tcpRoundTrip() {
     val loopback = InetAddress.getByName("127.0.0.1")
     TcpFrameServer(loopback, 0, acceptTimeoutMs = 3_000, connectionReadTimeoutMs = 3_000).use { server ->
+        expect(server.isListening, "TCP listener reports ready immediately after bind")
         val failure = ArrayBlockingQueue<Throwable>(1)
         val worker = Thread {
             try {
