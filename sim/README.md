@@ -66,6 +66,17 @@ All five load cases reported every receiver meeting the operational acquisition 
 
 
 
+## Drift-correction comparison
+
+The clock-only simulator reports two playout-control candidates on the same estimated initial phase error and effective rate mismatch:
+
+- **Frame-slip baseline:** the existing dead band, one-frame drop/duplicate decisions and hard-resync threshold.
+- **Bounded resampling candidate:** a 20 ms control loop with feed-forward compensation from a synthetic DAC/output-rate estimate, a proportional phase trim spread over a four-second horizon, a ±500 ppm adjustment limit and a 1,000 ppm/s slew limit. It retains the same 240-frame (5 ms) hard-resync gate.
+
+The resampling candidate reports p95/maximum/final modeled phase error, RMS/peak rate adjustment, rate-limit saturation and hard-resync count. The baseline reports p95/maximum/final modeled phase error, frame slips per minute and hard-resync count.
+
+**Interpretation limits:** the initial A/B uses an ideal rate estimate so it is an optimistic control-loop comparison, not a claim about achievable DAC measurement precision. Unit tests add a +2 ppm estimate bias to check sensitivity. Neither simulation renders PCM or models interpolation filters, transient artifacts, aliasing, callback scheduling, CPU/thermal cost or measured output timestamps. It cannot establish that resampling sounds better than frame slips. The candidate is not wired into the C++ core or Android audio path.
+
 ## Assumptions and limits
 
 This is a controlled airtime/queueing approximation, not a full IEEE 802.11 implementation. It does not model CSMA/CA carrier sensing between independent transmitters, contention windows changing with retry count, OFDMA/MU-MIMO, aggregation/block-ACK, rate adaptation, hidden nodes, band/channel selection, TCP congestion control, TCP retransmission/head-of-line behavior, multicast or router-specific firmware queues. The two-hop unicast path is serialized over one shared medium, while real APs may schedule and aggregate frames differently.

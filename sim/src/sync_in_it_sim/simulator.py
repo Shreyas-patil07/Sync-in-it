@@ -5,6 +5,7 @@ import math
 import random
 
 from .estimator import ClockOffsetEstimator
+from .drift import simulate_bounded_resampling
 from .models import ClockModel, EstimatorResult, NetworkProfile, SyncSample
 from .network import SimulatedNetwork
 from .timing import DacClockModel, DriftAction, DriftController, SAMPLE_RATE_HZ
@@ -154,6 +155,15 @@ class ReceiverSimulation:
         offset_error_end_ms: float,
         skew_error_ppm: float | None,
     ) -> dict[str, float | int | None]:
+        unavailable = {
+            "resampler_playout_error_p95_ms": None,
+            "resampler_playout_error_max_ms": None,
+            "resampler_playout_error_final_ms": None,
+            "resampler_rate_adjustment_rms_ppm": None,
+            "resampler_rate_adjustment_max_abs_ppm": None,
+            "resampler_rate_saturated_pct": None,
+            "resampler_hard_resync_count": None,
+        }
         if estimate.receiver_skew_ppm is None:
             return {
                 "dac_clock_rate_error_ppm": self.dac_clock_rate_error_ppm,
@@ -164,6 +174,7 @@ class ReceiverSimulation:
                 "slips_per_minute": None,
                 "hard_resync_count": None,
                 "slip_count": None,
+                **unavailable,
             }
 
         # The fitted receiver-clock rate and DAC rate jointly determine frame
@@ -181,6 +192,13 @@ class ReceiverSimulation:
                 "slips_per_minute": 0.0,
                 "hard_resync_count": 0,
                 "slip_count": 0,
+                "resampler_playout_error_p95_ms": 0.0,
+                "resampler_playout_error_max_ms": 0.0,
+                "resampler_playout_error_final_ms": 0.0,
+                "resampler_rate_adjustment_rms_ppm": 0.0,
+                "resampler_rate_adjustment_max_abs_ppm": 0.0,
+                "resampler_rate_saturated_pct": 0.0,
+                "resampler_hard_resync_count": 0,
             }
 
         # Back-project the fitted end offset to the scheduled playback start.
@@ -189,6 +207,7 @@ class ReceiverSimulation:
         offset_error_start_ms = offset_error_end_ms + skew_error * elapsed_after_start_s / 1_000.0
         initial_error_frames = offset_error_start_ms * SAMPLE_RATE_HZ / 1_000.0
 
+        # Baseline: retain the existing one-frame slip / hard-resync policy.
         dac_clock = DacClockModel(rate_error_ppm=effective_rate_error_ppm)
         controller = DriftController()
         correction_frames = 0
@@ -225,6 +244,18 @@ class ReceiverSimulation:
         final_error_frames = initial_error_frames - final_drift - correction_frames
         playback_duration_s = playback_duration_ns / 1_000_000_000.0
 
+        # Candidate: bounded feed-forward rate correction plus slow phase trim.
+        # The synthetic DAC-rate estimate is ideal in this comparison; tests
+        # exercise biased estimates separately. This is not a production ASRC.
+        resampler = simulate_bounded_resampling(
+            initial_error_frames=initial_error_frames,
+            actual_rate_error_ppm=effective_rate_error_ppm,
+            measured_rate_error_ppm=effective_rate_error_ppm,
+            duration_s=playback_duration_s,
+            sample_rate_hz=SAMPLE_RATE_HZ,
+            tick_s=tick_ns / 1_000_000_000.0,
+        )
+
         return {
             "dac_clock_rate_error_ppm": self.dac_clock_rate_error_ppm,
             "effective_playout_rate_error_ppm": effective_rate_error_ppm,
@@ -234,6 +265,7 @@ class ReceiverSimulation:
             "slips_per_minute": slip_count / playback_duration_s * 60.0,
             "hard_resync_count": hard_resync_count,
             "slip_count": slip_count,
+            **{f"resampler_{key}": value for key, value in resampler.items()},
         }
 
     def run(self) -> dict[str, float | int | bool | None]:

@@ -60,7 +60,8 @@ def main() -> None:
     print(f"Sync In It M0 simulation — {args.duration:g}s, seed {args.seed}")
     print(
         f"{'Scenario':<24} {'RX/Samp':>7} {'Offset err (ms)':>15} {'Skew (ppm)':>11} "
-        f"{'Conv (s)':>9} {'Slip/min':>9} {'Resync':>7} {'Playout p95/max (ms)':>21}"
+        f"{'Conv (s)':>9} {'Slip/min':>9} {'Slip p95/max':>15} "
+        f"{'Resamp p95/max':>15} {'Rate RMS/peak':>15}"
     )
     comparison = results.get("acquisition_schedule_comparison")
     for name, result in results.items():
@@ -74,13 +75,19 @@ def main() -> None:
         slips_text = "n/a" if slips is None else f"{slips:.1f}"
         resyncs = result.get("hard_resync_count")
         resync_text = "n/a" if resyncs is None else str(resyncs)
-        p95 = result.get("playout_error_p95_ms")
-        maximum = result.get("playout_error_max_ms")
-        p95_text = "n/a" if p95 is None or maximum is None else f"{p95:.3f}/{maximum:.3f}"
+        slip_p95 = result.get("playout_error_p95_ms")
+        slip_max = result.get("playout_error_max_ms")
+        slip_text = "n/a" if slip_p95 is None or slip_max is None else f"{slip_p95:.3f}/{slip_max:.3f}"
+        resample_p95 = result.get("resampler_playout_error_p95_ms")
+        resample_max = result.get("resampler_playout_error_max_ms")
+        resample_text = "n/a" if resample_p95 is None or resample_max is None else f"{resample_p95:.3f}/{resample_max:.3f}"
+        rate_rms = result.get("resampler_rate_adjustment_rms_ppm")
+        rate_peak = result.get("resampler_rate_adjustment_max_abs_ppm")
+        rate_text = "n/a" if rate_rms is None or rate_peak is None else f"{rate_rms:.1f}/{rate_peak:.1f}"
         receiver_count = result.get("receiver_count", result["samples_received"])
         print(
             f"{name:<24} {receiver_count:>4} {result['offset_error_ms']:>15.3f} {skew_text:>11} "
-            f"{convergence_text:>9} {slips_text:>9} {resync_text:>7} {p95_text:>21}"
+            f"{convergence_text:>9} {slips_text:>9} {slip_text:>15} {resample_text:>15} {rate_text:>15}"
         )
 
     if comparison is not None:
