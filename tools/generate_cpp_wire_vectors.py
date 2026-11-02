@@ -23,6 +23,7 @@ def generate(data: dict) -> str:
         "namespace wire_golden {",
         "struct ByteVector { const char* name; std::vector<std::uint8_t> bytes; };",
         "struct TimeSyncVector { const char* name; std::vector<std::uint8_t> bytes; std::uint8_t type; std::uint32_t session_id; std::uint16_t receiver_id; std::uint32_t sequence; std::int64_t t1_ns; std::int64_t t2_ns; std::int64_t t3_ns; };",
+        "struct InvalidControlPayload { const char* name; std::uint8_t type; std::vector<std::uint8_t> payload; };",
         "inline const std::vector<ByteVector> kFrames = {",
     ]
     for item in data["control_frames"] + data["audio_frames"] + data["unknown_frames"]:
@@ -38,6 +39,11 @@ def generate(data: dict) -> str:
             str(item["t1_ns"]), str(item["t2_ns"]), str(item["t3_ns"]),
         ]
         lines.append("{" + ", ".join(values) + "},")
+    lines.extend(["};", "inline const std::vector<InvalidControlPayload> kInvalidControlPayloads = {"])
+    for item in data.get("invalid_control_payloads", []):
+        lines.append("{" + ", ".join((
+            f'"{item["name"]}"', str(item["type"]), byte_vector(item["payload_hex"])
+        )) + "},")
     lines.extend(["};", "}  // namespace wire_golden", ""])
     return "\n".join(lines)
 

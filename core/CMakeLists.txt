@@ -12,6 +12,7 @@ add_library(sync_in_it_core
     src/estimator.cpp
     src/timing.cpp
     src/protocol.cpp
+    src/messages.cpp
 )
 target_include_directories(sync_in_it_core PUBLIC include)
 
