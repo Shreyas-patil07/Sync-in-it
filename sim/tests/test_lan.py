@@ -22,6 +22,13 @@ class SharedWifiSimulationTests(unittest.TestCase):
         self.assertGreater(result["probe_success_count"], 0)
         self.assertLess(result["audio_chunk_loss_pct"], 1.0)
 
+    def test_fixed_schedule_sends_only_one_join_burst_and_two_second_retries(self):
+        result = SharedWifiSimulation(
+            receiver_count=1, duration_s=4, seed=19, adaptive_probes=False
+        ).run()
+        # 20 join probes + the 1-second acquisition probe + one at ~3 seconds.
+        self.assertEqual(result["probe_count"], 22)
+
     def test_run_is_deterministic(self):
         kwargs = {
             "receiver_count": 3,

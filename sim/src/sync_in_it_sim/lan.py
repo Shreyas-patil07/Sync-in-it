@@ -269,7 +269,8 @@ class SharedWifiSimulation:
         state.stable_streak = state.stable_streak + 1 if stable else 0
         if state.stable_streak >= 3 and state.stable_at_ns is None:
             state.stable_at_ns = at_ns
-        self._schedule_probe(packet.receiver, packet.sequence + 1, at_ns)
+        if packet.sequence >= JOIN_PROBES:
+            self._schedule_probe(packet.receiver, packet.sequence + 1, at_ns)
 
     def _finish_audio_segment(self, packet: _Packet, succeeds: bool, at_ns: int) -> None:
         if packet.chunk_key is None:
