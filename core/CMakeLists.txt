@@ -12,6 +12,7 @@ add_library(sync_in_it_core
     src/estimator.cpp
     src/timing.cpp
     src/protocol.cpp
+    src/messages.cpp
 )
 target_include_directories(sync_in_it_core PUBLIC include)
 
@@ -72,6 +73,17 @@ else()
     target_compile_options(sync_in_it_protocol_tests PRIVATE -Wall -Wextra -Wpedantic -Wconversion -Wsign-conversion)
 endif()
 
+add_executable(sync_in_it_message_tests tests/message_tests.cpp "${GENERATED_WIRE_VECTORS}")
+add_dependencies(sync_in_it_message_tests generate_protocol_vectors)
+target_include_directories(sync_in_it_message_tests PRIVATE "${GENERATED_DIR}")
+target_link_libraries(sync_in_it_message_tests PRIVATE sync_in_it_core)
+if(MSVC)
+    target_compile_options(sync_in_it_message_tests PRIVATE /W4 /permissive-)
+else()
+    target_compile_options(sync_in_it_message_tests PRIVATE -Wall -Wextra -Wpedantic -Wconversion -Wsign-conversion)
+endif()
+
 enable_testing()
 add_test(NAME sync_in_it_core_golden_vectors COMMAND sync_in_it_core_tests)
 add_test(NAME sync_in_it_protocol_golden_vectors COMMAND sync_in_it_protocol_tests)
+add_test(NAME sync_in_it_typed_message_vectors COMMAND sync_in_it_message_tests)

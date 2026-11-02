@@ -326,3 +326,22 @@ No physical-device synchronization results are recorded in this initial log. Add
 **Limitations:** The codecs implement the framing/packet envelope, not typed field-level encoding/decoding for each control payload. The 38-byte UDP packet size and version byte are the concrete encoding of the fixed padded request/response format. Session/receiver identity validation remains a session-layer responsibility. No Android sockets or physical devices are included in this slice.
 
 **Next action:** Build typed protocol payload codecs and stream/session transport adapters, then begin the M1 Android role/session shell.
+
+
+### 2 November 2026 — M1 typed control-message codecs
+
+**Type:** Protocol implementation / Cross-language parity  
+**Status:** Implemented; awaiting CI and PR review  
+**Branch:** `feature/m1-typed-control-codecs`
+
+**Summary:**
+- Added typed structures and encoders/decoders for HELLO, WELCOME, AUDIO_HELLO, READY, REPORT, ANCHOR, MUTE, SET_COMP, RESYNC, LEAVE, KEEPALIVE, ERROR, VOLUME, CALIB_CHIRP and CALIB_ACK in Python and C++17.
+- Enforced exact fixed/variable payload sizes, UTF-8 length-prefixed model/detail strings, boolean bytes restricted to 0/1, ANCHOR kinds 0–4, and VOLUME gain 0–100.
+- Added 19 shared negative payload fixtures and Python/C++ tests. Existing valid control-frame fixtures are now decoded into typed messages and re-encoded byte-for-byte.
+- Preserved unknown numeric enum fields where the protocol document has not assigned a value catalogue; no undocumented enum values were invented.
+
+**Verification:** GitHub Actions run https://github.com/Shreyas-patil07/Sync-in-it/actions/runs/41457826168 passed on Python 3.11, 3.12 and 3.13. The Python unit suite, C++17 build, timing/wire/message golden-vector tests, deterministic simulator, M0 acceptance checks and shared-Wi-Fi regression all passed in each matrix job.
+
+**Limitations:** This layer does not implement audio-chunk typed decoding, TCP stream accumulation, sockets, session-state enforcement, token authorization, or transport encryption. Those remain separate layers. No Android or physical-device behavior is claimed.
+
+**Next action:** Add a bounded TCP stream framer and then implement the platform-neutral control/time-sync transport session before Android UI integration.

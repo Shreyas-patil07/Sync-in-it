@@ -188,5 +188,102 @@
       "t3_ns": 0,
       "wire_hex": "53540101ffffffffffffffffffffffffffffffffffff00000000000000000000000000000000"
     }
+  ],
+  "invalid_control_payloads": [
+    {
+      "name": "hello_truncated_model",
+      "type": 1,
+      "payload_hex": "0001000102030405060708090a0b0c0d0e0f0102010500000008506978656c2037"
+    },
+    {
+      "name": "hello_model_length_exceeds_payload",
+      "type": 1,
+      "payload_hex": "0001000102030405060708090a0b0c0d0e0f0102010500000009506978656c203761"
+    },
+    {
+      "name": "hello_invalid_utf8_model",
+      "type": 1,
+      "payload_hex": "0001000102030405060708090a0b0c0d0e0f0102010500000008ff6978656c203761"
+    },
+    {
+      "name": "welcome_truncated",
+      "type": 2,
+      "payload_hex": "003412efcdab8980bb000002c00300b9bababa2c"
+    },
+    {
+      "name": "audio_hello_trailing_byte",
+      "type": 3,
+      "payload_hex": "efcdab89341200"
+    },
+    {
+      "name": "ready_invalid_boolean",
+      "type": 4,
+      "payload_hex": "401f0000027b000000"
+    },
+    {
+      "name": "report_truncated",
+      "type": 5,
+      "payload_hex": "03841c000083ff7b00000060090000504600006affffff400100000700000001000200c00300"
+    },
+    {
+      "name": "anchor_unknown_kind",
+      "type": 6,
+      "payload_hex": "0500ca9a3b000000000077010000000000010000"
+    },
+    {
+      "name": "anchor_invalid_playing_boolean",
+      "type": 6,
+      "payload_hex": "0000ca9a3b000000000077010000000000020000"
+    },
+    {
+      "name": "mute_invalid_boolean",
+      "type": 7,
+      "payload_hex": "0200ca9a3b00000000"
+    },
+    {
+      "name": "set_comp_truncated",
+      "type": 8,
+      "payload_hex": "60dad9"
+    },
+    {
+      "name": "resync_trailing_byte",
+      "type": 9,
+      "payload_hex": "0200ee02000000000000"
+    },
+    {
+      "name": "leave_empty",
+      "type": 10,
+      "payload_hex": ""
+    },
+    {
+      "name": "keepalive_truncated",
+      "type": 11,
+      "payload_hex": "2a0000"
+    },
+    {
+      "name": "error_detail_length_exceeds_payload",
+      "type": 12,
+      "payload_hex": "0900fa6e6574776f726b206c6f7374"
+    },
+    {
+      "name": "error_invalid_utf8_detail",
+      "type": 12,
+      "payload_hex": "09000cff6574776f726b206c6f7374"
+    },
+    {
+      "name": "volume_above_100",
+      "type": 13,
+      "payload_hex": "6500ca9a3b00000000"
+    },
+    {
+      "name": "calib_chirp_truncated",
+      "type": 32,
+      "payload_hex": "4d0000ca9a3b00000000f4010000e02e00005000"
+    },
+    {
+      "name": "calib_ack_truncated",
+      "type": 33,
+      "payload_hex": "4d00"
+    }
   ]
 }
