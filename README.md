@@ -16,7 +16,7 @@
 
 ## Status
 
-**M0 remains in progress; M1 protocol integration is underway.** The Python reference simulator uses adaptive clock acquisition: a 20-probe join burst, 500 ms retries until three consecutive estimator updates meet the stability gate, then a 2 s steady-state interval. A portable C++17 timing core and shared Python/C++ golden vectors are also available. The M1 implementation now includes shared TCP/UDP wire codecs, typed control-message codecs, a bounded incremental TCP frame decoder in Python and C++, bounded C++ transport primitives for frame queues and time-sync exchange correlation, and a master-side receiver session state machine covering HELLO, AUDIO_HELLO, READY, playback anchors, degradation and re-synchronization. A Kotlin/JVM TCP/UDP socket adapter now provides master-side listeners, receiver-side clients and loopback tests. It is not yet wired into an Android application or the C++ JNI bridge; native Android app integration, iOS sockets and physical-device synchronization remain pending. The project website is informational. The current specifications are organized in [`docs/`](docs/), with original design references preserved in [`docs_original/`](docs_original/).
+**M0 remains in progress; M1 protocol integration is underway.** The Python reference simulator uses adaptive clock acquisition: a 20-probe join burst, 500 ms retries until three consecutive estimator updates meet the stability gate, then a 2 s steady-state interval. A portable C++17 timing core and shared Python/C++ golden vectors are also available. The M1 implementation now includes shared TCP/UDP wire codecs, typed control-message codecs, a bounded incremental TCP frame decoder in Python and C++, bounded C++ transport primitives for frame queues and time-sync exchange correlation, and a master-side receiver session state machine covering HELLO, AUDIO_HELLO, READY, playback anchors, degradation and re-synchronization. A minimal Android launcher app and JNI bridge now expose the C++ receiver-session lifecycle, with a runtime JNI smoke test for HELLO, WELCOME, AUDIO_HELLO and READY/ARMED transitions. The Kotlin/JVM socket adapter is included as a Gradle module. The Android application does not yet orchestrate sockets into a complete master/receiver flow; audio playback, iOS sockets and physical-device synchronization remain pending. The project website is informational. The current specifications are organized in [`docs/`](docs/), with original design references preserved in [`docs_original/`](docs_original/).
 
 | Milestone | Description | State |
 |---|---|---|
@@ -68,6 +68,15 @@ gradle -p android/transport check
 ```
 
 This compiles the JVM-compatible TCP/UDP adapter and runs loopback integration tests. It does not build an Android APK.
+
+
+### Build the Android application shell
+
+Requires JDK 17, Android SDK 36, NDK 30.0.16248370, CMake 3.22.1 and Gradle 9.6.0.
+
+Run `gradle -p android :app:assembleDebug` to build the debug APK and `gradle -p android :transport:check` to run TCP/UDP transport checks.
+
+The Android workspace and JNI boundary are documented in [android/README.md](android/README.md). Launching the debug app runs a small native session smoke test. It validates JNI/session wiring only; it does not connect phones or play audio.
 
 ---
 
@@ -186,6 +195,7 @@ Sync In It/
   android/
     master/        # Kotlin app: session, capture, controller
     receiver/      # Kotlin + Oboe receiver
+    app/           # Android launcher shell and C++ JNI bridge
     transport/     # Pure Kotlin/JVM TCP and UDP socket adapters
   ios/
     receiver/      # Swift + AVAudioEngine receiver
