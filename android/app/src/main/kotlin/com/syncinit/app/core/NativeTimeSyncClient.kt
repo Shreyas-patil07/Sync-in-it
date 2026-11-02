@@ -18,7 +18,6 @@ class NativeTimeSyncClient private constructor(private var handle: Long) : AutoC
     @Synchronized
     fun makeRequest(t1Ns: Long): ByteArray {
         checkOpen()
-        require(t1Ns >= 0L) { "t1 must be a non-negative monotonic timestamp" }
         return checkNotNull(NativeCore.nativeMakeTimeSyncRequest(handle, t1Ns)) {
             "native time-sync request could not be created"
         }
@@ -27,7 +26,6 @@ class NativeTimeSyncClient private constructor(private var handle: Long) : AutoC
     @Synchronized
     fun expireRequestsBefore(monotonicNs: Long) {
         checkOpen()
-        require(monotonicNs >= 0L)
         NativeCore.nativeExpireTimeSyncRequests(handle, monotonicNs)
     }
 
@@ -35,7 +33,6 @@ class NativeTimeSyncClient private constructor(private var handle: Long) : AutoC
     fun acceptResponse(packet: ByteArray, t4Ns: Long): ClockSyncMeasurement? {
         checkOpen()
         require(packet.size == 38) { "time-sync response must be exactly 38 bytes" }
-        require(t4Ns >= 0L) { "t4 must be a non-negative monotonic timestamp" }
         val values = NativeCore.nativeAcceptTimeSyncResponse(handle, packet.copyOf(), t4Ns)
             ?: return null
         check(values.size == 8) { "native clock estimator returned an invalid field count" }
