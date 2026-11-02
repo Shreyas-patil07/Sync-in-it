@@ -22,6 +22,10 @@ ctest --test-dir build/core -C Release --output-on-failure
 
 Do not manually edit generated headers. Add or change a test case in the JSON file, verify the expected values against the Python reference, and run both Python and C++ suites.
 
+## Incremental TCP stream framing
+
+`syit::FrameStreamDecoder` consumes arbitrary TCP byte fragments and returns complete `Frame` objects. Each instance retains at most one incomplete frame, validates the length prefix before buffering the body, and supports partial headers, partial payloads and multiple frames in one read. Use one decoder per connection on its network thread, pass bounded socket-read chunks, and keep it out of the real-time audio callback.
+
 ## Scope and limitations
 
 This is a portable timing core, not a complete streaming/audio engine. It does not implement sockets, buffering, codec processing, native audio callbacks, DAC timestamp acquisition or acoustic calibration. Passing synthetic parity vectors demonstrates algorithm agreement, not device performance or acoustic synchronization. The drift controller remains the initial bounded frame-slip policy and needs listening tests before production use.
