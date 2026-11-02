@@ -54,11 +54,13 @@ class LanSessionAdvertiser(
                     return
                 }
                 registered = true
+                onStatus("DIAG NSD_ADVERTISEMENT_REGISTERED service=${serviceInfo.serviceName} type=$SERVICE_TYPE port=$controlPort")
                 onStatus("Nearby discovery active · ${serviceInfo.serviceName}")
             }
 
             override fun onRegistrationFailed(serviceInfo: NsdServiceInfo, errorCode: Int) {
                 registered = false
+                onStatus("DIAG NSD_ADVERTISEMENT_FAILED service=${serviceInfo.serviceName} errorCode=$errorCode")
                 onStatus("Host is running, but nearby discovery failed (NSD error $errorCode).")
             }
 
@@ -116,13 +118,17 @@ class LanSessionBrowser(
         if (discoveryListener != null) return
 
         acquireMulticastLock()
+        onStatus("DIAG NSD_SCAN_BEGIN type=${LanSessionAdvertiser.SERVICE_TYPE} multicastLockHeld=${multicastLock?.isHeld == true}")
+        onStatus(NetworkDiagnostics.networkSnapshot(appContext))
         val listener = object : NsdManager.DiscoveryListener {
             override fun onDiscoveryStarted(serviceType: String) {
+                onStatus("DIAG NSD_SCAN_STARTED type=$serviceType")
                 onStatus("Searching this Wi-Fi network for Sync In It hosts…")
             }
 
             override fun onServiceFound(serviceInfo: NsdServiceInfo) {
                 if (closed.get() || serviceInfo.serviceName.isBlank()) return
+                onStatus("DIAG NSD_SERVICE_FOUND name=${serviceInfo.serviceName} type=${serviceInfo.serviceType} unresolvedPort=${serviceInfo.port}")
                 val key = serviceInfo.serviceName
                 synchronized(this@LanSessionBrowser) {
                     if (key in resolved || key == resolvingKey || key in pendingResolutions) return
@@ -134,6 +140,7 @@ class LanSessionBrowser(
 
             override fun onServiceLost(serviceInfo: NsdServiceInfo) {
                 val key = serviceInfo.serviceName
+                onStatus("DIAG NSD_SERVICE_LOST name=$key")
                 synchronized(this@LanSessionBrowser) {
                     unavailable += key
                     pendingResolutions.remove(key)
@@ -147,6 +154,7 @@ class LanSessionBrowser(
             }
 
             override fun onStartDiscoveryFailed(serviceType: String, errorCode: Int) {
+                onStatus("DIAG NSD_SCAN_START_FAILED type=$serviceType errorCode=$errorCode")
                 onStatus("Nearby search failed (NSD error $errorCode). Check Wi-Fi and try again.")
                 stopDiscovery()
             }
@@ -196,16 +204,28 @@ class LanSessionBrowser(
                 ?.getOrNull(1)
                 ?.uppercase()
 
-            if (appId != APP_ID || version != "1" || token == null ||
-                token.length != MIN_TOKEN_LENGTH ||
-                !token.all { it.digitToIntOrNull(16) != null } ||
-                (advertisedFingerprint != null && !token.startsWith(advertisedFingerprint)) ||
-                address.isNullOrBlank() ||
-                serviceInfo.port !in 1..65_535
-            ) {
+            val rejectionReason = when {
+                appId != APP_ID -> "APP_ID_MISMATCH(actual=$appId expected=$APP_ID)"
+                version != "1" -> "PROTOCOL_VERSION_MISMATCH(actual=$version expected=1)"
+                token == null -> "TOKEN_ATTRIBUTE_MISSING"
+                token.length != MIN_TOKEN_LENGTH -> "TOKEN_LENGTH_INVALID(actual=${token.length})"
+                !token.all { it.digitToIntOrNull(16) != null } -> "TOKEN_NOT_HEX"
+                advertisedFingerprint != null && !token.startsWith(advertisedFingerprint) -> "SERVICE_FINGERPRINT_MISMATCH"
+                address.isNullOrBlank() -> "NO_IPV4_ADDRESS(host=${host ?: "null"})"
+                serviceInfo.port !in 1..65_535 -> "INVALID_CONTROL_PORT(port=${serviceInfo.port})"
+                else -> null
+            }
+            onStatus(
+                "DIAG NSD_RESOLVED name=${serviceInfo.serviceName} address=${address ?: "none"} " +
+                    "port=${serviceInfo.port} app=$appId version=$version tokenPresent=${token != null} " +
+                    "fingerprint=${advertisedFingerprint ?: "none"}"
+            )
+            if (rejectionReason != null) {
+                onStatus("DIAG NSD_RECORD_REJECTED name=${serviceInfo.serviceName} reason=$rejectionReason")
                 onStatus("Ignored an invalid or stale nearby-host record: ${serviceInfo.serviceName}.")
                 return
             }
+            onStatus("DIAG NSD_PEER_ROUTE ${NetworkDiagnostics.networkSnapshot(appContext, address)}")
 
             synchronized(this@LanSessionBrowser) {
                 if (closed.get() || !resolved.add(key)) return
