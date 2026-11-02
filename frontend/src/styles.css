@@ -115,14 +115,14 @@ p { text-wrap: pretty; }
 }
 .nav-links > .nav-source:hover { color: #05040c; filter: brightness(1.08); }
 
-/* Split hero: unframed logo and product message */
-.hero { padding: 142px 0 102px; }
+/* Split hero: tighter composition, no oversized spacer */
+.hero { padding: 104px 0 82px; }
 .hero-layout {
   display: grid;
-  grid-template-columns: minmax(280px,.88fr) minmax(0,1.12fr);
+  grid-template-columns: minmax(300px,.82fr) minmax(0,1.18fr);
   align-items: center;
-  gap: clamp(42px,6.5vw,96px);
-  min-height: 620px;
+  gap: clamp(24px,3vw,48px);
+  min-height: 0;
 }
 .hero-brand-lockup {
   position: relative;
@@ -405,7 +405,7 @@ a:hover .arrow-symbol { transform: translate(3px,-1px); }
   [data-reveal] { opacity: 1 !important; filter: none !important; transform: none !important; }
 }
 @media (max-width: 1000px) {
-  .hero-layout { grid-template-columns: minmax(230px,.8fr) minmax(0,1.2fr); gap: 38px; min-height: 560px; }
+  .hero-layout { grid-template-columns: minmax(260px,.82fr) minmax(0,1.18fr); gap: 30px; min-height: 0; }
   .hero-brand-lockup img { width: clamp(220px,30vw,300px); }
   .hero h1 { font-size: clamp(44px,5vw,62px); }
   .status-panel { gap: 34px; padding: 42px; }
