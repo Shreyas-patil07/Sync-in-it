@@ -6,6 +6,8 @@ import java.net.DatagramPacket
 import java.net.DatagramSocket
 import java.net.InetAddress
 import java.net.Socket
+import java.net.ServerSocket
+import java.io.IOException
 import java.util.concurrent.ArrayBlockingQueue
 import java.util.concurrent.TimeUnit
 
@@ -71,6 +73,22 @@ private fun tcpRoundTrip() {
         expect(!worker.isAlive, "TCP server worker completed")
         failure.poll()?.let { throw it }
     }
+}
+
+private fun tcpConnectFailureIncludesEndpointAndTiming() {
+    val loopback = InetAddress.getByName("127.0.0.1")
+    val unusedPort = ServerSocket(0, 1, loopback).use { it.localPort }
+    var failure: IOException? = null
+    try {
+        TcpFrameConnection.connect("127.0.0.1", unusedPort, connectTimeoutMs = 1_000)
+    } catch (error: IOException) {
+        failure = error
+    }
+    val error = failure ?: throw AssertionError("connection to a closed loopback port must fail")
+    expect(error.message.orEmpty().contains("target=127.0.0.1:$unusedPort"), "connect failure includes target endpoint")
+    expect(error.message.orEmpty().contains("local=127.0.0.1:"), "connect failure includes selected local endpoint")
+    expect(error.message.orEmpty().contains("elapsedMs="), "connect failure includes elapsed time")
+    expect(error.cause is java.net.ConnectException, "connect failure preserves the operating-system exception")
 }
 
 private fun tcpCoalescedFramesSingleWrite() {
@@ -230,6 +248,7 @@ private fun udpRejectsMalformedDatagrams() {
 fun main() {
     encodedFrameCodecRoundTrip()
     tcpRoundTrip()
+    tcpConnectFailureIncludesEndpointAndTiming()
     tcpCoalescedFramesSingleWrite()
     tcpFragmentedRead()
     tcpRejectsOversizedAndTruncatedFrames()
