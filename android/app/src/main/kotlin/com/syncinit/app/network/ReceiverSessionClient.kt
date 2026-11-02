@@ -1,5 +1,6 @@
 package com.syncinit.app.network
 
+import com.syncinit.app.audio.PcmAudioReceiver
 import com.syncinit.app.core.NativeProtocol
 import com.syncinit.app.core.NativeTimeSyncClient
 import com.syncinit.transport.TcpFrameConnection
@@ -33,6 +34,7 @@ class ReceiverSessionClient(private val onStatus: (String) -> Unit) : Closeable 
 
     @Volatile private var controlConnection: TcpFrameConnection? = null
     @Volatile private var audioConnection: TcpFrameConnection? = null
+    @Volatile private var audioPipeline: PcmAudioReceiver? = null
 
     fun connect(host: String, tokenHex: String, controlPort: Int = MasterSessionHost.CONTROL_PORT) {
         check(!closed.get()) { "receiver client is closed" }
@@ -61,13 +63,35 @@ class ReceiverSessionClient(private val onStatus: (String) -> Unit) : Closeable 
                     host = host,
                     port = welcome.audioPort,
                     connectTimeoutMs = CONNECT_TIMEOUT_MS,
-                    readTimeoutMs = HANDSHAKE_READ_TIMEOUT_MS
+                    readTimeoutMs = 0
                 )
                 audioConnection = audio
                 audio.writeEncodedFrame(NativeProtocol.encodeAudioHelloFrame(welcome))
 
-                onStatus("Control and audio channels established. Starting UDP clock acquisition…")
-                runClockSync(control, host, welcome.sessionId, welcome.receiverId, welcome.timePort)
+                val pipeline = PcmAudioReceiver(
+                    audioConnection = audio,
+                    controlConnection = control,
+                    welcome = welcome,
+                    onStatus = onStatus,
+                    onFailure = { error ->
+                        if (!closed.get()) {
+                            onStatus("Audio receiver failed: ${error.message ?: error.javaClass.simpleName}")
+                            close()
+                        }
+                    }
+                )
+                audioPipeline = pipeline
+                pipeline.start()
+
+                onStatus("Control and audio channels established. Receiving PCM16 while acquiring the master clock…")
+                runClockSync(
+                    control,
+                    host,
+                    welcome.sessionId,
+                    welcome.receiverId,
+                    welcome.timePort,
+                    pipeline
+                )
             } catch (error: Exception) {
                 if (!closed.get()) {
                     onStatus("Join failed: ${error.message ?: error.javaClass.simpleName}")
@@ -83,7 +107,8 @@ class ReceiverSessionClient(private val onStatus: (String) -> Unit) : Closeable 
         masterHost: String,
         sessionId: Long,
         receiverId: Int,
-        timePort: Int
+        timePort: Int,
+        audioPipeline: PcmAudioReceiver
     ) {
         val address = InetAddress.getByName(masterHost)
         NativeTimeSyncClient.create(sessionId, receiverId).use { nativeClock ->
@@ -94,7 +119,6 @@ class ReceiverSessionClient(private val onStatus: (String) -> Unit) : Closeable 
             ).use { udp ->
                 var probeAttempts = 0
                 var lastMeasurement: com.syncinit.app.core.ClockSyncMeasurement? = null
-                var readySent = false
                 var consecutiveUnreachable = 0
 
                 while (!closed.get()) {
@@ -114,27 +138,17 @@ class ReceiverSessionClient(private val onStatus: (String) -> Unit) : Closeable 
                         } else {
                             consecutiveUnreachable = 0
                             lastMeasurement = measurement
+                            audioPipeline.updateClockMeasurement(measurement)
                             onStatus(
                                 "Clock acquisition · probes $probeAttempts · " +
                                     "RTT p50 ${"%.2f".format(measurement.rttMedianMs)} ms · " +
                                     "span ${"%.1f".format(measurement.selectedSampleSpanNs / 1_000_000_000.0)} s · " +
                                     "residual ${"%.3f".format(measurement.residualRmsMs)} ms"
                             )
-                            if (measurement.acquisitionStable && !readySent) {
-                                val residualUs = (measurement.residualRmsMs * 1_000.0).toLong()
-                                    .coerceIn(0L, 0xffff_ffffL)
-                                control.writeEncodedFrame(
-                                    NativeProtocol.encodeReadyFrame(
-                                        bufferedMs = 0L,
-                                        syncStable = true,
-                                        residualStdUs = residualUs
-                                    )
-                                )
-                                readySent = true
+                            if (measurement.acquisitionStable) {
                                 onStatus(
                                     "Clock estimator stable · offset ${"%.3f".format(measurement.offsetNs / 1_000_000.0)} ms · " +
-                                        "skew ${"%.2f".format(measurement.receiverSkewPpm ?: 0.0)} ppm. " +
-                                        "READY sent with 0 ms buffer; playback remains gated."
+                                        "skew ${"%.2f".format(measurement.receiverSkewPpm ?: 0.0)} ppm."
                                 )
                             }
                         }
@@ -190,6 +204,8 @@ class ReceiverSessionClient(private val onStatus: (String) -> Unit) : Closeable 
     }
 
     private fun closeResources() {
+        try { audioPipeline?.close() } catch (_: Exception) { }
+        audioPipeline = null
         try { controlConnection?.close() } catch (_: Exception) { }
         try { audioConnection?.close() } catch (_: Exception) { }
         controlConnection = null
