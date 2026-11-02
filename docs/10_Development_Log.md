@@ -469,3 +469,27 @@ No physical-device synchronization results are recorded in this initial log. Add
 **Verification:** [Android app/JNI workflow 41479374128](https://github.com/Shreyas-patil07/Sync-in-it/actions/runs/41479374128) passed, including Android Gradle assembly, native builds for arm64-v8a and x86_64, and Kotlin transport checks. [Kotlin socket transport workflow 41479374090](https://github.com/Shreyas-patil07/Sync-in-it/actions/runs/41479374090) passed. [M0 simulator/native core workflow 41479374219](https://github.com/Shreyas-patil07/Sync-in-it/actions/runs/41479374219) passed across Python 3.11, 3.12 and 3.13. The APK includes the device-local two-channel loopback smoke test; GitHub CI assembled the APK but did not execute that Android runtime test. No physical two-phone result is claimed.
 
 **Next action:** Integrate the 38-byte UDP time-sync exchange with the shared native responder/client, gather a join burst of clock samples, and only then permit READY when the existing estimator stability and residual gates are met.
+
+
+### 2 November 2026 — M1 Android UDP time-sync acquisition
+
+**Type:** UDP socket orchestration / shared native time-sync client, responder and estimator  
+**Status:** Implemented; CI validation pending  
+**Branch:** `feature/m1-android-network-handshake`
+
+**Summary:**
+- Added the portable C++ estimator and transport implementation to the Android JNI CMake target.
+- Added JNI bindings for the shared `TimeSyncResponder`, `TimeSyncClient`, and `estimate_clock_offset` implementation. Kotlin does not duplicate the 38-byte packet parser, request correlation, offset calculation or skew regression.
+- Captured receiver `t1/t4` and master `t2/t3` from monotonic clocks. UDP receive timestamps are recorded immediately after `DatagramSocket.receive` returns.
+- The master binds UDP port 47802 after TCP admission, validates the packet's magic/version/session/receiver/sequence/timestamps in C++, and sends the response to the same IP that completed TCP admission.
+- The receiver runs a 20-probe join burst at 50 ms intervals, retries every 500 ms while unstable, and switches to a 2-second interval after clock acquisition stabilizes.
+- Implemented the simulator's acquisition condition: skew estimate present, at least 8 selected lowest-RTT samples, selected-sample span at least 10 seconds, residual RMS below 0.25 ms, and three consecutive passing estimator updates.
+- On stable clock acquisition, the receiver sends a shared-codec READY frame. It currently reports 0 ms buffered audio; the master rejects that report with BufferInsufficient and remains in Synchronizing, preventing a false playback-ready state.
+- Extended the app-launch loopback test to exercise a real local UDP request/response through the native responder, native correlator and estimator. It verifies that one sample cannot satisfy the stability gate.
+- Updated the app status and engineering documentation to separate clock acquisition from audio buffering and playback.
+
+**Limitations:** No audio packets, PCM buffer, renderer, playback start or foreground service are implemented. No result from two physical devices is claimed. The 0.25 ms / 10-second gate is a simulator-derived provisional acquisition threshold, not a measured phone guarantee. The 16-byte session token is not cryptographic transport protection; UDP should be used only on a trusted local network.
+
+**Verification:** Pending Android Gradle/NDK, Kotlin transport and native core CI on this updated PR head. The Android launch-time loopback smoke test is packaged but must execute on a physical device to validate runtime behavior.
+
+**Next action:** Run this build on two physical Android phones on the same Wi-Fi network. Record accepted sample count, RTT p50, offset estimate, skew estimate, residual RMS and selected-sample span before beginning audio-buffer implementation.
