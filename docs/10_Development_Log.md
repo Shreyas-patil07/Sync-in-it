@@ -452,7 +452,7 @@ No physical-device synchronization results are recorded in this initial log. Add
 ### 2 November 2026 — M1 Android TCP admission handshake
 
 **Type:** Android socket orchestration / JNI protocol integration  
-**Status:** Implemented; CI validation pending  
+**Status:** Implemented; Android/Kotlin/core CI passed  
 **Branch:** `feature/m1-android-network-handshake`
 
 **Summary:**
@@ -466,6 +466,6 @@ No physical-device synchronization results are recorded in this initial log. Add
 
 **Limitations:** This validates a local TCP/JNI handshake path, not a physical two-phone connection. UDP time-sync sockets are not yet connected to the C++ `TimeSyncResponder`/`TimeSyncClient`; no clock-estimator results, READY transition from live metrics, audio streaming, PCM playback, encryption or acoustic alignment are included. Only one receiver is currently admitted by the Android host UI.
 
-**Verification:** Pending Android Gradle/NDK CI. The launch-time loopback test is part of the APK and will execute on a device when this build is installed. No physical two-phone result is claimed.
+**Verification:** [Android app/JNI workflow 41479374128](https://github.com/Shreyas-patil07/Sync-in-it/actions/runs/41479374128) passed, including Android Gradle assembly, native builds for arm64-v8a and x86_64, and Kotlin transport checks. [Kotlin socket transport workflow 41479374090](https://github.com/Shreyas-patil07/Sync-in-it/actions/runs/41479374090) passed. [M0 simulator/native core workflow 41479374219](https://github.com/Shreyas-patil07/Sync-in-it/actions/runs/41479374219) passed across Python 3.11, 3.12 and 3.13. The APK includes the device-local two-channel loopback smoke test; GitHub CI assembled the APK but did not execute that Android runtime test. No physical two-phone result is claimed.
 
 **Next action:** Integrate the 38-byte UDP time-sync exchange with the shared native responder/client, gather a join burst of clock samples, and only then permit READY when the existing estimator stability and residual gates are met.
