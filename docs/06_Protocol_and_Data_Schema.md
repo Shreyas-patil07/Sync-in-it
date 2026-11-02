@@ -127,7 +127,7 @@ Invalid ordering is rejected. Version, token, platform, session-ID or receiver-I
 
 ## 6. Audio message
 
-Audio uses message type 0x80 over the audio TCP connection. It uses the common 4-byte length prefix, type byte and outer message-flags byte; the table below defines the audio payload. The payload's `flags` field is distinct from the outer message-flags byte.
+Audio uses message type 0x80 over the audio TCP connection. It uses the common 4-byte length prefix, type byte and outer message-flags byte; the table below defines the audio payload. The payload's `flags` field is distinct from the outer message-flags byte. The typed payload header is exactly 21 bytes, followed by PCM data.
 
 | Field | Size | Description |
 |---|---:|---|
@@ -135,7 +135,7 @@ Audio uses message type 0x80 over the audio TCP connection. It uses the common 4
 | seq | 4 bytes | Chunk sequence |
 | sampleIdx | 8 bytes | First frame index in the chunk |
 | frames | 2 bytes | Number of audio frames |
-| codec | 1 byte | PCM16 in v1 |
+| codec | 1 byte | `0` = PCM16 in v1 |
 | channels | 1 byte | Number of channels |
 | flags | 1 byte | Chunk flags |
 | payload | Variable | Encoded audio |
@@ -145,7 +145,7 @@ Flags:
 - bit 1: silence chunk; payload may be empty and receiver supplies zero samples.
 - Other bits are reserved and ignored in compatible minor versions.
 
-For PCM16 stereo, a 960-frame chunk has 3,840 payload bytes. A receiver inserts audio by sampleIdx, not by arrival order. Duplicates are ignored. Late chunks behind the playback pointer are dropped and counted.
+For PCM16 stereo, a 960-frame chunk has 3,840 payload bytes and represents 20 ms at 48 kHz. A silence chunk has an empty payload and is expanded to zero-valued samples. A receiver inserts audio by sampleIdx, not by arrival order. Duplicates are ignored. Late chunks behind the playback pointer are dropped and counted. The portable C++ core now implements the AUDIO_CHUNK encoder/decoder and a bounded sample-indexed PCM16 jitter buffer. The buffer accepts out-of-order chunks, rejects duplicates and data outside its configured window, and fills missing samples with silence while counting underrun frames. Android socket-to-buffer integration and actual audio source/output remain separate work.
 
 ## 7. UDP time-sync packet format
 
@@ -304,7 +304,7 @@ The shared vector file `protocol/vectors/wire_protocol.json` provides fixtures f
 7. Truncated frame, invalid length and oversized frame.
 8. Little-endian edge values and signed timestamp handling.
 
-Both Python reference code and C++ encoders/decoders pass the shared byte-level vectors. Typed control payload codecs validate all 15 listed control messages, exact field lengths, the documented boolean and range constraints, and UTF-8 model/detail strings. Invalid typed payload fixtures are stored alongside the valid frames. TCP stream accumulation is implemented in Python and C++ as a bounded incremental framer. It handles partial headers and payloads, multiple frames per read, per-frame length validation and one retained partial frame per connection. Audio chunk field parsing remains a separate implementation task.
+Both Python reference code and C++ encoders/decoders pass the shared byte-level vectors. Typed control payload codecs validate all 15 listed control messages, exact field lengths, the documented boolean and range constraints, and UTF-8 model/detail strings. Invalid typed payload fixtures are stored alongside the valid frames. TCP stream accumulation is implemented in Python and C++ as a bounded incremental framer. It handles partial headers and payloads, multiple frames per read, per-frame length validation and one retained partial frame per connection. Audio chunk field parsing and PCM16 jitter-buffer primitives are implemented in `core/audio.h` and `core/audio.cpp`; Android source capture, network delivery, output rendering and scheduled playback remain implementation tasks.
 ## 13. Outstanding protocol questions
 
 - Capacity definition: 10 total phones versus 10 receivers plus master.

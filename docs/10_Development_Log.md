@@ -559,3 +559,26 @@ No physical-device synchronization results are recorded in this initial log. Add
 **Validation:** Android Gradle/JNI build and Kotlin transport tests pending on this branch. This ordering fix addresses a discovery-before-listener startup race; if the error persists, the next investigation is host-process lifetime/background termination and Wi-Fi interface routing. Physical two-phone retest remains required.
 
 **Device retest:** Keep the host app open in the foreground, tap Start hosting, confirm it says the TCP listener is ready on port 47800, then refresh Nearby Sessions on the receiver and tap the host.
+
+
+### 3 November 2026 — M2a PCM16 audio protocol and jitter-buffer core
+
+**Type:** Shared C++ audio protocol / bounded PCM buffering  
+**Status:** Implemented; Android/JNI and C++/Python CI passed  
+**Branch:** `feature/m2-pcm-audio-buffer`
+
+**Summary:**
+- Added `core/audio.h` and `core/audio.cpp` with the v1 AUDIO_CHUNK (`0x80`) encoder/decoder.
+- The codec validates the 21-byte typed audio header, PCM16 format, channel count, sample-index range, exact payload length, silence-chunk rules, maximum TCP frame size and zero outer flags. Reserved inner chunk flag bits remain forward-compatible.
+- Added a bounded sample-indexed PCM16 ring buffer with configurable capacity and one/two-channel support.
+- The buffer accepts out-of-order sample ranges, rejects duplicate frames, drops fully late chunks, preserves the future part of partially late chunks, rejects chunks outside its capacity window, expands explicit silence chunks, inserts silence for missing data and tracks underrun frame totals.
+- Buffer insert/read operations are bounded and mutex-protected for use by a network producer and dedicated audio writer thread; this implementation must not be called from a real-time audio callback.
+- Added a six-case C++ audio test executable, including byte-for-byte decoding/re-encoding against both canonical PCM16 audio fixtures already present in `protocol/vectors/wire_protocol.json`.
+- Added the new audio source to desktop CMake/CTest and Android JNI CMake builds.
+- Updated protocol, architecture, Android and top-level project documentation.
+
+**Limitations:** This is the portable protocol and buffer foundation only. The Android app does not yet connect incoming audio TCP frames to the buffer, choose/capture a master source, decode files or supported system playback, render PCM to AudioTrack/Oboe, or schedule playback from a common anchor. The master still reports 0 ms buffered audio; READY must remain blocked until actual buffered PCM is measured. No synchronized-audio or acoustic result is claimed.
+
+**Verification:** [M0 simulator/native core workflow 41507741127](https://github.com/Shreyas-patil07/Sync-in-it/actions/runs/41507741127) passed on the current PR head across Python 3.11, 3.12 and 3.13, C++17 build and six CTest targets. [Android app/JNI workflow 41507908658](https://github.com/Shreyas-patil07/Sync-in-it/actions/runs/41507908658) passed on the current PR head, including native builds for arm64-v8a and x86_64 and Kotlin transport checks. Physical audio source/output and two-phone playback tests remain outstanding.
+
+**Next action:** Wire a deterministic PCM test source through the master audio TCP connection, decode chunks on the receiver into the jitter buffer, render them on a dedicated Android AudioTrack writer, then replace the test source with a user-selected local audio file or supported Android playback capture.

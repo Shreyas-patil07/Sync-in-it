@@ -24,7 +24,7 @@ gradle -p android :app:assembleDebug
 gradle -p android :transport:check
 ```
 
-The app currently targets API 36 and supports arm64-v8a and x86_64 builds. The CMake project compiles the protocol/message codecs and `ReceiverSession` sources directly from `core/`; it intentionally does not invoke the desktop CMake project, which requires Python to generate test vectors and also defines desktop test executables.
+The app currently targets API 36 and supports arm64-v8a and x86_64 builds. The CMake project compiles the shared PCM audio-chunk codec, bounded jitter buffer, protocol/message codecs and `ReceiverSession` sources directly from `core/`; it intentionally does not invoke the desktop CMake project, which requires Python to generate test vectors and also defines desktop test executables.
 
 ## Updateable preview APK signing
 
@@ -80,6 +80,6 @@ The Android NSD browser holds a Wi-Fi multicast lock only while scanning, for co
 
 ## Current scope and limitations
 
-This milestone demonstrates nearby Android host discovery, admission on two TCP channels and the end-to-end UDP four-timestamp exchange using the shared C++ packet validator, request correlator, and clock estimator. It implements the simulator's provisional acquisition gate and keeps READY blocked until real audio buffering is available. It does **not** yet implement audio chunks, PCM buffering/rendering, playback, foreground service, QR onboarding, cryptographic transport protection, host approval/pairing, or an actual two-phone measurement result. The receiver stays in Synchronizing; the app must not claim synchronized playback.
+This milestone demonstrates nearby Android host discovery, admission on two TCP channels and the end-to-end UDP four-timestamp exchange using the shared C++ packet validator, request correlator, and clock estimator. The portable C++ PCM layer now provides the v1 AUDIO_CHUNK codec and bounded sample-indexed jitter buffer; this is compiled into the Android JNI library. The Android app does **not** yet connect the buffer to the audio TCP socket, capture/select a master source, or render samples through AudioTrack/Oboe. The master still has no live audio source, and the receiver must not claim synchronized playback. Foreground audio service, actual media capture/file decoding, scheduled output, QR onboarding, cryptographic transport protection and host approval/pairing remain pending.
 
 The session token is advertised in a DNS-SD TXT record so nearby devices can join automatically. It is visible to devices on the LAN and is not cryptographic transport protection. Use this build only on a trusted private network. When raising targetSdk to API 37, add the Android 17 local-network permission/picker path described in the [Android local network permission guide](https://developer.android.com/privacy-and-security/local-network-permission).

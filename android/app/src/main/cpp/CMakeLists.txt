@@ -10,6 +10,7 @@ set(CORE_ROOT "${REPOSITORY_ROOT}/core")
 
 add_library(syncinit_jni SHARED
     native_bridge.cpp
+    ${CORE_ROOT}/src/audio.cpp
     "${CORE_ROOT}/src/estimator.cpp"
     "${CORE_ROOT}/src/protocol.cpp"
     "${CORE_ROOT}/src/messages.cpp"

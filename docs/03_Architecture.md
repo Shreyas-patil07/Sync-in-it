@@ -56,7 +56,7 @@ The portable C++17 library contains timing and stream logic:
 - Clock-offset and skew estimator.
 - Timeline anchor manager.
 - DAC clock mapping model.
-- Sample-indexed jitter buffer.
+- Sample-indexed PCM16 jitter buffer (`core/audio.h`, `core/audio.cpp`) with bounded capacity, out-of-order insertion, duplicate/late/out-of-window handling and silence-on-underrun.
 - Drift controller.
 - Group controller and receiver state.
 - Calibration signal generation and delay estimation.
@@ -137,7 +137,7 @@ The Android workspace is rooted at android/ and contains:
 
 The app requests Internet, network-state/Wi-Fi-state and Wi-Fi multicast-state permissions. Its receiver-side NSD browser uses Android NsdManager to discover the `_syncinit._tcp.` service, resolves the host endpoint and lists nearby sessions. The master registers that service with a session name and TXT metadata. The browser acquires a Wi-Fi multicast lock only while scanning so older Android releases can receive mDNS packets. There is no microphone, media-projection, notification or foreground-service flow because audio playback/capture has not been implemented.
 
-The app's CMake target compiles the shared protocol, typed control-message and receiver-session sources directly from core/. It does not call the desktop core/CMakeLists.txt, which requires Python for generated test vectors and registers desktop test executables. NativeCore loads libsyncinit_jni.so; NativeReceiverSession exposes a synchronized Kotlin wrapper around the C++ session lifecycle. The bridge supports both typed lifecycle calls and complete encoded control frames. Native JNI helpers encode HELLO and AUDIO_HELLO, decode WELCOME, and deliver received HELLO/AUDIO_HELLO frames to the native ReceiverSession. The Android app now runs a one-receiver master flow with a TCP control listener and a separate audio listener; the receiver connects to the control listener, validates WELCOME through the shared C++ decoder, then opens the advertised audio channel. A device-local loopback smoke test exercises this end-to-end TCP/JNI path.
+The app's CMake target compiles the shared audio-chunk codec, PCM16 jitter buffer, protocol, typed control-message and receiver-session sources directly from core/. It does not call the desktop core/CMakeLists.txt, which requires Python for generated test vectors and registers desktop test executables. NativeCore loads libsyncinit_jni.so; NativeReceiverSession exposes a synchronized Kotlin wrapper around the C++ session lifecycle. The bridge supports both typed lifecycle calls and complete encoded control frames. Native JNI helpers encode HELLO and AUDIO_HELLO, decode WELCOME, and deliver received HELLO/AUDIO_HELLO frames to the native ReceiverSession. The Android app now runs a one-receiver master flow with a TCP control listener and a separate audio listener; the receiver connects to the control listener, validates WELCOME through the shared C++ decoder, then opens the advertised audio channel. A device-local loopback smoke test exercises this end-to-end TCP/JNI path.
 
 Native session objects are stored behind opaque integer handles in a mutex-protected registry. Each session has its own mutex, and Kotlin calls are synchronized per wrapper. Do not expose handles to UI code. JNI calls and socket I/O must remain off the audio callback.
 
@@ -184,8 +184,8 @@ A slow or disconnected receiver must not block the master source producer or the
 4. Receiver opens audio TCP and sends AUDIO_HELLO.
 5. Receiver runs a join burst of time-sync exchanges.
 6. The offset estimator calculates offset and skew; stability is reported.
-7. Audio chunks are received, validated and decoded.
-8. Chunks are inserted into the jitter buffer by sample index.
+7. Audio chunks are received on the separate audio TCP connection, decoded as the 21-byte AUDIO_CHUNK header plus PCM16 payload, and validated.
+8. Chunks are inserted into the bounded PCM16 jitter buffer by sample index.
 9. Receiver reports READY when sync and buffer requirements are satisfied.
 10. Receiver receives the common timeline anchor and enters ARMED.
 11. The audio engine outputs silence until the scheduled start, then renders from the appropriate sample position.
@@ -211,8 +211,8 @@ The formula and thresholds are tuning parameters and must be validated under mea
 - Master source is converted to 48 kHz stereo PCM16.
 - Chunking uses 960 frames (20 ms) in v1.
 - Each receiver has a sample-indexed ring buffer.
-- The network thread is the producer; the audio callback is the consumer.
-- The ring is preallocated and does not allocate during rendering.
+- The audio network thread is the producer; a dedicated platform audio writer is the consumer.
+- The ring is preallocated. The current implementation uses short mutex-protected insert/read operations and must not be called from a real-time audio callback.
 - Duplicate chunks are ignored.
 - Chunks behind the playback pointer are counted and dropped.
 - Missing frames are filled with silence and counted.
