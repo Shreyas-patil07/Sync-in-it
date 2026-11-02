@@ -74,6 +74,7 @@ class MasterSessionHost(private val onStatus: (String) -> Unit) : Closeable {
                 )
             )
 
+            check(!closed.get()) { "host session was stopped while starting" }
             controlServer = controlListener
             audioServer = audioListener
             nativeSession = session
