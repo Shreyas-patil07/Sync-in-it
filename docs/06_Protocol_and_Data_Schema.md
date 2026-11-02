@@ -266,9 +266,9 @@ The shared M0 reference vectors are stored in `protocol/vectors/m0_timing.json`.
 
 These vectors establish Python/C++ algorithm parity; they are not wire-message serialization vectors or proof of acoustic synchronization.
 
-### 12.2 Wire-protocol vectors (required before M1 protocol implementation)
+### 12.2 Wire-protocol vectors and typed payload validation
 
-Before native protocol implementation, create shared vectors for:
+The shared vector file `protocol/vectors/wire_protocol.json` provides fixtures for:
 1. Valid and invalid HELLO/WELCOME frames.
 2. Every control message type.
 3. Audio PCM16 chunk with known sample indices.
@@ -278,7 +278,7 @@ Before native protocol implementation, create shared vectors for:
 7. Truncated frame, invalid length and oversized frame.
 8. Little-endian edge values and signed timestamp handling.
 
-Both Python reference code and C++ encoders/decoders must pass the same vectors. The initial framing-only fixtures are stored in `protocol/vectors/wire_protocol.json`; they cover TCP frame envelopes and fixed-size UDP packet envelopes. Typed payload field validation remains a subsequent protocol implementation task.
+Both Python reference code and C++ encoders/decoders pass the shared byte-level vectors. Typed control payload codecs validate all 15 listed control messages, exact field lengths, the documented boolean and range constraints, and UTF-8 model/detail strings. Invalid typed payload fixtures are stored alongside the valid frames. Audio chunk field parsing and TCP stream accumulation remain separate implementation tasks.
 ## 13. Outstanding protocol questions
 
 - Capacity definition: 10 total phones versus 10 receivers plus master.

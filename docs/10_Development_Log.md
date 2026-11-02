@@ -340,7 +340,7 @@ No physical-device synchronization results are recorded in this initial log. Add
 - Added 19 shared negative payload fixtures and Python/C++ tests. Existing valid control-frame fixtures are now decoded into typed messages and re-encoded byte-for-byte.
 - Preserved unknown numeric enum fields where the protocol document has not assigned a value catalogue; no undocumented enum values were invented.
 
-**Verification:** Pending GitHub Actions across Python 3.11–3.13 and C++17.
+**Verification:** GitHub Actions run https://github.com/Shreyas-patil07/Sync-in-it/actions/runs/41457826168 passed on Python 3.11, 3.12 and 3.13. The Python unit suite, C++17 build, timing/wire/message golden-vector tests, deterministic simulator, M0 acceptance checks and shared-Wi-Fi regression all passed in each matrix job.
 
 **Limitations:** This layer does not implement audio-chunk typed decoding, TCP stream accumulation, sockets, session-state enforcement, token authorization, or transport encryption. Those remain separate layers. No Android or physical-device behavior is claimed.
 
