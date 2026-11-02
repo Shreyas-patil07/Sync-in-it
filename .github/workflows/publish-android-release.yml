@@ -43,18 +43,21 @@ jobs:
             "ndk;30.0.16248370" \
             "cmake;3.22.1"
 
-      - name: Require persistent preview signing key
+      - name: Configure persistent preview signing key
+        id: preview_signing
         env:
-          PREVIEW_KEYSTORE_BASE64: ${{ secrets.SYNCINIT_PREVIEW_KEYSTORE_BASE64 }}
-          PREVIEW_KEYSTORE_PASSWORD: ${{ secrets.SYNCINIT_PREVIEW_KEYSTORE_PASSWORD }}
+          PREVIEW_KEYSTORE_BASE64: ${{ secrets.SYNCINIT_PREVIEW_KEYSTORE_BASE64 || vars.SYNCINIT_PREVIEW_KEYSTORE_BASE64 }}
+          PREVIEW_KEYSTORE_PASSWORD: ${{ secrets.SYNCINIT_PREVIEW_KEYSTORE_PASSWORD || vars.SYNCINIT_PREVIEW_KEYSTORE_PASSWORD }}
         run: |
           if [ -z "$PREVIEW_KEYSTORE_BASE64" ] || [ -z "$PREVIEW_KEYSTORE_PASSWORD" ]; then
-            echo "::error::Configure SYNCINIT_PREVIEW_KEYSTORE_BASE64 and SYNCINIT_PREVIEW_KEYSTORE_PASSWORD before publishing an updateable APK."
-            exit 1
+            echo "enabled=false" >> "$GITHUB_OUTPUT"
+            echo "::warning::SYNCINIT_PREVIEW_KEYSTORE_BASE64 and SYNCINIT_PREVIEW_KEYSTORE_PASSWORD are not configured; skipping preview release publish."
+            exit 0
           fi
           mkdir -p android/app
           printf '%s' "$PREVIEW_KEYSTORE_BASE64" | base64 --decode > android/app/syncinit-preview.jks
           test -s android/app/syncinit-preview.jks
+          echo "enabled=true" >> "$GITHUB_OUTPUT"
 
       - name: Generate monotonic Android version code
         id: apk_version
@@ -64,17 +67,19 @@ jobs:
         env:
           ORG_GRADLE_PROJECT_syncinitVersionCode: ${{ steps.apk_version.outputs.code }}
           ORG_GRADLE_PROJECT_previewKeystorePath: ${{ github.workspace }}/android/app/syncinit-preview.jks
-          ORG_GRADLE_PROJECT_previewStorePassword: ${{ secrets.SYNCINIT_PREVIEW_KEYSTORE_PASSWORD }}
-          ORG_GRADLE_PROJECT_previewKeyPassword: ${{ secrets.SYNCINIT_PREVIEW_KEYSTORE_PASSWORD }}
+          ORG_GRADLE_PROJECT_previewStorePassword: ${{ secrets.SYNCINIT_PREVIEW_KEYSTORE_PASSWORD || vars.SYNCINIT_PREVIEW_KEYSTORE_PASSWORD }}
+          ORG_GRADLE_PROJECT_previewKeyPassword: ${{ secrets.SYNCINIT_PREVIEW_KEYSTORE_PASSWORD || vars.SYNCINIT_PREVIEW_KEYSTORE_PASSWORD }}
           ORG_GRADLE_PROJECT_previewKeyAlias: syncinit-preview
         run: gradle -p android :app:assembleDebug :transport:check --stacktrace
 
       - name: Verify APK signature
+        if: steps.preview_signing.outputs.enabled == 'true'
         run: |
           "$ANDROID_HOME/build-tools/36.0.0/apksigner" verify --verbose android/app/build/outputs/apk/debug/app-debug.apk
           "$ANDROID_HOME/build-tools/36.0.0/apksigner" verify --print-certs android/app/build/outputs/apk/debug/app-debug.apk
 
       - name: Prepare release assets
+        if: steps.preview_signing.outputs.enabled == 'true'
         run: |
           mkdir -p release-assets
           cp android/app/build/outputs/apk/debug/app-debug.apk \
@@ -83,6 +88,7 @@ jobs:
             | awk '{print $1}' > release-assets/SHA256SUMS.txt
 
       - name: Create GitHub pre-release and upload APK
+        if: steps.preview_signing.outputs.enabled == 'true'
         env:
           GH_TOKEN: ${{ secrets.GITHUB_TOKEN }}
         run: |
