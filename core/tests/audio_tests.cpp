@@ -60,6 +60,26 @@ void test_audio_chunk_round_trip() {
            "audio flags and PCM payload round-trip");
 }
 
+void test_signed_pcm16_and_reserved_flags() {
+    syit::AudioChunk chunk;
+    chunk.session_id = 9U;
+    chunk.sample_index = 0LL;
+    chunk.frames = 1U;
+    chunk.channels = 2U;
+    chunk.flags = 0x80U;  // Reserved minor-version extension bit; ignore in v1.
+    chunk.payload = {0xffU, 0xffU, 0x00U, 0x80U};
+
+    syit::PcmJitterBuffer buffer(4U, 2U);
+    buffer.reset(0LL);
+    expect(buffer.insert(chunk) == syit::JitterInsertResult::Inserted,
+           "reserved chunk flags do not break forward-compatible PCM decode");
+    std::array<std::int16_t, 2> output{};
+    const auto result = buffer.read(0LL, 1U, output.data(), output.size());
+    expect(result.missing_frames == 0U, "signed PCM frame is available");
+    expect(output[0] == -1 && output[1] == -32'768,
+           "PCM16 little-endian values decode across the signed boundary");
+}
+
 void test_silence_and_gap_chunks() {
     syit::AudioChunk silence;
     silence.session_id = 2U;
@@ -180,6 +200,7 @@ void test_jitter_buffer_partial_late_and_underrun_silence() {
 
 int main() {
     test_audio_chunk_round_trip();
+    test_signed_pcm16_and_reserved_flags();
     test_silence_and_gap_chunks();
     test_invalid_audio_frames_rejected();
     test_jitter_buffer_orders_chunks_by_sample_index();
