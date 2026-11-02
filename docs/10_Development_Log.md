@@ -582,3 +582,12 @@ No physical-device synchronization results are recorded in this initial log. Add
 **Verification:** [M0 simulator/native core workflow 41507741127](https://github.com/Shreyas-patil07/Sync-in-it/actions/runs/41507741127) passed on the current PR head across Python 3.11, 3.12 and 3.13, C++17 build and six CTest targets. [Android app/JNI workflow 41507908658](https://github.com/Shreyas-patil07/Sync-in-it/actions/runs/41507908658) passed on the current PR head, including native builds for arm64-v8a and x86_64 and Kotlin transport checks. Physical audio source/output and two-phone playback tests remain outstanding.
 
 **Next action:** Wire a deterministic PCM test source through the master audio TCP connection, decode chunks on the receiver into the jitter buffer, render them on a dedicated Android AudioTrack writer, then replace the test source with a user-selected local audio file or supported Android playback capture.
+
+## 2026-11-03 — M2b Android PCM audio transport and output
+
+- Added JNI access to the shared C++ PCM16 AUDIO_CHUNK encoder, decoder and bounded sample-indexed jitter buffer.
+- Added the master-side generated 1 kHz timing-click test source, sent as 20 ms PCM16 chunks over the existing audio TCP connection.
+- Added the receiver-side audio TCP reader, native jitter-buffer insertion, contiguous-buffer prefill gate and dedicated Android AudioTrack writer thread.
+- Receiver playback begins after a 3.5-second contiguous prebuffer. READY is emitted only after the clock estimator meets its existing stability gate and at least 3 seconds remain buffered.
+- This milestone validates the software path from master-generated PCM chunks to Android AudioTrack output. It does not establish synchronized acoustic playback, scheduled common-T0 starts, DAC timestamp mapping, drift correction, user media capture/decoding, or physical two-phone performance.
+- The generated timing-click source is an integration test signal and will be replaced by the real master audio-source pipeline in a subsequent milestone.
