@@ -8,6 +8,21 @@ object NativeCore {
 
     external fun nativeCoreVersion(): Int
 
+    external fun nativeCreatePcmBuffer(capacityFrames: Long, channels: Int, sessionId: Long): Long
+    external fun nativeInsertPcmFrame(handle: Long, encodedFrame: ByteArray): Int
+    external fun nativePcmBufferStats(handle: Long): LongArray?
+    external fun nativeReadPcmBuffer(handle: Long, output: ShortArray): Long
+    external fun nativeClosePcmBuffer(handle: Long)
+
+    external fun nativeEncodePcmChunkFrame(
+        sessionId: Long,
+        sequence: Long,
+        sampleIndex: Long,
+        frames: Int,
+        channels: Int,
+        pcm16LittleEndian: ByteArray
+    ): ByteArray?
+
     external fun nativeEncodeHelloFrame(token: ByteArray, platform: Int): ByteArray?
     external fun nativeDecodeWelcomeFrame(encodedFrame: ByteArray): LongArray?
     external fun nativeEncodeAudioHelloFrame(sessionId: Long, receiverId: Int): ByteArray?
