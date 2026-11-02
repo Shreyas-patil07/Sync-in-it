@@ -632,10 +632,10 @@ a:hover .arrow-symbol { transform: translate(3px, -1px); }
 .device-wave i:nth-child(3), .device-wave i:nth-child(7) { background: var(--accent-violet); }
 .device-wave i:nth-child(4), .device-wave i:nth-child(6) { background: var(--accent-magenta); }
 .device-wave i:nth-child(5) { background: var(--accent-amber); }
-.line-one { background: rgba(36,116,255,.72); }
-.line-two { background: rgba(32,223,242,.56); }
-.line-three { background: rgba(142,57,245,.68); }
-.line-four { background: rgba(237,53,207,.7); }
+.network-lines .line.line-one { background: rgba(36,116,255,.72); }
+.network-lines .line.line-two { background: rgba(32,223,242,.56); }
+.network-lines .line.line-three { background: rgba(142,57,245,.68); }
+.network-lines .line.line-four { background: rgba(237,53,207,.7); }
 .receiver-device:nth-child(2) .receiver-screen span { border-color: var(--accent-violet); }
 .receiver-device:nth-child(3) .receiver-screen span { border-color: var(--accent-magenta); }
 .timeline-buffer {
