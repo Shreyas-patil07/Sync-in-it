@@ -39,7 +39,10 @@ std::int64_t read_i64(const std::vector<std::uint8_t>& data, std::size_t offset)
     for (unsigned int i = 0U; i < 8U; ++i) {
         value |= static_cast<std::uint64_t>(data[offset + i]) << (8U * i);
     }
-    return static_cast<std::int64_t>(value);
+    if (value <= static_cast<std::uint64_t>(std::numeric_limits<std::int64_t>::max())) {
+        return static_cast<std::int64_t>(value);
+    }
+    return -1LL - static_cast<std::int64_t>(~value);
 }
 
 void validate_chunk(const AudioChunk& chunk) {
@@ -49,10 +52,7 @@ void validate_chunk(const AudioChunk& chunk) {
     if (chunk.channels == 0U || chunk.channels > 2U) {
         throw std::invalid_argument("PCM16 channel count must be one or two");
     }
-    if ((chunk.flags & static_cast<std::uint8_t>(~kAudioChunkKnownFlags)) != 0U) {
-        throw std::invalid_argument("audio chunk contains unsupported flags");
-    }
-
+    // Reserved chunk flag bits are ignored for forward-compatible minor extensions.
     const bool silence = (chunk.flags & kAudioChunkFlagSilence) != 0U;
     const auto expected = static_cast<std::size_t>(chunk.frames) *
         static_cast<std::size_t>(chunk.channels) * 2U;
@@ -131,6 +131,10 @@ PcmJitterBuffer::PcmJitterBuffer(std::size_t capacity_frames, std::uint8_t chann
 
 void PcmJitterBuffer::reset(SampleIndex first_sample_index) {
     if (first_sample_index < 0) throw std::invalid_argument("initial sample index must be non-negative");
+    if (first_sample_index > std::numeric_limits<SampleIndex>::max() -
+            static_cast<SampleIndex>(capacity_frames_)) {
+        throw std::invalid_argument("initial sample index leaves insufficient ring-buffer headroom");
+    }
     std::lock_guard<std::mutex> lock(mutex_);
     std::fill(slots_.begin(), slots_.end(), Slot{});
     std::fill(samples_.begin(), samples_.end(), 0);
@@ -147,7 +151,11 @@ std::size_t PcmJitterBuffer::slot_for(SampleIndex sample_index) const noexcept {
 std::int16_t PcmJitterBuffer::decode_pcm16(const std::uint8_t* bytes) noexcept {
     const auto raw = static_cast<std::uint16_t>(bytes[0]) |
         static_cast<std::uint16_t>(static_cast<std::uint16_t>(bytes[1]) << 8U);
-    return static_cast<std::int16_t>(raw);
+    const auto signed_value = raw <= static_cast<std::uint16_t>(
+        std::numeric_limits<std::int16_t>::max())
+        ? static_cast<std::int32_t>(raw)
+        : static_cast<std::int32_t>(raw) - 65'536;
+    return static_cast<std::int16_t>(signed_value);
 }
 
 JitterInsertResult PcmJitterBuffer::insert(const AudioChunk& chunk) {
