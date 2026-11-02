@@ -16,7 +16,7 @@
 
 ## Status
 
-**M0 is in progress.** A dependency-free Python reference simulator is available in [`sim/`](sim/). It now covers burst loss and reports estimator convergence, frame-slip rate, hard resyncs, and modeled playout-error percentiles. The Android application and physical-device playback prototype are not implemented yet. The project website is informational. The current specifications are organized in [`docs/`](docs/), with original design references preserved in [`docs_original/`](docs_original/).
+**M0 is in progress.** The Python reference simulator and a portable C++17 timing core are available. Both consume the same versioned timing vectors for offset estimation, timeline mapping, DAC clock mapping and drift-controller parity. The Android application and physical-device playback prototype are not implemented yet. The project website is informational. The current specifications are organized in [`docs/`](docs/), with original design references preserved in [`docs_original/`](docs_original/](docs_original/).
 
 | Milestone | Description | State |
 |---|---|---|
