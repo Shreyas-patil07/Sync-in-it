@@ -88,6 +88,11 @@ class MasterSessionHost(context: Context, private val onStatus: (String) -> Unit
             // the service. A discovered DNS-SD record must never precede TCP readiness.
             check(controlListener.isListening) { "control TCP listener did not bind" }
             check(audioListener.isListening) { "audio TCP listener did not bind" }
+            onStatus(
+                "DIAG HOST_LISTENERS_BOUND control=${controlListener.localBindAddress}:${controlListener.localPort} " +
+                    "audio=${audioListener.localBindAddress}:${audioListener.localPort} udp=0.0.0.0:$TIME_PORT"
+            )
+            onStatus(NetworkDiagnostics.networkSnapshot(appContext))
             controlServer = controlListener
             audioServer = audioListener
             timeSyncServer = timeListener
@@ -101,9 +106,12 @@ class MasterSessionHost(context: Context, private val onStatus: (String) -> Unit
             advertiser = serviceAdvertiser
             serviceAdvertiser.start(serviceName, controlListener.localPort, token.toHex())
 
+            onStatus("DIAG HOST_READY controlPort=${controlListener.localPort} audioPort=${audioListener.localPort} timePort=$TIME_PORT controlListening=${controlListener.isListening} audioListening=${audioListener.isListening}")
             onStatus("TCP listener ready on port ${controlListener.localPort}. Advertising nearby session.")
             return HostInvitation(serviceName, controlListener.localPort)
         } catch (error: Exception) {
+            onStatus("DIAG HOST_START_FAILED ${NetworkDiagnostics.exceptionDetails(error)}")
+            onStatus("DIAG HOST_NETWORK_AT_FAILURE\n${NetworkDiagnostics.networkSnapshot(appContext)}")
             session?.close()
             control?.close()
             audio?.close()
@@ -122,11 +130,16 @@ class MasterSessionHost(context: Context, private val onStatus: (String) -> Unit
                 var audio: TcpFrameConnection? = null
                 try {
                     onStatus("Waiting for receiver HELLO on TCP $CONTROL_PORT…")
-                    val acceptedControl = checkNotNull(controlServer).accept()
+                    val listeningControl = checkNotNull(controlServer)
+                    onStatus("DIAG HOST_ACCEPT_WAIT controlPort=${listeningControl.localPort} listening=${listeningControl.isListening}")
+                    val acceptedControl = listeningControl.accept()
                     control = acceptedControl
                     controlConnection = acceptedControl
+                    onStatus("DIAG HOST_CONTROL_ACCEPTED local=${acceptedControl.localEndpoint} peer=${acceptedControl.remoteEndpoint}")
 
+                    onStatus("DIAG HOST_HELLO_READ_BEGIN peer=${acceptedControl.remoteEndpoint}")
                     val hello = acceptedControl.readFrame() ?: error("receiver closed before HELLO")
+                    onStatus("DIAG HOST_HELLO_RECEIVED peer=${acceptedControl.remoteEndpoint} messageType=0x${hello.messageType.toString(16)} flags=${hello.flags} payloadBytes=${hello.payload.size}")
                     check(hello.messageType == 0x01 && hello.flags == 0) {
                         "first control frame must be HELLO"
                     }
@@ -142,13 +155,18 @@ class MasterSessionHost(context: Context, private val onStatus: (String) -> Unit
                     acceptedControl.writeEncodedFrame(welcome)
                     onStatus("HELLO accepted. Waiting for the separate audio connection…")
 
-                    val acceptedAudio = checkNotNull(audioServer).accept()
+                    val listeningAudio = checkNotNull(audioServer)
+                    onStatus("DIAG HOST_AUDIO_ACCEPT_WAIT audioPort=${listeningAudio.localPort} listening=${listeningAudio.isListening}")
+                    val acceptedAudio = listeningAudio.accept()
                     audio = acceptedAudio
                     audioConnection = acceptedAudio
+                    onStatus("DIAG HOST_AUDIO_ACCEPTED local=${acceptedAudio.localEndpoint} peer=${acceptedAudio.remoteEndpoint}")
                     check(acceptedAudio.remoteAddress == acceptedControl.remoteAddress) {
                         "audio TCP peer does not match the admitted control peer"
                     }
+                    onStatus("DIAG HOST_AUDIO_HELLO_READ_BEGIN peer=${acceptedAudio.remoteEndpoint}")
                     val audioHello = acceptedAudio.readFrame() ?: error("receiver closed before AUDIO_HELLO")
+                    onStatus("DIAG HOST_AUDIO_HELLO_RECEIVED peer=${acceptedAudio.remoteEndpoint} messageType=0x${audioHello.messageType.toString(16)} flags=${audioHello.flags} payloadBytes=${audioHello.payload.size}")
                     check(audioHello.messageType == 0x03 && audioHello.flags == 0) {
                         "first audio-channel frame must be AUDIO_HELLO"
                     }
@@ -174,6 +192,8 @@ class MasterSessionHost(context: Context, private val onStatus: (String) -> Unit
                         break
                     }
 
+                    onStatus("DIAG HOST_JOIN_ATTEMPT_FAILED peer=${control?.remoteEndpoint ?: "unknown"} ${NetworkDiagnostics.exceptionDetails(error)}")
+                    onStatus("DIAG HOST_NETWORK_AT_JOIN_FAILURE\n${NetworkDiagnostics.networkSnapshot(appContext)}")
                     onStatus(
                         "Receiver join attempt failed: ${error.message ?: error.javaClass.simpleName}. " +
                             "Host remains available; retry from the receiver."
