@@ -20,12 +20,13 @@ import com.syncinit.app.network.ReceiverSessionClient
 
 class MainActivity : Activity() {
     private lateinit var status: TextView
+    private lateinit var foundationStatus: TextView
     private lateinit var hostDetails: TextView
     private lateinit var masterAddress: EditText
     private lateinit var sessionToken: EditText
 
-    private var masterHost: MasterSessionHost? = null
-    private var receiverClient: ReceiverSessionClient? = null
+    @Volatile private var masterHost: MasterSessionHost? = null
+    @Volatile private var receiverClient: ReceiverSessionClient? = null
 
     override fun onCreate(savedInstanceState: Bundle?) {
         super.onCreate(savedInstanceState)
@@ -40,11 +41,12 @@ class MainActivity : Activity() {
             text = "Sync In It"
             textSize = 30f
         })
-        content.addView(TextView(this).apply {
-            text = nativeStatus()
+        foundationStatus = TextView(this).apply {
+            text = "Running native protocol and TCP/UDP loopback checks…"
             textSize = 14f
             setPadding(0, 8, 0, 20)
-        })
+        }
+        content.addView(foundationStatus)
 
         content.addView(sectionTitle("Host a session"))
         content.addView(TextView(this).apply {
@@ -95,19 +97,34 @@ class MainActivity : Activity() {
             isFillViewport = true
         }
         setContentView(scroll)
+        runStartupSmokeTests()
     }
 
     private fun startHosting() {
         stopConnections()
-        try {
-            val service = MasterSessionHost(::postStatus)
-            val invitation = service.start()
-            masterHost = service
-            hostDetails.text = "Master: ${invitation.address}:${invitation.controlPort}\nToken: ${invitation.sessionToken}"
-            postStatus("Host is ready. Enter this address and token on the receiver phone.")
-        } catch (error: Exception) {
-            postStatus("Could not host: ${error.message ?: error.javaClass.simpleName}")
-        }
+        val service = MasterSessionHost(::postStatus)
+        masterHost = service
+        postStatus("Starting the local host…")
+        Thread({
+            try {
+                val invitation = service.start()
+                runOnUiThread {
+                    if (isFinishing || isDestroyed || masterHost !== service) {
+                        service.close()
+                    } else {
+                        hostDetails.text =
+                            "Master: ${invitation.address}:${invitation.controlPort}\nToken: ${invitation.sessionToken}"
+                        postStatus("Host is ready. Enter this address and token on the receiver phone.")
+                    }
+                }
+            } catch (error: Exception) {
+                if (masterHost === service) {
+                    masterHost = null
+                    postStatus("Could not host: ${error.message ?: error.javaClass.simpleName}")
+                }
+                service.close()
+            }
+        }, "syncinit-master-startup").apply { isDaemon = true }.start()
     }
 
     private fun joinMaster() {
@@ -146,7 +163,7 @@ class MainActivity : Activity() {
 
     private fun postStatus(message: String) {
         runOnUiThread {
-            if (::status.isInitialized) status.text = message
+            if (!isFinishing && !isDestroyed && ::status.isInitialized) status.text = message
         }
     }
 
@@ -159,6 +176,15 @@ class MainActivity : Activity() {
     private fun actionButton(label: String, action: () -> Unit) = Button(this).apply {
         text = label
         setOnClickListener { action() }
+    }
+
+    private fun runStartupSmokeTests() {
+        Thread({
+            val result = nativeStatus()
+            runOnUiThread {
+                if (!isFinishing && !isDestroyed) foundationStatus.text = result
+            }
+        }, "syncinit-startup-smoke-tests").apply { isDaemon = true }.start()
     }
 
     private fun nativeStatus(): String = try {
