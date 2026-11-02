@@ -12,7 +12,6 @@
   --surface-soft: #0d0b18;
   --surface-brand: #11102a;
   --surface-blue: #0d1427;
-  --accent: #20dff2;
   --accent-blue: #2474ff;
   --accent-violet: #8e39f5;
   --accent-magenta: #ed35cf;
@@ -24,7 +23,7 @@
   --line-soft: rgba(255, 255, 255, .075);
   --muted: #a3a3a3;
   --subtle: #737373;
-  --accent: #54d5e9;
+  --accent: #20dff2;
   --mono: 'Geist Mono', monospace;
   --ease: cubic-bezier(.32, .72, 0, 1);
 }
