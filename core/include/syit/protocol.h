@@ -34,4 +34,20 @@ std::vector<std::uint8_t> encode_time_sync_request(const TimeSyncPacket& packet)
 std::vector<std::uint8_t> encode_time_sync_response(const TimeSyncPacket& packet);
 TimeSyncPacket decode_time_sync_packet(const std::vector<std::uint8_t>& bytes);
 
+
+// Incremental TCP parser. Each instance retains no more than one incomplete frame.
+class FrameStreamDecoder {
+public:
+    std::vector<Frame> feed(const std::uint8_t* data, std::size_t size);
+    std::vector<Frame> feed(const std::vector<std::uint8_t>& bytes) {
+        return feed(bytes.data(), bytes.size());
+    }
+    void reset() noexcept;
+    std::size_t buffered_bytes() const noexcept { return pending_.size(); }
+
+private:
+    std::vector<std::uint8_t> pending_;
+    std::optional<std::size_t> expected_size_;
+};
+
 }  // namespace syit

@@ -6,35 +6,39 @@ A dependency-free Python reference model for clock synchronization, playout timi
 
 From this directory:
 
-\`\`\`bash
+```bash
 python -m pip install -e .
 python -m unittest discover -s tests -v
 sync-in-it-sim --duration 60 --seed 7
 sync-in-it-sim --lan --duration 60 --seed 7
-\`\`\`
+```
 
 For a no-install run on macOS/Linux:
 
-\`\`\`bash
+```bash
 PYTHONPATH=src python -m unittest discover -s tests -v
 PYTHONPATH=src python -m sync_in_it_sim --lan --duration 60 --seed 7
-\`\`\`
+```
 
 For PowerShell:
 
-\`\`\`powershell
+```powershell
 $env:PYTHONPATH = "src"
 python -m unittest discover -s tests -v
 python -m sync_in_it_sim --lan --duration 60 --seed 7
-\`\`\`
+```
 
 Run the deterministic M0 acceptance gate with the reference baseline:
 
-\`\`\`bash
+```bash
 PYTHONPATH=src python -m sync_in_it_sim --duration 60 --seed 7 --check-acceptance
-\`\`\`
+```
 
-The check is intentionally locked to 60 seconds and seed 7. It returns a non-zero exit code when a required criterion fails. Use \`--json\` with the same command to include the full machine-readable acceptance report. The gate is simulator-only and does not claim physical-device or acoustic accuracy.
+The check is intentionally locked to 60 seconds and seed 7. It returns a non-zero exit code when a required criterion fails. Use `--json` with the same command to include the full machine-readable acceptance report. The gate is simulator-only and does not claim physical-device or acoustic accuracy.
+
+## Incremental TCP stream framing
+
+The Python reference wire module exposes `FrameStreamDecoder`. It consumes arbitrary bytes-like fragments, emits all complete frames, and retains only one incomplete frame. The four-byte length is checked as soon as it is available; the parser never treats a socket read as a frame boundary. The maximum applies per frame, so a single input fragment may contain several valid frames whose combined size is larger than the per-frame limit. The framer does not perform socket I/O or session-state validation.
 
 ## Shared Wi-Fi model
 
@@ -108,12 +112,12 @@ The control-priority policy is an explicit approximation of the TRD requirement 
 
 ## Metric interpretation
 
-- \`medium_utilization_pct\`: share of simulated time spent transmitting Wi-Fi frames; sustained values near 100% indicate little spare airtime.
-- \`audio_latency_p95_ms\`: p95 time from chunk generation until all segments complete the two-hop path.
-- \`audio_deadline_miss_pct\`: delivered chunks arriving later than the configured 3-second live group delay.
-- \`audio_buffer_overrun_pct\`: delivered chunks arriving later than the 8-second jitter-buffer capacity.
-- \`control_rtt_p95_ms\`: p95 four-timestamp probe RTT, excluding master processing.
-- \`audio_queue_wait_p95_ms\` and \`control_queue_wait_p95_ms\`: p95 wait before each hop enters the shared airtime server.
+- `medium_utilization_pct`: share of simulated time spent transmitting Wi-Fi frames; sustained values near 100% indicate little spare airtime.
+- `audio_latency_p95_ms`: p95 time from chunk generation until all segments complete the two-hop path.
+- `audio_deadline_miss_pct`: delivered chunks arriving later than the configured 3-second live group delay.
+- `audio_buffer_overrun_pct`: delivered chunks arriving later than the 8-second jitter-buffer capacity.
+- `control_rtt_p95_ms`: p95 four-timestamp probe RTT, excluding master processing.
+- `audio_queue_wait_p95_ms` and `control_queue_wait_p95_ms`: p95 wait before each hop enters the shared airtime server.
 - A/B deltas are adaptive minus fixed; positive audio latency/deadline deltas mean adaptive probing worsened that metric.
 
 All results are synthetic. A ten-phone performance claim requires real AP/device measurements including router model, band/channel, negotiated link rates, retries, RSSI, interference, TCP receive timing and audio-buffer telemetry.

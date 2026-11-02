@@ -1,6 +1,7 @@
 // SPDX-License-Identifier: Apache-2.0
 #include "syit/protocol.h"
 
+#include <algorithm>
 #include <limits>
 #include <stdexcept>
 #include <type_traits>
@@ -73,6 +74,61 @@ Frame decode_frame(const std::vector<std::uint8_t>& bytes) {
         throw std::invalid_argument("frame is truncated or contains trailing bytes");
     }
     return {bytes[4], bytes[5], std::vector<std::uint8_t>(bytes.begin() + 6, bytes.end())};
+}
+
+
+std::vector<Frame> FrameStreamDecoder::feed(const std::uint8_t* data, std::size_t size) {
+    if (data == nullptr && size != 0U) {
+        throw std::invalid_argument("non-empty stream input has a null data pointer");
+    }
+
+    std::vector<Frame> frames;
+    std::size_t offset = 0U;
+    while (offset < size) {
+        if (!expected_size_.has_value()) {
+            const std::size_t needed = 4U - pending_.size();
+            const std::size_t take = std::min(needed, size - offset);
+            if (take != 0U) {
+                pending_.insert(pending_.end(), data + offset, data + offset + take);
+                offset += take;
+            }
+            if (pending_.size() < 4U) {
+                break;
+            }
+
+            const std::uint32_t frame_length = read_le<std::uint32_t>(pending_, 0U, 4U);
+            if (frame_length < 2U) {
+                reset();
+                throw std::invalid_argument("frame length is smaller than type and flags");
+            }
+            if (frame_length > kMaxFrameSize) {
+                reset();
+                throw std::invalid_argument("frame exceeds maximum size");
+            }
+            expected_size_ = 4U + static_cast<std::size_t>(frame_length);
+        }
+
+        const std::size_t remaining = *expected_size_ - pending_.size();
+        const std::size_t take = std::min(remaining, size - offset);
+        if (take != 0U) {
+            pending_.insert(pending_.end(), data + offset, data + offset + take);
+            offset += take;
+        }
+
+        if (pending_.size() == *expected_size_) {
+            frames.push_back(decode_frame(pending_));
+            pending_.clear();
+            expected_size_.reset();
+        } else {
+            break;
+        }
+    }
+    return frames;
+}
+
+void FrameStreamDecoder::reset() noexcept {
+    pending_.clear();
+    expected_size_.reset();
 }
 
 std::vector<std::uint8_t> encode_time_sync_request(const TimeSyncPacket& packet) {

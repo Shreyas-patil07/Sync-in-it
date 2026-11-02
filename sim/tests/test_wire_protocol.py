@@ -5,7 +5,7 @@ from pathlib import Path
 import unittest
 
 from sync_in_it_sim.wire import (
-    Frame, ProtocolError, TimeSyncPacket, decode_frame, decode_time_sync_packet,
+    MAX_FRAME_SIZE, Frame, FrameStreamDecoder, ProtocolError, TimeSyncPacket, decode_frame, decode_time_sync_packet,
     encode_frame, encode_time_sync_request, encode_time_sync_response,
 )
 
@@ -75,6 +75,78 @@ class WireProtocolVectorTests(unittest.TestCase):
         for packet in bad_packets:
             with self.subTest(prefix=packet[:4]), self.assertRaises(ProtocolError):
                 decode_time_sync_packet(packet)
+
+
+    def test_incremental_framer_handles_every_split_point(self):
+        expected = Frame(0x42, 0x03, b"fragmented-payload")
+        wire = encode_frame(expected.message_type, expected.flags, expected.payload)
+        for split in range(len(wire) + 1):
+            with self.subTest(split=split):
+                decoder = FrameStreamDecoder()
+                frames = decoder.feed(wire[:split])
+                frames.extend(decoder.feed(wire[split:]))
+                self.assertEqual(frames, [expected])
+                self.assertEqual(decoder.buffered_bytes, 0)
+
+    def test_incremental_framer_handles_bytewise_and_coalesced_reads(self):
+        expected = [
+            Frame(0x01, 0x00, b"first"),
+            Frame(0x7F, 0x80, b"unknown-but-framed"),
+            Frame(0x80, 0x00, b"audio"),
+        ]
+        wire = b"".join(encode_frame(frame.message_type, frame.flags, frame.payload)
+                        for frame in expected)
+        decoder = FrameStreamDecoder()
+        frames = []
+        for byte in wire:
+            frames.extend(decoder.feed(bytes((byte,))))
+        self.assertEqual(frames, expected)
+        self.assertEqual(decoder.buffered_bytes, 0)
+
+        decoder = FrameStreamDecoder()
+        frames = decoder.feed(wire[:len(wire) - 3])
+        self.assertEqual(frames, expected[:2])
+        third_wire = encode_frame(expected[2].message_type, expected[2].flags, expected[2].payload)
+        self.assertEqual(decoder.buffered_bytes, len(third_wire) - 3)
+        frames.extend(decoder.feed(wire[len(wire) - 3:]))
+        self.assertEqual(frames, expected)
+        self.assertEqual(decoder.buffered_bytes, 0)
+
+    def test_incremental_framer_accepts_aggregate_input_larger_than_frame_limit(self):
+        payload = bytes(40_000)
+        first = encode_frame(0x40, 0, payload)
+        second = encode_frame(0x41, 0, payload)
+        self.assertGreater(len(first) + len(second), MAX_FRAME_SIZE + 4)
+        decoder = FrameStreamDecoder()
+        frames = decoder.feed(first + second)
+        self.assertEqual(len(frames), 2)
+        self.assertEqual(frames[0].payload, payload)
+        self.assertEqual(frames[1].payload, payload)
+
+    def test_incremental_framer_accepts_maximum_frame_with_bounded_retention(self):
+        payload = bytes(MAX_FRAME_SIZE - 2)
+        wire = encode_frame(0x55, 0, payload)
+        self.assertEqual(len(wire), MAX_FRAME_SIZE + 4)
+        decoder = FrameStreamDecoder()
+        self.assertEqual(decoder.feed(wire[:4]), [])
+        self.assertEqual(decoder.buffered_bytes, 4)
+        frames = decoder.feed(wire[4:])
+        self.assertEqual(len(frames), 1)
+        self.assertEqual(frames[0].payload, payload)
+        self.assertEqual(decoder.buffered_bytes, 0)
+
+    def test_incremental_framer_rejects_invalid_lengths_and_recovers_after_reset(self):
+        valid = encode_frame(0x22, 0, b"reusable")
+        for invalid_header in (
+            (1).to_bytes(4, "little"),
+            (MAX_FRAME_SIZE + 1).to_bytes(4, "little"),
+        ):
+            with self.subTest(length=int.from_bytes(invalid_header, "little")):
+                decoder = FrameStreamDecoder()
+                with self.assertRaises(ProtocolError):
+                    decoder.feed(invalid_header)
+                self.assertEqual(decoder.buffered_bytes, 0)
+                self.assertEqual(decoder.feed(valid), [Frame(0x22, 0, b"reusable")])
 
 
 if __name__ == "__main__":

@@ -65,6 +65,10 @@ Receivers must:
 5. Ignore unknown message types only when they are safely length-framed.
 6. Close or report malformed frames; never attempt unsafe partial decoding.
 
+A TCP read is an arbitrary byte fragment, not a frame boundary: it may contain part of the four-byte prefix, part of a payload, one complete frame, or several frames. Each connection must own one incremental framer that emits every complete frame and retains only the incomplete trailing frame. The maximum applies to each frame, not to the aggregate size of one socket read.
+
+The framer validates the length as soon as all four prefix bytes are available, before accepting the body. Its retained partial-frame storage is bounded to 4 + 65,536 = 65,540 bytes per connection. A length below two or above the maximum is a protocol error; close the connection rather than scanning for a new frame boundary. Do not call the framer from the real-time audio callback.
+
 ## 5. Control message catalogue
 
 All fields in this table are in wire order. u = unsigned, i = signed, and byte arrays are fixed or length-prefixed as indicated. The `model` and `detail` strings are UTF-8 byte sequences with a one-byte byte-length prefix; they are limited to 255 encoded bytes. Control payloads must have exactly the length implied by their fields. Boolean fields (`syncStable`, `playing`, and `mute`) accept only 0 or 1. ANCHOR kind must be 0–4, and VOLUME gain must be 0–100.
@@ -278,7 +282,7 @@ The shared vector file `protocol/vectors/wire_protocol.json` provides fixtures f
 7. Truncated frame, invalid length and oversized frame.
 8. Little-endian edge values and signed timestamp handling.
 
-Both Python reference code and C++ encoders/decoders pass the shared byte-level vectors. Typed control payload codecs validate all 15 listed control messages, exact field lengths, the documented boolean and range constraints, and UTF-8 model/detail strings. Invalid typed payload fixtures are stored alongside the valid frames. Audio chunk field parsing and TCP stream accumulation remain separate implementation tasks.
+Both Python reference code and C++ encoders/decoders pass the shared byte-level vectors. Typed control payload codecs validate all 15 listed control messages, exact field lengths, the documented boolean and range constraints, and UTF-8 model/detail strings. Invalid typed payload fixtures are stored alongside the valid frames. TCP stream accumulation is implemented in Python and C++ as a bounded incremental framer. It handles partial headers and payloads, multiple frames per read, per-frame length validation and one retained partial frame per connection. Audio chunk field parsing remains a separate implementation task.
 ## 13. Outstanding protocol questions
 
 - Capacity definition: 10 total phones versus 10 receivers plus master.
