@@ -1,10 +1,10 @@
 # Implementation Plan — Sync In It
 
 **Document status:** Active execution plan  
-**Version:** 1.4  
+**Version:** 1.5  
 **Last updated:** 2 November 2026
 
-**Current progress:** M0 is in progress. The Python reference simulator has deterministic impairment scenarios, playout diagnostics, adaptive acquisition cadence, a shared-airtime Wi-Fi queue model, and an experimental A/B comparison of frame-slip correction against bounded resampling control. The LAN model places per-receiver PCM TCP segments and UDP time-sync probes on one half-duplex AP medium, with bounded retries, router forwarding delay, priority control queueing and per-hop metrics. A portable C++17 timing core and shared vectors cover offset/skew estimation, timeline mapping, DAC clock mapping and the initial frame-slip decision policy. No phone synchronization or audio playback has been validated.
+**Current progress:** M0 is in progress. The Python reference simulator has deterministic impairment scenarios, playout diagnostics, adaptive acquisition cadence, a shared-airtime Wi-Fi queue model, an experimental A/B comparison of frame-slip correction against bounded resampling control, and a deterministic scenario-acceptance gate. The LAN model places per-receiver PCM TCP segments and UDP time-sync probes on one half-duplex AP medium, with bounded retries, router forwarding delay, priority control queueing and per-hop metrics. A portable C++17 timing core and shared vectors cover offset/skew estimation, timeline mapping, DAC clock mapping and the initial frame-slip decision policy. No phone synchronization or audio playback has been validated.
 
 ## 1. Implementation strategy
 
@@ -63,6 +63,24 @@ Exit gate:
 - Offset, skew, convergence time, slip rate, hard resync count and resulting playout error are reported.
 - The C++ timing implementation matches Python on the committed M0 golden vectors; C++/Python parity is a CI gate.
 - A fixed-versus-adaptive cadence A/B report covers +30 ppm drift, high jitter and random packet loss using the same time-indexed network outcomes at overlapping timestamps.
+
+#### M0 simulator acceptance criteria
+
+The deterministic CI acceptance profile is fixed at **60 seconds, seed 7**. Run it with `python -m sync_in_it_sim --duration 60 --seed 7 --check-acceptance`. A failure exits non-zero.
+
+| Scenario class | Acceptance criteria |
+|---|---|
+| Three clean cases: ideal, +30 ppm and −40 ppm clock drift | Three consecutive ground-truth updates within 1 ms offset and 5 ppm skew within 50 s; final absolute offset error <=1 ms; strict operational acquisition gate met; modeled frame-slip phase-error p95 <1 ms; zero hard resyncs |
+| Noisy/stressed cases: high jitter, packet loss, burst loss, RTT spikes and combined impairment | Estimator accuracy still meets the convergence/offset checks where specified, but the strict 0.25 ms operational fit gate must keep the receiver not-ready when residual RMS is >=0.25 ms |
+| Moderate asymmetric delay | Must not claim ground-truth convergence; final offset bias >1 ms; remain not-ready and do not hard-resync while modeled bias remains below 5 ms |
+| Severe asymmetric delay | Must not claim ground-truth convergence; bias >5 ms and at least one hard resync. A low fit residual must not be mistaken for proof that path asymmetry is absent |
+| Late join | Exactly 20 initial join probes, additional post-join probes and final absolute offset error <=1 ms; the scenario remains not-ready if the strict fit gate is not met |
+| Ten-receiver isolated fan-out | At least 8/10 independent paths meet ground-truth convergence; maximum absolute final offset error <=1 ms. This does not assert the strict operational gate or shared-Wi-Fi capacity |
+| Adaptive acquisition A/B | Adaptive ground-truth convergence is faster than fixed cadence in +30 ppm, high-jitter and packet-loss profiles |
+
+For the operational acquisition gate, each receiver needs a skew estimate, at least 8 selected samples, at least 10 seconds of selected-sample span and residual RMS below 0.25 ms for three consecutive estimator updates. This is deliberately stricter than the TRD's provisional <1 ms residual baseline; the acceptance suite requires noisy scenarios to remain not-ready rather than silently weakening the gate. The ground-truth convergence diagnostic is a simulator-only validation measure; a real device cannot observe its own ground-truth clock error.
+
+The criteria are provisional M0 regression gates calibrated to the current deterministic scenarios. They are not product guarantees. The frame-slip versus resampling comparison is diagnostic and does not select a production drift policy. The shared-Wi-Fi suite remains a separate model and is not converted into a capacity guarantee by these checks.
 
 The shared vectors establish calculation parity, not physical timing accuracy. C++ networking, audio callbacks, jitter buffering and acoustic measurement are not part of this core task.
 
@@ -314,8 +332,8 @@ Android and iOS CI may be expanded after native project skeletons exist. Physica
 
 ## 10. Immediate next engineering actions
 
-1. Define and enforce scenario-level acceptance thresholds for the M0 simulator, including asymmetric-delay and degraded-sync behavior.
-2. **Simulation comparison implemented:** benchmark frame-slip correction against bounded rate-controlled resampling. Review the results and limitations; do not select a production policy until PCM artifacts, callback safety and physical-device output timestamps are tested.
+1. **Implemented:** define and enforce scenario-level acceptance thresholds for nominal, degraded/asymmetric, late-join and ten-receiver simulator cases. CI runs the deterministic acceptance gate.
+2. Review the frame-slip versus bounded-resampling results; do not select a production policy until PCM artifacts, callback safety and physical-device output timestamps are tested.
 3. Extend cross-language vectors when estimator or timing behavior changes.
 4. Calibrate the shared-airtime model against packet captures and real AP/device measurements; it omits full CSMA/CA, TCP retransmission and router-specific scheduling.
 5. Validate retry traffic and acquisition behavior under measured shared-Wi-Fi contention before carrying this cadence into the Android runtime.

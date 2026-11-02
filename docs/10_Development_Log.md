@@ -269,3 +269,41 @@ No physical-device synchronization results are recorded in this initial log. Add
 
 **Next action:** Define scenario-level M0 acceptance thresholds, including separate limits for estimator convergence, steady-state phase tracking, resyncs and degraded/asymmetric network behavior. Keep the production correction policy open until PCM and physical-device testing.
 
+
+
+### 2 November 2026 — Deterministic M0 scenario acceptance gates
+
+**Type:** Simulator / Acceptance criteria / CI verification  
+**Status:** Implemented; awaiting PR review  
+**Branch:** \`feature/m0-scenario-acceptance-gates\`  
+**PR:** https://github.com/Shreyas-patil07/Sync-in-it/pull/10
+
+**Summary:**
+- Added \`sim/src/sync_in_it_sim/acceptance.py\` to evaluate the deterministic 60-second, seed-7 M0 scenario suite.
+- Added CLI \`--check-acceptance\`; it is restricted to the reference 60-second/seed-7 run and exits non-zero when a required criterion fails.
+- Added a CI step that enforces the acceptance suite on every Python matrix job.
+- Split estimator accuracy from operational readiness. Three clean baseline scenarios must meet the strict operational fit gate. High-jitter, loss, burst-loss, RTT-spike, combined-impairment, moderate-asymmetry and late-join cases must remain not-ready when the strict residual condition is not met.
+- Added explicit degraded-path checks: moderate asymmetry must not be reported as ground-truth convergence; severe asymmetry must expose >5 ms bias and trigger a hard resync.
+- Added ten-independent-receiver fan-out ground-truth checks and fixed-versus-adaptive convergence comparisons.
+- Set the clean baseline clock-only profiles to 0.05 ms network jitter so they isolate clock behavior; stressed profiles retain their impairment settings.
+- Kept the simulator's 0.25 ms residual gate. An attempted relaxation to 1.0 ms caused the packet-loss adaptive schedule to stop meeting ground-truth convergence and was reverted. The 0.25 ms operational threshold remains stricter than the TRD's provisional 1 ms residual baseline.
+
+**Verification:**
+- GitHub Actions run: https://github.com/Shreyas-patil07/Sync-in-it/actions/runs/41452431470
+- Python 3.11: 46/46 tests passed; M0 acceptance 65/65.
+- Python 3.12: 46/46 tests passed; M0 acceptance 65/65.
+- Python 3.13: 46/46 tests passed; M0 acceptance 65/65.
+- C++17 CMake build and shared Python/C++ golden-vector parity passed.
+- The 60-second clock scenarios and 30-second shared-Wi-Fi scenarios completed successfully.
+
+**Result:** The current deterministic M0 reference suite has enforceable pass/fail criteria. Readiness is not inferred from low ground-truth error alone; noisy scenarios remain not-ready when the operational fit gate fails. M0 remains **In progress** and PR #10 has not been merged.
+
+**Risks or limitations:**
+- Ground-truth convergence is available only inside the simulator; a runtime phone cannot observe its true clock error.
+- Ten-receiver fan-out uses independent paths and does not validate shared-Wi-Fi performance.
+- The 0.25 ms fit threshold is provisional and has not been validated against physical Android clock/network measurements.
+- The severe-asymmetry case demonstrates that a low fit residual alone cannot prove the path is symmetric.
+- No Android networking, audio callback, PCM rendering, acoustic synchronization or physical-device timing is covered by this PR.
+
+**Next action:** Review and merge PR #10. After that, prepare the M1 Android protocol/session implementation while keeping the physical two-phone timing test as its exit gate.
+

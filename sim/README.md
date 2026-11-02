@@ -28,7 +28,13 @@ python -m unittest discover -s tests -v
 python -m sync_in_it_sim --lan --duration 60 --seed 7
 \`\`\`
 
-Add \`--json\` for a machine-readable report. The \`--lan\` mode runs shared airtime scenarios separately from the clock-only suite.
+Run the deterministic M0 acceptance gate with the reference baseline:
+
+\`\`\`bash
+PYTHONPATH=src python -m sync_in_it_sim --duration 60 --seed 7 --check-acceptance
+\`\`\`
+
+The check is intentionally locked to 60 seconds and seed 7. It returns a non-zero exit code when a required criterion fails. Use \`--json\` with the same command to include the full machine-readable acceptance report. The gate is simulator-only and does not claim physical-device or acoustic accuracy.
 
 ## Shared Wi-Fi model
 
