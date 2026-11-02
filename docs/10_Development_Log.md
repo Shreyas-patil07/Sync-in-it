@@ -591,3 +591,29 @@ No physical-device synchronization results are recorded in this initial log. Add
 - Receiver playback begins after a 3.5-second contiguous prebuffer. READY is emitted only after the clock estimator meets its existing stability gate and at least 3 seconds remain buffered.
 - This milestone validates the software path from master-generated PCM chunks to Android AudioTrack output. It does not establish synchronized acoustic playback, scheduled common-T0 starts, DAC timestamp mapping, drift correction, user media capture/decoding, or physical two-phone performance.
 - The generated timing-click source is an integration test signal and will be replaced by the real master audio-source pipeline in a subsequent milestone.
+
+
+## 2026-11-03 — Android LAN debugger and connection-stage tracing
+
+**Type:** Android diagnostics / transport observability / test coverage  
+**Status:** Implemented on branch; CI and physical-device retest pending
+
+**Observed problem:** Two Redmi 9 Power devices fail to connect to each other in either host/receiver direction, while each can connect to the Redmi Note 12 Pro. Both Redmi 9 Power devices also work independently as host and receiver with the Note 12 Pro. The router isolation setting change did not resolve the pair-specific failure. The available screenshot showed a No route to host / EHOSTUNREACH failure while connecting to the advertised host control port. This is not evidence of an audio decoder or clock synchronization failure.
+
+**Changes:**
+- Added a copyable on-device Network debugger with a bounded 240-event log, timestamped status/discovery events, local network snapshot capture and clipboard export.
+- Added active Android network details: active network transport, validation/metering state, interface name, assigned IP addresses/prefixes, DNS servers, route table/default route, active interfaces, MTU, device model/API and ABI.
+- Added an IPv4 peer/subnet relation and route hint using the active LinkProperties; the debugger explicitly reports when the peer appears on-link versus outside the local interface prefix.
+- Added unique join-attempt IDs and stage events for selected mDNS target, control TCP connect, HELLO write, WELCOME wait/decode, audio TCP connect, AUDIO_HELLO, audio pipeline creation/start and failure.
+- Added connect duration, timeout, selected local endpoint, remote endpoint, connected state and nested OS exception chain to successful/failed TCP connection diagnostics.
+- Categorized root socket failures including NO_ROUTE_TO_HOST, CONNECTION_REFUSED, CONNECT_TIMEOUT_OR_FILTERED, HOST_RESOLUTION_FAILED, LOCAL_BIND_FAILED and generic socket failures.
+- Added host-side listener bind/readiness, active network snapshot, accepted peer endpoint, HELLO/AUDIO_HELLO and failed admission details.
+- Added mDNS service-found, resolve-failed, resolve-success, record rejection and advertisement registration events. Session tokens and Wi-Fi credentials are not written to the diagnostic log.
+- Deliberately did not add a separate TCP probe, because a probe would consume the current one-receiver host's accept slot and interfere with the real join attempt.
+- Exposed TCP local/remote endpoint properties and added transport assertions for successful endpoint reporting plus a deterministic refused-loopback-connect test that checks endpoint/timing/cause retention.
+
+**Expected diagnostic workflow:** On both phones, open Network debugger → Capture local network state → Clear diagnostic log; start hosting on one device and join from the other; then Copy full diagnostic log from both devices. Compare interface/prefix, peer subnet relation, default route, selected source endpoint, and the same join-attempt stage on host and receiver.
+
+**Interpretation:** NO_ROUTE_TO_HOST means the OS rejected the route/neighbor path before TCP admission; CONNECTION_REFUSED means the peer IP was reachable but no listener accepted the target port; a 5-second timeout suggests silently dropped/filtered connection traffic; failure at WELCOME or AUDIO_HELLO indicates TCP is working and the investigation has moved into protocol/admission. Subnet equality alone does not prove peer-to-peer reachability or rule out AP isolation/firewall policy.
+
+**Validation:** Pending GitHub Android/JNI and Kotlin transport CI on this branch. The new debugger has not yet been run on the three physical phones. No root cause for the Redmi-to-Redmi pair is claimed until both devices' exported logs are compared.
