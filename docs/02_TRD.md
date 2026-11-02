@@ -8,6 +8,23 @@
 
 Define the platform, runtime, timing, networking, audio, resource and development constraints required to implement Sync In It. This document specifies technical requirements; architecture rationale is in [03_Architecture.md](03_Architecture.md), while wire-level definitions are in [06_Protocol_and_Data_Schema.md](06_Protocol_and_Data_Schema.md).
 
+
+### 1.1 Performance-first engineering rule
+
+The primary engineering objective is the **best achievable sustained end-to-end playback performance**, not the most heavily optimized code or the lowest resource consumption in isolation.
+
+Prioritize engineering decisions in this order:
+
+1. **Synchronization accuracy:** minimize inter-device digital playout error and, ultimately, measured acoustic skew.
+2. **Playback quality and continuity:** avoid underruns, dropouts, glitches, clipping and audible correction artifacts.
+3. **Sustained reliability:** preserve timing through long sessions, network jitter, clock drift, route changes and recoverable device interruptions.
+4. **Group scalability:** maintain the above behavior as receiver count and network load increase.
+5. **Resource efficiency:** control CPU, memory, battery, thermal load and network use without unnecessarily degrading the first four outcomes.
+
+Resource efficiency remains an engineering constraint: the system must not overheat, exhaust memory, drain batteries unreasonably or overload the network. However, reducing resource use is not a success when it worsens synchronization, sound quality or reliability.
+
+Do not perform speculative micro-optimizations or choose an implementation merely because it is smaller or more elegant. Optimize a measured bottleneck, compare viable alternatives under the same repeatable workload, and select the one that delivers the strongest sustained end-to-end result within safe device and network limits. Use simulator results for early screening, then validate decisive performance claims on physical devices with acoustic measurements.
+
 ## 2. Platform and toolchain baseline
 
 | Area | Planned technology | Status |
