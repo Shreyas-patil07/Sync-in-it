@@ -72,11 +72,11 @@ This compiles the JVM-compatible TCP/UDP adapter and runs loopback integration t
 
 ### Build the Android application shell
 
-Requires JDK 17, Android SDK 36, NDK 30.0.16248370, CMake 3.22.1 and Gradle 9.6.0.
+Requires JDK 17, Android SDK 36, NDK 30.0.16248370, CMake 3.22.1 and Gradle 8.13.
 
 Run `gradle -p android :app:assembleDebug` to build the debug APK and `gradle -p android :transport:check` to run TCP/UDP transport checks.
 
-The Android workspace and JNI boundary are documented in [android/README.md](android/README.md). Launching the debug app runs a small native session smoke test. It validates JNI/session wiring only; it does not connect phones or play audio.
+The Android workspace and JNI boundary are documented in [android/README.md](android/README.md). The Android CI workflow publishes the debug APK as a short-lived artifact. Launching the debug app runs a small native session smoke test. It validates JNI/session wiring only; it does not connect phones or play audio.
 
 ---
 
