@@ -9,6 +9,7 @@ set(CMAKE_CXX_EXTENSIONS OFF)
 find_package(Python3 3.11 REQUIRED COMPONENTS Interpreter)
 
 add_library(sync_in_it_core
+    src/audio.cpp
     src/estimator.cpp
     src/timing.cpp
     src/protocol.cpp
@@ -101,9 +102,18 @@ else()
     target_compile_options(sync_in_it_session_tests PRIVATE -Wall -Wextra -Wpedantic -Wconversion -Wsign-conversion)
 endif()
 
+add_executable(sync_in_it_audio_tests tests/audio_tests.cpp)
+target_link_libraries(sync_in_it_audio_tests PRIVATE sync_in_it_core)
+if(MSVC)
+    target_compile_options(sync_in_it_audio_tests PRIVATE /W4 /permissive-)
+else()
+    target_compile_options(sync_in_it_audio_tests PRIVATE -Wall -Wextra -Wpedantic -Wconversion -Wsign-conversion)
+endif()
+
 enable_testing()
 add_test(NAME sync_in_it_core_golden_vectors COMMAND sync_in_it_core_tests)
 add_test(NAME sync_in_it_protocol_golden_vectors COMMAND sync_in_it_protocol_tests)
 add_test(NAME sync_in_it_typed_message_vectors COMMAND sync_in_it_message_tests)
 add_test(NAME sync_in_it_transport_primitives COMMAND sync_in_it_transport_tests)
 add_test(NAME sync_in_it_receiver_session COMMAND sync_in_it_session_tests)
+add_test(NAME sync_in_it_pcm_audio COMMAND sync_in_it_audio_tests)
