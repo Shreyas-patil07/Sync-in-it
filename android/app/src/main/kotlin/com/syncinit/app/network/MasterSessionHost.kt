@@ -292,6 +292,7 @@ class MasterSessionHost(context: Context, private val onStatus: (String) -> Unit
 
     private fun runTimeSyncServer(control: TcpFrameConnection) {
         val server = checkNotNull(timeSyncServer) { "UDP time-sync listener was not started" }
+        onStatus("DIAG HOST_UDP_SOCKET_READY bind=0.0.0.0:${server.localPort} bound=true expectedPeer=${control.remoteEndpoint}")
 
         val controlReader = Thread({ readControlFrames(control) }, "syncinit-master-control-reader").apply {
             isDaemon = true
@@ -321,11 +322,17 @@ class MasterSessionHost(context: Context, private val onStatus: (String) -> Unit
                 val response = nativeSession?.timeSyncResponse(
                     datagram.bytes, datagram.receivedAtNs, t3Ns
                 ) ?: continue
-                if (admittedUdpPeer == null) admittedUdpPeer = datagram.source
+                if (admittedUdpPeer == null) {
+                    admittedUdpPeer = datagram.source
+                    onStatus("DIAG HOST_UDP_PEER_PINNED source=${datagram.source} controlPeer=${control.remoteEndpoint} payloadBytes=${datagram.bytes.size}")
+                }
+                val responseStartedAt = System.nanoTime()
                 server.sendTo(response, datagram.source)
+                val sendElapsedUs = (System.nanoTime() - responseStartedAt) / 1_000L
 
                 responseCount += 1
                 if (responseCount == 1 || responseCount % 20 == 0) {
+                    onStatus("DIAG HOST_UDP_RESPONSE_SENT count=$responseCount destination=${datagram.source} bytes=${response.size} sendElapsedUs=$sendElapsedUs")
                     onStatus("UDP time sync active · $responseCount validated requests answered.")
                 }
             }
