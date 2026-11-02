@@ -104,9 +104,8 @@ jobs:
           - Stable preview signing key, monotonically increasing versionCode, and native APK builds for arm64-v8a and x86_64.
 
           ### Validation
-          - Android Gradle/JNI build and Kotlin transport checks passed in GitHub Actions.
+          - Android Gradle/JNI build, Kotlin transport checks and APK signature verification passed in GitHub Actions.
           - Native core and simulator checks passed in GitHub Actions.
-          - APK signature verification passed.
           - Physical two-phone playback and acoustic timing measurements have not yet been completed.
 
           ### Important limitations
