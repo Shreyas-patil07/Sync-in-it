@@ -8,9 +8,9 @@ from .simulator import ReceiverSimulation
 
 
 SCENARIOS = {
-    "ideal": (ClockModel(), NetworkProfile()),
-    "fast_clock_30ppm": (ClockModel(rate_error_ppm=30), NetworkProfile()),
-    "slow_clock_40ppm": (ClockModel(rate_error_ppm=-40), NetworkProfile()),
+    "ideal": (ClockModel(), NetworkProfile(jitter_std_ms=0.05)),
+    "fast_clock_30ppm": (ClockModel(rate_error_ppm=30), NetworkProfile(jitter_std_ms=0.05)),
+    "slow_clock_40ppm": (ClockModel(rate_error_ppm=-40), NetworkProfile(jitter_std_ms=0.05)),
     "high_jitter": (ClockModel(offset_ns=12_000_000, rate_error_ppm=25), NetworkProfile(jitter_std_ms=2.5)),
     "asymmetric_delay": (ClockModel(offset_ns=-8_000_000, rate_error_ppm=-20), NetworkProfile(forward_mean_ms=1.0, reverse_mean_ms=7.0, jitter_std_ms=0.5)),
     "severe_asymmetric_delay": (ClockModel(offset_ns=2_000_000, rate_error_ppm=10), NetworkProfile(forward_mean_ms=1.0, reverse_mean_ms=15.0, jitter_std_ms=0.2)),
