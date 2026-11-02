@@ -169,7 +169,7 @@ void test_time_sync_client_rejects_bad_responses_without_consuming_request() {
            "client rejects master send before master receive");
     response.t3_ns = 125LL;
 
-    expect(client.accept_response(response, 124LL, exchange) ==
+    expect(client.accept_response(response, 103LL, exchange) ==
                syit::TimeSyncResponseStatus::NegativeRoundTrip,
            "client rejects negative network RTT");
     expect(client.pending_count() == 1U, "invalid responses do not consume pending request");
