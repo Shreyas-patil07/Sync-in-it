@@ -42,7 +42,7 @@ keytool -genkeypair -v -keystore syncinit-preview.jks -storetype JKS -alias sync
 [Convert]::ToBase64String([IO.File]::ReadAllBytes((Resolve-Path .\syncinit-preview.jks))) | Set-Clipboard
 ```
 
-When `keytool` asks for the key password, press Enter to reuse the keystore password. Back up `syncinit-preview.jks securely outside the repository; losing it means future APKs cannot update existing installs. Then open **GitHub → repository Settings → Secrets and variables → Actions → New repository secret** and add:
+When `keytool` asks for the key password, press Enter to reuse the keystore password. Back up `syncinit-preview.jks` securely outside the repository; losing it means future APKs cannot update existing installs. Then open **GitHub → repository Settings → Secrets and variables → Actions → New repository secret** and add:
 
 1. `SYNCINIT_PREVIEW_KEYSTORE_BASE64` — paste the clipboard contents.
 2. `SYNCINIT_PREVIEW_KEYSTORE_PASSWORD` — enter the password used when creating the keystore.
