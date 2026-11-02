@@ -1,6 +1,8 @@
 package com.syncinit.app.core
 
-/** Exercises the JNI session lifecycle locally without opening sockets or touching audio. */
+import com.syncinit.transport.WireFrame
+
+/** Exercises the shared native wire codecs and session lifecycle without opening sockets or touching audio. */
 object NativeSessionSmokeTest {
     fun run(): String {
         val sessionId = 0x13572468L
@@ -16,19 +18,34 @@ object NativeSessionSmokeTest {
                 maximumResidualStdUs = 250L
             )
         ).use { session ->
-            check(
-                session.onHello(protocolVersion = 1, token = token, platform = 1) ==
-                    ReceiverSessionResult.Accepted
-            ) { "native HELLO validation failed" }
-
-            val welcome = checkNotNull(session.welcomeFrame()) { "native WELCOME was not produced" }
-            check(welcome.size >= 6 && (welcome[4].toInt() and 0xff) == 0x02) {
-                "native WELCOME frame has an invalid message type"
+            val helloWire = NativeProtocol.encodeHelloFrame(token)
+            val helloFrame = WireFrame.fromEncodedBytes(helloWire)
+            check(helloFrame.messageType == NativeProtocol.HELLO_TYPE) {
+                "native HELLO encoder produced the wrong message type"
+            }
+            check(session.onHelloFrame(helloFrame.toEncodedBytes()) == ReceiverSessionResult.Accepted) {
+                "native HELLO frame validation failed"
             }
 
+            val welcomeWire = checkNotNull(session.welcomeFrame()) { "native WELCOME was not produced" }
+            val welcomeFrame = WireFrame.fromEncodedBytes(welcomeWire)
+            val welcome = NativeProtocol.decodeWelcomeFrame(welcomeFrame)
+            check(welcome.receiverId == receiverId && welcome.sessionId == sessionId) {
+                "native WELCOME identity fields did not round-trip"
+            }
+            check(welcome.audioPort == 47_801 && welcome.timePort == 47_802) {
+                "native WELCOME transport ports did not round-trip"
+            }
+
+            val audioHelloWire = NativeProtocol.encodeAudioHelloFrame(welcome)
+            val audioHelloFrame = WireFrame.fromEncodedBytes(audioHelloWire)
+            check(audioHelloFrame.messageType == NativeProtocol.AUDIO_HELLO_TYPE) {
+                "native AUDIO_HELLO encoder produced the wrong message type"
+            }
             check(
-                session.onAudioHello(sessionId, receiverId) == ReceiverSessionResult.Accepted
-            ) { "native AUDIO_HELLO validation failed" }
+                session.onAudioHelloFrame(audioHelloFrame.toEncodedBytes()) ==
+                    ReceiverSessionResult.Accepted
+            ) { "native AUDIO_HELLO frame validation failed" }
             check(
                 session.onReady(bufferedMs = 1_000L, syncStable = true, residualStdUs = 100L) ==
                     ReceiverSessionResult.Accepted
@@ -41,6 +58,6 @@ object NativeSessionSmokeTest {
             }
         }
 
-        return "JNI session smoke test passed"
+        return "JNI protocol and session smoke test passed"
     }
 }
