@@ -37,8 +37,9 @@ Requires Python 3.11 or newer. No runtime dependencies are required.
 
 ```bash
 cd sim
-PYTHONPATH=src python -m unittest discover -s tests -v
-PYTHONPATH=src python -m sync_in_it_sim --duration 60 --seed 7
+python -m pip install -e .
+python -m unittest discover -s tests -v
+sync-in-it-sim --duration 60 --seed 7
 ```
 
 M0 outputs are simulated, not measurements from Android devices. See [`sim/README.md`](sim/README.md) for scope and limitations.

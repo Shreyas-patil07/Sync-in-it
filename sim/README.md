@@ -12,11 +12,19 @@ python -m unittest discover -s tests -v
 sync-in-it-sim --duration 60 --seed 7
 ```
 
-For a no-install run, use the source tree explicitly:
+For a no-install run on macOS or Linux, use the source tree explicitly:
 
 ```bash
 PYTHONPATH=src python -m unittest discover -s tests -v
 PYTHONPATH=src python -m sync_in_it_sim --duration 60 --seed 7
+```
+
+For PowerShell on Windows:
+
+```powershell
+$env:PYTHONPATH = "src"
+python -m unittest discover -s tests -v
+python -m sync_in_it_sim --duration 60 --seed 7
 ```
 
 ## Modeled behavior
