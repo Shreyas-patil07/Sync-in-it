@@ -75,25 +75,22 @@ function Arrow({ diagonal = false }: { diagonal?: boolean }) {
 
 function Hero() {
   return <section className="hero" aria-labelledby="hero-title">
-    <div className="hero-art-stage">
-      <div className="hero-orb hero-orb-cyan" aria-hidden="true" />
-      <div className="hero-orb hero-orb-violet" aria-hidden="true" />
-      <div className="hero-orb hero-orb-magenta" aria-hidden="true" />
+    <div className="hero-layout shell">
       <div className="hero-brand-lockup">
         <img src="/images/sync_in_it.png" alt="Sync In It logo" />
         <span>sync<span>in</span>it</span>
+        <small>ONE TIMELINE · MANY RECEIVERS</small>
       </div>
-      <span className="hero-art-caption">ONE TIMELINE · MANY RECEIVERS</span>
-    </div>
-    <div className="hero-copy shell">
-      <Eyebrow>OFFLINE AUDIO · BUILT AROUND ONE SHARED CLOCK</Eyebrow>
-      <h1 id="hero-title">Many phones.<br /><span className="hero-gradient">One shared moment.</span></h1>
-      <p className="hero-lede">Bring the phones around you into one listening experience. Sync In It is building a way for ordinary phones to play the same audio together, guided by one shared playback timeline.</p>
-      <div className="hero-actions">
-        <a className="button button-primary" href="#how-it-works">Discover how it works <Arrow /></a>
-        <a className="button button-text" href={REPO} target="_blank" rel="noreferrer">Explore the project <Arrow diagonal /></a>
+      <div className="hero-copy">
+        <Eyebrow>OFFLINE AUDIO · BUILT AROUND ONE SHARED CLOCK</Eyebrow>
+        <h1 id="hero-title">Many phones.<br /><span className="hero-gradient">One shared moment.</span></h1>
+        <p className="hero-lede">Bring the phones around you into one listening experience. Sync In It is building a way for ordinary phones to play the same audio together, guided by one shared playback timeline.</p>
+        <div className="hero-actions">
+          <a className="button button-primary" href="#how-it-works">Discover how it works <Arrow /></a>
+          <a className="button button-text" href={REPO} target="_blank" rel="noreferrer">Explore the project <Arrow diagonal /></a>
+        </div>
+        <div className="hero-status"><span className="status-point" /><span>M0 development in progress</span><span className="status-separator">·</span><span>No public app build yet</span></div>
       </div>
-      <div className="hero-status"><span className="status-point" /><span>M0 development in progress</span><span className="status-separator">·</span><span>No public app build yet</span></div>
     </div>
   </section>;
 }
