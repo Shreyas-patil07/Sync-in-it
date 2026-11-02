@@ -24,7 +24,7 @@
 | M1 | Time sync between two real phones | In progress |
 | M2a | PCM16 audio chunk codec and bounded jitter-buffer core | In progress |
 | M2b | Android audio source, TCP chunk stream and speaker output | Planned |
-| M2 | Scheduled click-track start on 2 receivers | Planned |
+| M2 | PCM16 audio transport and AudioTrack test playback; scheduled click-track start on 2 receivers | In progress |
 | M3 | Output-timestamp mapping and manual offsets | Planned |
 | M4 | Drift controller, 30-minute run | Planned |
 | M5 | 3-4 receivers, group deadline, reconnect | Planned |
