@@ -447,3 +447,25 @@ No physical-device synchronization results are recorded in this initial log. Add
 **Limitations:** No foreground playback service, QR invitation flow, audio capture/decoder, PCM rendering, native audio callback, socket-to-session orchestration, encryption or two-phone time-sync measurement is included. The smoke test validates local JNI/session wiring only, not network or acoustic synchronization.
 
 **Next action:** Pass the Android APK/NDK CI build, then orchestrate the Kotlin TCP/UDP listeners with the native session API and run a two-device Wi-Fi handshake/time-sync experiment.
+
+
+### 2 November 2026 — M1 Android TCP admission handshake
+
+**Type:** Android socket orchestration / JNI protocol integration  
+**Status:** Implemented; CI validation pending  
+**Branch:** `feature/m1-android-network-handshake`
+
+**Summary:**
+- Added a one-master/one-receiver Android host/join interface for devices on the same local Wi-Fi network.
+- The master binds a TCP control listener and a separate audio-channel listener. WELCOME advertises the dynamically allocated audio port.
+- The receiver sends HELLO over control TCP, validates WELCOME using the shared C++ decoder, opens the audio TCP channel and sends AUDIO_HELLO.
+- Added JNI APIs to encode HELLO/AUDIO_HELLO, decode WELCOME, and route received HELLO/AUDIO_HELLO frames through the native `ReceiverSession`. Kotlin does not duplicate the control payload schema.
+- Extended the Kotlin transport adapter with strict conversion between complete native-encoded frames and its `WireFrame` representation, including exact length-prefix validation.
+- Added a launch-time device-local loopback integration test that exercises both TCP channels together with JNI and verifies the native session enters Synchronizing.
+- Updated Android and project documentation to distinguish network admission from completed time synchronization or audio playback.
+
+**Limitations:** This validates a local TCP/JNI handshake path, not a physical two-phone connection. UDP time-sync sockets are not yet connected to the C++ `TimeSyncResponder`/`TimeSyncClient`; no clock-estimator results, READY transition from live metrics, audio streaming, PCM playback, encryption or acoustic alignment are included. Only one receiver is currently admitted by the Android host UI.
+
+**Verification:** Pending Android Gradle/NDK CI. The launch-time loopback test is part of the APK and will execute on a device when this build is installed. No physical two-phone result is claimed.
+
+**Next action:** Integrate the 38-byte UDP time-sync exchange with the shared native responder/client, gather a join burst of clock samples, and only then permit READY when the existing estimator stability and residual gates are met.
