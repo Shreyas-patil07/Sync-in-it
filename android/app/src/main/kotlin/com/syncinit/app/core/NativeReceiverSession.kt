@@ -78,7 +78,7 @@ class NativeReceiverSession private constructor(private var nativeHandle: Long) 
     fun timeSyncResponse(packet: ByteArray, t2Ns: Long, t3Ns: Long): ByteArray? {
         checkOpen()
         require(packet.size == 38) { "time-sync request must be exactly 38 bytes" }
-        require(t2Ns >= 0L && t3Ns >= t2Ns) { "time-sync server timestamps are invalid" }
+        require(t3Ns >= t2Ns) { "time-sync server timestamps are invalid" }
         return NativeCore.nativeTimeSyncResponseFrame(
             nativeHandle, packet.copyOf(), t2Ns, t3Ns
         )
