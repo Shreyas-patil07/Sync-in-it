@@ -40,7 +40,7 @@ class MainActivity : Activity() {
 
     private fun nativeStatus(): String = try {
         "Native C++ core loaded · API ${NativeCore.nativeCoreVersion()}"
-    } catch (error: UnsatisfiedLinkError) {
+    } catch (error: LinkageError) {
         "Native C++ core failed to load: ${error.message ?: "unknown linker error"}"
     }
 }
