@@ -74,7 +74,7 @@ class MasterSessionHost(context: Context, private val onStatus: (String) -> Unit
 
             check(!closed.get()) { "host session was stopped while starting" }
             val deviceLabel = "${Build.MANUFACTURER} ${Build.MODEL}".trim().take(40)
-            val serviceName = "Sync In It - $deviceLabel"
+            val serviceName = "Sync In It - $deviceLabel ${token.toHex().take(4)}"
             val serviceAdvertiser = LanSessionAdvertiser(appContext, onStatus)
             serviceAdvertiser.start(serviceName, controlListener.localPort, token.toHex())
 
