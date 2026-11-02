@@ -67,7 +67,7 @@ Receivers must:
 
 ## 5. Control message catalogue
 
-All fields in this table are in wire order. u = unsigned, i = signed, and byte arrays are fixed or length-prefixed as indicated.
+All fields in this table are in wire order. u = unsigned, i = signed, and byte arrays are fixed or length-prefixed as indicated. The `model` and `detail` strings are UTF-8 byte sequences with a one-byte byte-length prefix; they are limited to 255 encoded bytes. Control payloads must have exactly the length implied by their fields. Boolean fields (`syncStable`, `playing`, and `mute`) accept only 0 or 1. ANCHOR kind must be 0–4, and VOLUME gain must be 0–100.
 
 | Type | Name | Direction | Payload |
 |---:|---|---|---|
