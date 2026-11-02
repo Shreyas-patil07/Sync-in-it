@@ -473,7 +473,7 @@ Java_com_syncinit_app_core_NativeCore_nativeTimeSyncResponseFrame(
     jlong t2_ns,
     jlong t3_ns) {
     auto native_session = find_session(handle);
-    if (!native_session || t2_ns < 0 || t3_ns < t2_ns) return nullptr;
+    if (!native_session || t3_ns < t2_ns) return nullptr;
     std::vector<std::uint8_t> bytes;
     if (!copy_binary_array(env, packet_array, bytes, syit::kTimeSyncPacketSize)) return nullptr;
     try {
@@ -515,7 +515,7 @@ extern "C" JNIEXPORT jbyteArray JNICALL
 Java_com_syncinit_app_core_NativeCore_nativeMakeTimeSyncRequest(
     JNIEnv* env, jobject, jlong handle, jlong t1_ns) {
     auto native_client = find_clock_client(handle);
-    if (!native_client || t1_ns < 0) return nullptr;
+    if (!native_client) return nullptr;
     std::lock_guard<std::mutex> lock(native_client->mutex);
     syit::TimeSyncPacket request;
     if (!native_client->client.make_request(static_cast<syit::Nanoseconds>(t1_ns), request)) {
@@ -533,7 +533,7 @@ extern "C" JNIEXPORT void JNICALL
 Java_com_syncinit_app_core_NativeCore_nativeExpireTimeSyncRequests(
     JNIEnv*, jobject, jlong handle, jlong earlier_than_ns) {
     auto native_client = find_clock_client(handle);
-    if (!native_client || earlier_than_ns < 0) return;
+    if (!native_client) return;
     std::lock_guard<std::mutex> lock(native_client->mutex);
     native_client->client.expire_before(static_cast<syit::Nanoseconds>(earlier_than_ns));
 }
@@ -542,7 +542,7 @@ extern "C" JNIEXPORT jdoubleArray JNICALL
 Java_com_syncinit_app_core_NativeCore_nativeAcceptTimeSyncResponse(
     JNIEnv* env, jobject, jlong handle, jbyteArray packet_array, jlong t4_ns) {
     auto native_client = find_clock_client(handle);
-    if (!native_client || t4_ns < 0) return nullptr;
+    if (!native_client) return nullptr;
     std::vector<std::uint8_t> bytes;
     if (!copy_binary_array(env, packet_array, bytes, syit::kTimeSyncPacketSize)) return nullptr;
 
@@ -577,7 +577,9 @@ Java_com_syncinit_app_core_NativeCore_nativeAcceptTimeSyncResponse(
             fit.samples_used >= 8U &&
             fit.selected_sample_span_ns >= 10'000'000'000LL &&
             fit.residual_rms_ms < 0.25;
-        native_client->stable_streak = stable_fit ? native_client->stable_streak + 1U : 0U;
+        native_client->stable_streak = stable_fit
+            ? std::min<std::size_t>(native_client->stable_streak + 1U, 3U)
+            : 0U;
 
         const auto skew = fit.receiver_skew_ppm.value_or(
             std::numeric_limits<double>::quiet_NaN());
