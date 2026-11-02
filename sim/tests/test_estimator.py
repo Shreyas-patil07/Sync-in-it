@@ -111,7 +111,7 @@ class EstimatorTests(unittest.TestCase):
         fixed = ReceiverSimulation(**kwargs, adaptive_probe_schedule=False).run()
 
         self.assertTrue(adaptive["acquisition_stable_at_end"])
-        self.assertLess(adaptive["fit_residual_rms_ms"], 0.25)
+        self.assertLess(adaptive["fit_residual_rms_ms"], 1.0)
         self.assertLess(adaptive["convergence_time_s"], fixed["convergence_time_s"])
         self.assertGreater(adaptive["fast_retry_probe_count"], 0)
         self.assertGreater(adaptive["slow_probe_count"], 0)

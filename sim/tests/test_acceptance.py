@@ -45,6 +45,13 @@ class M0AcceptanceTests(unittest.TestCase):
         failed = {item["name"] for item in report["checks"] if not item["passed"]}
         self.assertIn("severe_asymmetric_delay.hard_resync_triggered", failed)
 
+    def test_combined_impairment_fails_closed_when_fit_residual_is_high(self):
+        results = copy.deepcopy(self.results)
+        results["combined_impairment"]["acquisition_stable_at_end"] = True
+        report = evaluate_m0_acceptance(results)
+        failed = {item["name"] for item in report["checks"] if not item["passed"]}
+        self.assertIn("combined_impairment.fails_closed_on_residual", failed)
+
     def test_missing_scenario_fails_gate(self):
         results = copy.deepcopy(self.results)
         del results["burst_loss"]

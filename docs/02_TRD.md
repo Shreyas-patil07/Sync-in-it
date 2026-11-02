@@ -105,7 +105,7 @@ An anchor consists of master time, sample index and playing state. Start, pause,
 | Stability residual | <1 ms |
 | Stable sample span | ≥10 s |
 
-These values are tuning parameters, not proven properties of every Wi-Fi chipset. The M0 simulator exposes the selected low-RTT fit's sample span and uses three consecutive updates with at least 8 selected samples, a span of at least 10 seconds, and residual RMS below 0.25 ms as its provisional acquisition-ready gate. While that gate is not met, its reference schedule retries at 500 ms; after it is met, the cadence returns to 2 seconds. The simulator's 0.25 ms threshold is stricter than this TRD baseline and is not a proven requirement for every phone or Wi-Fi chipset.
+These values are tuning parameters, not proven properties of every Wi-Fi chipset. The M0 simulator exposes the selected low-RTT fit's sample span and uses three consecutive updates with at least 8 selected samples, a span of at least 10 seconds, and residual RMS below 1.0 ms as its provisional acquisition-ready gate. While that gate is not met, its reference schedule retries at 500 ms; after it is met, the cadence returns to 2 seconds. This aligns the simulator acquisition residual limit with the TRD's provisional <1 ms stability baseline; it remains unvalidated on physical phones.
 
 ## 5. Audio output clock mapping
 
