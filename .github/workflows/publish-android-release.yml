@@ -80,8 +80,8 @@ jobs:
         run: |
           mkdir -p release-assets
           cp android/app/build/outputs/apk/debug/app-debug.apk \
-            release-assets/SyncInIt-Android-preview-v0.3.0.apk
-          sha256sum release-assets/SyncInIt-Android-preview-v0.3.0.apk \
+            release-assets/SyncInIt-Android-preview-v0.4.0.apk
+          sha256sum release-assets/SyncInIt-Android-preview-v0.4.0.apk \
             | awk '{print $1}' > release-assets/SHA256SUMS.txt
 
       - name: Create GitHub pre-release and upload APK
@@ -89,33 +89,39 @@ jobs:
           GH_TOKEN: ${{ secrets.GITHUB_TOKEN }}
         run: |
           cat > release-notes.md <<'EOF'
-          ## Sync In It Android Preview v0.3.0
+          ## Sync In It Android Preview v0.4.0
 
-          This preview adds nearby-host discovery and a stable Android signing identity so future APK installs can update the existing app in place.
+          This preview includes the Android LAN join reliability fixes merged in PR #27.
 
           ### Included
           - Android launcher with mDNS/DNS-SD nearby host discovery and tap-to-join on the same local Wi-Fi network.
-          - Stable preview signing key and increasing versionCode for in-place updates; keep the app's package ID unchanged.
+          - Host remains available after a failed or incomplete pre-admission join, and can accept a fresh receiver attempt.
+          - UDP time-sync listener binds before the host is advertised, avoiding the startup race that caused ICMP Port Unreachable.
+          - Receiver retries transient UDP PortUnreachable responses and reports a clear error after repeated failures.
+          - Discovery checks the advertised service-name token fingerprint against the resolved TXT token before attempting TCP admission.
           - Shared C++ protocol codecs and ReceiverSession state machine through JNI.
-          - Separate TCP control and audio-admission channels (audio streaming is not implemented yet).
-          - UDP four-timestamp time synchronization using the shared native TimeSyncResponder, TimeSyncClient and clock estimator.
-          - Adaptive acquisition: 20 probes at 50 ms spacing, 500 ms retries while unstable, then 2-second tracking after the provisional clock-stability gate passes.
-          - Native TCP/UDP loopback smoke checks on app startup.
-          - Native builds for arm64-v8a and x86_64.
+          - Separate TCP control and audio-admission channels; audio streaming is not implemented yet.
+          - UDP four-timestamp clock synchronization and adaptive acquisition.
+          - Stable preview signing key, increasing versionCode, and native builds for arm64-v8a and x86_64.
+
+          ### Validation
+          - Android Gradle build and Kotlin TCP/UDP transport checks passed in CI.
+          - APK signature verification passed.
+          - Physical two-phone admission and sustained clock synchronization still need to be re-tested with this release.
 
           ### Important limitations
-          This is an engineering preview, not a functional synchronized speaker release. No audio chunks, PCM buffering, audio rendering, playback service, encryption or acoustic synchronization validation are included. The receiver sends READY only after clock acquisition; the master rejects it while the reported audio buffer is 0 ms.
+          This remains an engineering preview, not a functional synchronized-speaker release. Audio chunks, PCM buffering, audio rendering, playback service, transport encryption and acoustic synchronization validation are not included. The native session still gates readiness while the receiver reports a 0 ms audio buffer.
 
-          Use only on a trusted private Wi-Fi network. The session token is an admission credential, not transport encryption. Physical two-phone discovery and clock validation are still required.
+          Use only on a trusted private Wi-Fi network. The session token is an admission credential, not transport encryption.
 
-          Existing APKs signed with an ephemeral CI debug key may require one final uninstall/reinstall to migrate to the persistent signing key. Later previews signed with this same key install as updates.
+          Install as an update over a prior preview signed with the persistent Sync In It preview key.
           EOF
 
-          gh release create "v0.3.0-preview.1" \
-            "release-assets/SyncInIt-Android-preview-v0.3.0.apk#SyncInIt-Android-preview-v0.3.0.apk" \
+          gh release create "v0.4.0-preview.1" \
+            "release-assets/SyncInIt-Android-preview-v0.4.0.apk#SyncInIt-Android-preview-v0.4.0.apk" \
             "release-assets/SHA256SUMS.txt#SHA256SUMS.txt" \
             --repo "$GITHUB_REPOSITORY" \
             --target "$GITHUB_SHA" \
-            --title "Sync In It Android Preview v0.3.0" \
+            --title "Sync In It Android Preview v0.4.0" \
             --notes-file release-notes.md \
             --prerelease
