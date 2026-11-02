@@ -16,12 +16,12 @@ import java.net.NetworkInterface
  */
 internal object NetworkDiagnostics {
     fun deviceSnapshot(): String = buildString {
-        appendLine("device.manufacturer=\${Build.MANUFACTURER}")
-        appendLine("device.model=\${Build.MODEL}")
-        appendLine("device.product=\${Build.PRODUCT}")
-        appendLine("device.androidRelease=\${Build.VERSION.RELEASE}")
-        appendLine("device.api=\${Build.VERSION.SDK_INT}")
-        appendLine("device.abis=\${Build.SUPPORTED_ABIS.joinToString(",")}")
+        appendLine("device.manufacturer=${Build.MANUFACTURER}")
+        appendLine("device.model=${Build.MODEL}")
+        appendLine("device.product=${Build.PRODUCT}")
+        appendLine("device.androidRelease=${Build.VERSION.RELEASE}")
+        appendLine("device.api=${Build.VERSION.SDK_INT}")
+        appendLine("device.abis=${Build.SUPPORTED_ABIS.joinToString(",")}")
     }
 
     fun networkSnapshot(context: Context, peerAddress: String? = null): String = try {
@@ -33,33 +33,33 @@ internal object NetworkDiagnostics {
         buildString {
             appendLine("network.snapshot.begin")
             append(deviceSnapshot())
-            appendLine("network.active=\${network ?: "none"}")
-            appendLine("network.transports=\${capabilities?.let(::transports) ?: "unavailable"}")
-            appendLine("network.internet=\${capabilities?.hasCapability(NetworkCapabilities.NET_CAPABILITY_INTERNET) ?: "unknown"}")
-            appendLine("network.validated=\${capabilities?.hasCapability(NetworkCapabilities.NET_CAPABILITY_VALIDATED) ?: "unknown"}")
-            appendLine("network.metered=\${capabilities?.hasCapability(NetworkCapabilities.NET_CAPABILITY_NOT_METERED)?.not() ?: "unknown"}")
-            appendLine("network.interface=\${properties?.interfaceName ?: "unknown"}")
-            appendLine("network.linkAddresses=\${properties?.linkAddresses?.joinToString(";") { formatAddress(it) } ?: "unavailable"}")
-            appendLine("network.dns=\${properties?.dnsServers?.joinToString(",") { it.hostAddress ?: "?" } ?: "unavailable"}")
-            appendLine("network.routes=\${properties?.routes?.joinToString(";") { formatRoute(it.toString(), it.isDefaultRoute) } ?: "unavailable"}")
-            appendLine("network.proxy=\${properties?.httpProxy ?: "none-or-unavailable"}")
-            appendLine("network.interfaces=\${activeInterfaces()}")
+            appendLine("network.active=${network ?: "none"}")
+            appendLine("network.transports=${capabilities?.let(::transports) ?: "unavailable"}")
+            appendLine("network.internet=${capabilities?.hasCapability(NetworkCapabilities.NET_CAPABILITY_INTERNET) ?: "unknown"}")
+            appendLine("network.validated=${capabilities?.hasCapability(NetworkCapabilities.NET_CAPABILITY_VALIDATED) ?: "unknown"}")
+            appendLine("network.metered=${capabilities?.hasCapability(NetworkCapabilities.NET_CAPABILITY_NOT_METERED)?.not() ?: "unknown"}")
+            appendLine("network.interface=${properties?.interfaceName ?: "unknown"}")
+            appendLine("network.linkAddresses=${properties?.linkAddresses?.joinToString(";") { formatAddress(it) } ?: "unavailable"}")
+            appendLine("network.dns=${properties?.dnsServers?.joinToString(",") { it.hostAddress ?: "?" } ?: "unavailable"}")
+            appendLine("network.routes=${properties?.routes?.joinToString(";") { formatRoute(it.toString(), it.isDefaultRoute) } ?: "unavailable"}")
+            appendLine("network.proxy=${properties?.httpProxy ?: "none-or-unavailable"}")
+            appendLine("network.interfaces=${activeInterfaces()}")
             if (peerAddress != null) {
                 appendLine("peer.address=$peerAddress")
-                appendLine("peer.subnetRelation=\${subnetRelation(properties, peerAddress)}")
-                appendLine("peer.routingHint=\${routingHint(properties, peerAddress)}")
+                appendLine("peer.subnetRelation=${subnetRelation(properties, peerAddress)}")
+                appendLine("peer.routingHint=${routingHint(properties, peerAddress)}")
             }
             appendLine("network.snapshot.end")
         }
     } catch (error: Exception) {
-        "network.snapshot.failed=\${error.javaClass.name}: \${error.message ?: "no message"}"
+        "network.snapshot.failed=${error.javaClass.name}: ${error.message ?: "no message"}"
     }
 
     fun exceptionDetails(error: Throwable): String {
         val chain = generateSequence(error as Throwable?) { it.cause }
             .take(6)
             .mapIndexed { index, cause ->
-                "#$index \${cause.javaClass.name}: \${cause.message ?: "no message"}"
+                "#$index ${cause.javaClass.name}: ${cause.message ?: "no message"}"
             }
             .joinToString(" <- ")
         val category = when (error) {
@@ -88,7 +88,7 @@ internal object NetworkDiagnostics {
     }.joinToString(",")
 
     private fun formatAddress(linkAddress: LinkAddress): String =
-        "\${linkAddress.address.hostAddress}/\${linkAddress.prefixLength}"
+        "${linkAddress.address.hostAddress}/${linkAddress.prefixLength}"
 
     private fun formatRoute(route: String, isDefault: Boolean): String =
         if (isDefault) "$route [DEFAULT]" else route
@@ -101,11 +101,11 @@ internal object NetworkDiagnostics {
             .joinToString(";") { networkInterface ->
                 val addresses = networkInterface.inetAddresses.toList()
                     .joinToString(",") { it.hostAddress ?: "?" }
-                "\${networkInterface.name}(mtu=\${networkInterface.mtu},addresses=$addresses)"
+                "${networkInterface.name}(mtu=${networkInterface.mtu},addresses=$addresses)"
             }
             .ifBlank { "no-up-non-loopback-interface" }
     } catch (error: Exception) {
-        "unavailable(\${error.javaClass.simpleName}:\${error.message ?: "no message"})"
+        "unavailable(${error.javaClass.simpleName}:${error.message ?: "no message"})"
     }
 
     private fun subnetRelation(properties: LinkProperties?, peerAddress: String): String {
@@ -117,7 +117,7 @@ internal object NetworkDiagnostics {
             sameSubnet(local, peer, link.prefixLength)
         }
         return if (matching != null) {
-            "SAME_SUBNET(\${formatAddress(matching)})"
+            "SAME_SUBNET(${formatAddress(matching)})"
         } else {
             "DIFFERENT_SUBNET(default-route-or-policy-route-required)"
         }
@@ -131,7 +131,7 @@ internal object NetworkDiagnostics {
             sameSubnet(local, peer, link.prefixLength)
         }
         if (match != null) {
-            return "Peer falls inside \${formatAddress(match)}; Android should route directly on \${properties?.interfaceName ?: "the active interface"}"
+            return "Peer falls inside ${formatAddress(match)}; Android should route directly on ${properties?.interfaceName ?: "the active interface"}"
         }
         val defaultRoute = properties?.routes?.firstOrNull { it.isDefaultRoute }
         return if (defaultRoute != null) {
