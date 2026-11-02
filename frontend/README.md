@@ -1,6 +1,6 @@
 # Sync In It Frontend
 
-The public website for Sync In It. The homepage introduces the product through a logo-led hero, benefit-focused sections, a simple explanation of the intended experience, current development status and FAQs. The downloads page clearly states that no public app builds are available yet.
+The public website for Sync In It. The homepage introduces the product through a logo-led hero, benefit-focused sections, the current Android preview capabilities, development status and FAQs. The downloads page links to the Android engineering preview v0.4.0-preview.1 and its SHA-256 checksums.
 
 Built with React, TypeScript and Vite. The interface uses a lightweight custom CSS system and the original project logo, with no additional component or animation dependency.
 
@@ -41,9 +41,13 @@ The Vercel rewrite sends client-side routes to the app entry point. Static asset
 
 ## Project status
 
-M0, the simulator and timing core, is in progress. The Android application and physical device playback prototype have not been implemented. There are no public APK or iOS builds.
+M0 simulator/timing work and M1 Android integration remain in progress. The Android v0.4.0-preview.1 engineering release supports nearby Host discovery over mDNS, two-channel TCP session admission and UDP four-timestamp clock acquisition through the shared C++ core.
 
-The site does not claim measured acoustic synchronization results. Engineering targets still require physical device testing.
+The preview does not implement audio chunk streaming, PCM buffering/rendering, scheduled playback, a foreground playback service or acoustic synchronization. The receiver remains in Synchronizing while its reported audio buffer is empty. Physical two-phone admission and sustained clock synchronization still require retesting; no measured synchronized-playback result is claimed.
+
+The current M2a PCM16 codec and bounded jitter-buffer work is in open PR #28 and is not part of the main-branch preview. The current Android Host UI admits one receiver; multi-receiver group operation is not validated. iOS networking and playback are not implemented.
+
+The session token is currently visible in the local DNS-SD service record. The preview should be used only on a trusted private Wi-Fi network.
 
 ## Brand assets
 
