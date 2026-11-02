@@ -55,6 +55,13 @@ private fun tcpRoundTrip() {
         }
         worker.start()
         TcpFrameConnection.connect("127.0.0.1", server.localPort, connectTimeoutMs = 3_000, readTimeoutMs = 3_000).use { client ->
+            expect(client.isConnected, "connected TCP socket exposes connected state")
+            expect(client.remoteAddress.hostAddress == "127.0.0.1", "TCP diagnostics expose remote address")
+            expect(client.remotePort == server.localPort, "TCP diagnostics expose remote port")
+            expect(client.localAddress == "127.0.0.1", "TCP diagnostics expose selected local address")
+            expect(client.localPort in 1..65_535, "TCP diagnostics expose ephemeral local port")
+            expect(client.remoteEndpoint == "127.0.0.1:${server.localPort}", "TCP diagnostics format remote endpoint")
+            expect(client.localEndpoint == "127.0.0.1:${client.localPort}", "TCP diagnostics format local endpoint")
             client.writeFrame(WireFrame(1, 2, byteArrayOf(3, 4)))
             client.writeFrame(WireFrame(5, 0, byteArrayOf(6)))
             val response = client.readFrame()
