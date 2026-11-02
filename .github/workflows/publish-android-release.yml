@@ -55,6 +55,8 @@ jobs:
           mkdir -p android/app
           printf '%s' "$PREVIEW_KEYSTORE_BASE64" | base64 --decode > android/app/syncinit-preview.jks
           test -s android/app/syncinit-preview.jks
+          keytool -list -keystore android/app/syncinit-preview.jks \
+            -storepass "$PREVIEW_KEYSTORE_PASSWORD" -alias syncinit-preview >/dev/null
 
       - name: Generate monotonic Android version code
         id: apk_version
