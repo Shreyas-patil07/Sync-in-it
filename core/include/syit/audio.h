@@ -12,7 +12,7 @@
 namespace syit {
 
 inline constexpr std::uint8_t kAudioChunkMessageType = 0x80U;
-inline constexpr std::uint8_t kAudioCodecPcm16 = 1U;
+inline constexpr std::uint8_t kAudioCodecPcm16 = 0U;
 inline constexpr std::uint8_t kAudioChunkFlagGap = 0x01U;
 inline constexpr std::uint8_t kAudioChunkFlagSilence = 0x02U;
 inline constexpr std::uint8_t kAudioChunkKnownFlags =
