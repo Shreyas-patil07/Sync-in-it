@@ -144,7 +144,7 @@ function ProjectStatus() {
       <div className="status-copy">
         <Eyebrow>BUILT IN THE OPEN</Eyebrow>
         <h2>The Android preview is here.<br />Playback is next.</h2>
-        <p>M0 simulator and timing work continue, while M1 now has an Android v0.4.0 engineering preview for nearby discovery, TCP admission and UDP clock acquisition. Audio chunks, PCM rendering and scheduled playback are not implemented yet.</p>
+        <p>M0 simulator and timing work continue, while M1 now has an Android v0.4.0 engineering preview for nearby discovery, TCP admission and UDP clock acquisition. Audio chunks, PCM rendering and scheduled playback are not implemented yet; physical two-phone clock synchronization still needs retesting.</p>
         <a className="button button-light" href={LATEST_RELEASE} target="_blank" rel="noreferrer">Get Android preview v0.4.0 <Arrow diagonal /></a>
       </div>
       <div className="status-card">
@@ -157,7 +157,7 @@ function ProjectStatus() {
           <span className="status-milestone">M2a</span>
           <div><b>PCM codec + jitter buffer</b><small>OPEN PR #28 · NOT MERGED</small></div>
         </div>
-        <div className="status-card-foot">No audio streaming or synchronized playback yet.</div>
+        <div className="status-card-foot">Physical two-phone clock synchronization still needs retesting; no audio streaming or synchronized playback yet.</div>
       </div>
     </div>
   </section>;
@@ -166,8 +166,8 @@ function ProjectStatus() {
 const questions = [
   { question: 'Does Sync In It need an internet connection?', answer: 'No. The preview uses a private local Wi-Fi network. The access point must allow mDNS/multicast discovery and device-to-device traffic; guest networks with client isolation may block it.' },
   { question: 'Which phones work with the current preview?', answer: 'The v0.4.0 preview is Android-only: one Android Host and an Android receiver. An iOS receiver is planned, but iOS networking and playback are not implemented.' },
-  { question: 'Can I download and use the app now?', answer: 'An Android engineering preview is available as v0.4.0-preview.1. It demonstrates nearby host discovery, TCP session admission and UDP clock acquisition. It does not stream or play audio and is not a synchronized-speaker release.' },
-  { question: 'What does the current Android preview actually do?', answer: 'It advertises and discovers nearby Host sessions, completes a two-channel TCP admission handshake and runs four-timestamp UDP clock acquisition. The receiver remains in Synchronizing because the audio buffer is still empty.' },
+  { question: 'Can I download and use the app now?', answer: 'An Android engineering preview is available as v0.4.0-preview.1. It demonstrates nearby host discovery, TCP session admission and UDP clock acquisition. It does not stream or play audio, and physical two-phone clock synchronization still needs retesting.' },
+  { question: 'What does the current Android preview actually do?', answer: 'It advertises and discovers nearby Host sessions, completes a two-channel TCP admission handshake and runs four-timestamp UDP clock acquisition. The receiver remains in Synchronizing because the audio buffer is still empty. The release has not yet passed a physical two-phone clock-synchronization retest.' },
   { question: 'How many phones will it support?', answer: 'The product target remains 6–10 phones in total. The current Android Host UI admits one receiver; group admission and multi-receiver playback have not been implemented or validated.' },
   { question: 'Is the preview safe on any Wi-Fi network?', answer: 'Use only a trusted private network. The prototype includes its 16-byte session token in the mDNS service record, where other devices on the same LAN can read it. This is not transport encryption or cryptographic peer authentication.' },
 ];
@@ -235,7 +235,7 @@ function Downloads({ navigate }: { navigate: (page: NavigablePage) => void }) {
     <section className="downloads-hero shell">
       <Eyebrow>DOWNLOADS / ANDROID PREVIEW</Eyebrow>
       <h1>Android preview is here.<br /><span className="hero-gradient">Playback comes next.</span></h1>
-      <p>Version 0.4.0-preview.1 is available for Android. It demonstrates nearby Host discovery, TCP session admission and UDP clock acquisition. Audio streaming and synchronized playback are not implemented yet.</p>
+      <p>Version 0.4.0-preview.1 is available for Android. It demonstrates nearby Host discovery, TCP session admission and UDP clock acquisition. Audio streaming and synchronized playback are not implemented yet. Physical two-phone clock synchronization still needs retesting.</p>
       <div className="release-status"><span className="status-point" /><div><b>v0.4.0-preview.1</b><small>Android engineering preview · arm64-v8a and x86_64</small></div></div>
     </section>
     <section className="downloads-content shell">
