@@ -1,7 +1,7 @@
 # Implementation Plan — Sync In It
 
 **Document status:** Active execution plan  
-**Version:** 1.2  
+**Version:** 1.3  
 **Last updated:** 2 November 2026
 
 **Current progress:** M0 reference simulator implementation is in progress under `sim/`. It has deterministic Python scenarios, input validation, burst-loss modeling, convergence diagnostics and a simplified playout-tracking loop, but is not yet the complete M0 exit gate. No phone synchronization or audio playback has been validated.
@@ -9,6 +9,8 @@
 ## 1. Implementation strategy
 
 Build the timing model and its tests before attempting a multi-phone product. The most expensive risk is synchronization correctness, not UI construction. Prove the clock estimator, timeline and drift controller in simulation; then validate each layer on physical Android devices.
+
+**Performance-first rule:** optimize for the best sustained end-to-end synchronization, playback quality, reliability and group performance. Do not treat smaller code, lower CPU use or algorithmic elegance as the objective by themselves. Resource efficiency is a constraint, not the primary success metric. Measure bottlenecks, benchmark alternatives under equivalent conditions, and accept additional complexity or resource use when physical-device evidence shows a material playback-performance gain without unacceptable thermal, battery, memory or network cost. Never claim a synchronization improvement from simulator data alone when acoustic device measurements are required.
 
 Do not build every feature in parallel. Each milestone must have a measurable exit gate and an implementation artifact.
 
