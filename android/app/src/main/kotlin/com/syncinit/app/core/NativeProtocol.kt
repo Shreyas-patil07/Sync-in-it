@@ -63,4 +63,12 @@ object NativeProtocol {
         checkNotNull(
             NativeCore.nativeEncodeAudioHelloFrame(welcome.sessionId, welcome.receiverId)
         ) { "native AUDIO_HELLO encoder returned no frame" }
+
+    fun encodeReadyFrame(
+        bufferedMs: Long,
+        syncStable: Boolean,
+        residualStdUs: Long
+    ): ByteArray = checkNotNull(
+        NativeCore.nativeEncodeReadyFrame(bufferedMs, syncStable, residualStdUs)
+    ) { "native READY encoder returned no frame" }
 }
