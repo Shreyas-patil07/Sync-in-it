@@ -8,6 +8,36 @@ object NativeCore {
 
     external fun nativeCoreVersion(): Int
 
+    external fun nativeEncodeHelloFrame(token: ByteArray, platform: Int): ByteArray?
+    external fun nativeDecodeWelcomeFrame(encodedFrame: ByteArray): LongArray?
+    external fun nativeEncodeAudioHelloFrame(sessionId: Long, receiverId: Int): ByteArray?
+    external fun nativeOnHelloFrame(handle: Long, encodedFrame: ByteArray): Int
+    external fun nativeOnAudioHelloFrame(handle: Long, encodedFrame: ByteArray): Int
+
+    external fun nativeEncodeReadyFrame(
+        bufferedMs: Long,
+        syncStable: Boolean,
+        residualStdUs: Long
+    ): ByteArray?
+
+    external fun nativeOnReadyFrame(handle: Long, encodedFrame: ByteArray): Int
+    external fun nativeTimeSyncResponseFrame(
+        handle: Long,
+        packet: ByteArray,
+        t2Ns: Long,
+        t3Ns: Long
+    ): ByteArray?
+
+    external fun nativeCreateTimeSyncClient(sessionId: Long, receiverId: Int): Long
+    external fun nativeMakeTimeSyncRequest(handle: Long, t1Ns: Long): ByteArray?
+    external fun nativeExpireTimeSyncRequests(handle: Long, earlierThanNs: Long)
+    external fun nativeAcceptTimeSyncResponse(
+        handle: Long,
+        packet: ByteArray,
+        t4Ns: Long
+    ): DoubleArray?
+    external fun nativeCloseTimeSyncClient(handle: Long)
+
     external fun nativeCreateSession(
         sessionId: Long,
         receiverId: Int,

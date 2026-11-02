@@ -11,7 +11,48 @@ import java.net.SocketTimeoutException
 import java.util.concurrent.atomic.AtomicBoolean
 
 /** One length-prefixed TCP byte stream. Reads are blocking and must run off the audio callback. */
-data class WireFrame(val messageType: Int, val flags: Int = 0, val payload: ByteArray = byteArrayOf())
+data class WireFrame(val messageType: Int, val flags: Int = 0, val payload: ByteArray = byteArrayOf()) {
+    fun toEncodedBytes(maxFrameSize: Int = TcpFrameConnection.DEFAULT_MAX_FRAME_SIZE): ByteArray {
+        require(messageType in 0..255) { "messageType must fit in one byte" }
+        require(flags in 0..255) { "flags must fit in one byte" }
+        val frameLength = payload.size.toLong() + 2L
+        require(maxFrameSize in 2..TcpFrameConnection.DEFAULT_MAX_FRAME_SIZE)
+        require(frameLength <= maxFrameSize.toLong()) { "TCP frame exceeds configured maximum of $maxFrameSize bytes" }
+        val wire = ByteArray(4 + frameLength.toInt())
+        for (index in 0 until 4) wire[index] = (frameLength ushr (8 * index)).toByte()
+        wire[4] = messageType.toByte()
+        wire[5] = flags.toByte()
+        payload.copyInto(wire, destinationOffset = 6)
+        return wire
+    }
+
+    companion object {
+        fun fromEncodedBytes(
+            encoded: ByteArray,
+            maxFrameSize: Int = TcpFrameConnection.DEFAULT_MAX_FRAME_SIZE
+        ): WireFrame {
+            require(maxFrameSize in 2..TcpFrameConnection.DEFAULT_MAX_FRAME_SIZE)
+            if (encoded.size < 6) throw FrameProtocolException("encoded TCP frame is shorter than its fixed header")
+            val frameLength =
+                (encoded[0].toLong() and 0xffL) or
+                    ((encoded[1].toLong() and 0xffL) shl 8) or
+                    ((encoded[2].toLong() and 0xffL) shl 16) or
+                    ((encoded[3].toLong() and 0xffL) shl 24)
+            if (frameLength < 2L) throw FrameProtocolException("TCP frame length is smaller than type and flags")
+            if (frameLength > maxFrameSize.toLong()) {
+                throw FrameProtocolException("TCP frame exceeds configured maximum of $maxFrameSize bytes")
+            }
+            if (frameLength != encoded.size.toLong() - 4L) {
+                throw FrameProtocolException("encoded TCP frame length prefix does not match its byte count")
+            }
+            return WireFrame(
+                messageType = encoded[4].toInt() and 0xff,
+                flags = encoded[5].toInt() and 0xff,
+                payload = encoded.copyOfRange(6, encoded.size)
+            )
+        }
+    }
+}
 
 class FrameProtocolException(message: String) : IOException(message)
 
@@ -24,6 +65,7 @@ class TcpFrameConnection internal constructor(
     private val closed = AtomicBoolean(false)
 
     val isClosed: Boolean get() = closed.get() || socket.isClosed
+    val remoteAddress: java.net.InetAddress get() = socket.inetAddress
 
     /** Returns null only for a clean EOF between frames. A truncated frame closes the socket. */
     @Throws(IOException::class, SocketTimeoutException::class)
@@ -84,6 +126,12 @@ class TcpFrameConnection internal constructor(
             close()
             throw e
         }
+    }
+
+    /** Writes a complete frame produced by the shared native protocol codec. */
+    @Throws(IOException::class)
+    fun writeEncodedFrame(encoded: ByteArray) {
+        writeFrame(WireFrame.fromEncodedBytes(encoded, maxFrameSize))
     }
 
     override fun close() {

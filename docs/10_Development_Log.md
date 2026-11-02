@@ -447,3 +447,49 @@ No physical-device synchronization results are recorded in this initial log. Add
 **Limitations:** No foreground playback service, QR invitation flow, audio capture/decoder, PCM rendering, native audio callback, socket-to-session orchestration, encryption or two-phone time-sync measurement is included. The smoke test validates local JNI/session wiring only, not network or acoustic synchronization.
 
 **Next action:** Pass the Android APK/NDK CI build, then orchestrate the Kotlin TCP/UDP listeners with the native session API and run a two-device Wi-Fi handshake/time-sync experiment.
+
+
+### 2 November 2026 — M1 Android TCP admission handshake
+
+**Type:** Android socket orchestration / JNI protocol integration  
+**Status:** Implemented; Android/Kotlin/core CI passed  
+**Branch:** `feature/m1-android-network-handshake`
+
+**Summary:**
+- Added a one-master/one-receiver Android host/join interface for devices on the same local Wi-Fi network.
+- The master binds a TCP control listener and a separate audio-channel listener. WELCOME advertises the dynamically allocated audio port.
+- The receiver sends HELLO over control TCP, validates WELCOME using the shared C++ decoder, opens the audio TCP channel and sends AUDIO_HELLO.
+- Added JNI APIs to encode HELLO/AUDIO_HELLO, decode WELCOME, and route received HELLO/AUDIO_HELLO frames through the native `ReceiverSession`. Kotlin does not duplicate the control payload schema.
+- Extended the Kotlin transport adapter with strict conversion between complete native-encoded frames and its `WireFrame` representation, including exact length-prefix validation.
+- Added a launch-time device-local loopback integration test that exercises both TCP channels together with JNI and verifies the native session enters Synchronizing.
+- Updated Android and project documentation to distinguish network admission from completed time synchronization or audio playback.
+
+**Limitations:** This validates a local TCP/JNI handshake path, not a physical two-phone connection. UDP time-sync sockets are not yet connected to the C++ `TimeSyncResponder`/`TimeSyncClient`; no clock-estimator results, READY transition from live metrics, audio streaming, PCM playback, encryption or acoustic alignment are included. Only one receiver is currently admitted by the Android host UI.
+
+**Verification:** [Android app/JNI workflow 41479374128](https://github.com/Shreyas-patil07/Sync-in-it/actions/runs/41479374128) passed, including Android Gradle assembly, native builds for arm64-v8a and x86_64, and Kotlin transport checks. [Kotlin socket transport workflow 41479374090](https://github.com/Shreyas-patil07/Sync-in-it/actions/runs/41479374090) passed. [M0 simulator/native core workflow 41479374219](https://github.com/Shreyas-patil07/Sync-in-it/actions/runs/41479374219) passed across Python 3.11, 3.12 and 3.13. The APK includes the device-local two-channel loopback smoke test; GitHub CI assembled the APK but did not execute that Android runtime test. No physical two-phone result is claimed.
+
+**Next action:** Integrate the 38-byte UDP time-sync exchange with the shared native responder/client, gather a join burst of clock samples, and only then permit READY when the existing estimator stability and residual gates are met.
+
+
+### 2 November 2026 — M1 Android UDP time-sync acquisition
+
+**Type:** UDP socket orchestration / shared native time-sync client, responder and estimator  
+**Status:** Implemented; Android/Kotlin/core CI passed  
+**Branch:** `feature/m1-android-network-handshake`
+
+**Summary:**
+- Added the portable C++ estimator and transport implementation to the Android JNI CMake target.
+- Added JNI bindings for the shared `TimeSyncResponder`, `TimeSyncClient`, and `estimate_clock_offset` implementation. Kotlin does not duplicate the 38-byte packet parser, request correlation, offset calculation or skew regression.
+- Captured receiver `t1/t4` and master `t2/t3` from monotonic clocks. UDP receive timestamps are recorded immediately after `DatagramSocket.receive` returns.
+- The master binds UDP port 47802 after TCP admission, validates the packet's magic/version/session/receiver/sequence/timestamps in C++, and sends the response to the same IP that completed TCP admission.
+- The receiver runs a 20-probe join burst at 50 ms intervals, retries every 500 ms while unstable, and switches to a 2-second interval after clock acquisition stabilizes.
+- Implemented the simulator's acquisition condition: skew estimate present, at least 8 selected lowest-RTT samples, selected-sample span at least 10 seconds, residual RMS below 0.25 ms, and three consecutive passing estimator updates.
+- On stable clock acquisition, the receiver sends a shared-codec READY frame. It currently reports 0 ms buffered audio; the master rejects that report with BufferInsufficient and remains in Synchronizing, preventing a false playback-ready state.
+- Extended the app-launch loopback test to exercise a real local UDP request/response through the native responder, native correlator and estimator. It verifies that one sample cannot satisfy the stability gate.
+- Updated the app status and engineering documentation to separate clock acquisition from audio buffering and playback.
+
+**Limitations:** No audio packets, PCM buffer, renderer, playback start or foreground service are implemented. No result from two physical devices is claimed. The 0.25 ms / 10-second gate is a simulator-derived provisional acquisition threshold, not a measured phone guarantee. The 16-byte session token is not cryptographic transport protection; UDP should be used only on a trusted local network.
+
+**Verification:** [Android app/JNI workflow 41485883288](https://github.com/Shreyas-patil07/Sync-in-it/actions/runs/41485883288) passed on the final timing-schedule commit, including the NDK build for arm64-v8a and x86_64, APK assembly and Kotlin transport checks. [M0 simulator/native core workflow 41485883250](https://github.com/Shreyas-patil07/Sync-in-it/actions/runs/41485883250) passed across Python 3.11, 3.12 and 3.13. [Kotlin socket transport workflow 41484743007](https://github.com/Shreyas-patil07/Sync-in-it/actions/runs/41484743007) passed, including the UDP monotonic receive timestamp tests. The debug APK is uploaded as the Android workflow artifact. The launch-time native TCP/UDP loopback test is packaged in the APK but CI does not execute Android runtime code; it remains to be exercised on a physical device.
+
+**Next action:** Run this build on two physical Android phones on the same Wi-Fi network. Record accepted sample count, RTT p50, offset estimate, skew estimate, residual RMS and selected-sample span before beginning audio-buffer implementation.

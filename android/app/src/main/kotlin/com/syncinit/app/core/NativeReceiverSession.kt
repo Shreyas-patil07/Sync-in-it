@@ -54,6 +54,37 @@ data class ReceiverSessionConfig(
 /** A thread-safe Kotlin facade over one native master-side ReceiverSession. */
 class NativeReceiverSession private constructor(private var nativeHandle: Long) : Closeable {
     @Synchronized
+    fun onHelloFrame(encodedFrame: ByteArray): ReceiverSessionResult {
+        checkOpen()
+        require(encodedFrame.size in 6..(65_536 + 4)) { "encoded HELLO frame size is invalid" }
+        return result(NativeCore.nativeOnHelloFrame(nativeHandle, encodedFrame.copyOf()))
+    }
+
+    @Synchronized
+    fun onAudioHelloFrame(encodedFrame: ByteArray): ReceiverSessionResult {
+        checkOpen()
+        require(encodedFrame.size in 6..(65_536 + 4)) { "encoded AUDIO_HELLO frame size is invalid" }
+        return result(NativeCore.nativeOnAudioHelloFrame(nativeHandle, encodedFrame.copyOf()))
+    }
+
+    @Synchronized
+    fun onReadyFrame(encodedFrame: ByteArray): ReceiverSessionResult {
+        checkOpen()
+        require(encodedFrame.size in 6..(65_536 + 4)) { "encoded READY frame size is invalid" }
+        return result(NativeCore.nativeOnReadyFrame(nativeHandle, encodedFrame.copyOf()))
+    }
+
+    @Synchronized
+    fun timeSyncResponse(packet: ByteArray, t2Ns: Long, t3Ns: Long): ByteArray? {
+        checkOpen()
+        require(packet.size == 38) { "time-sync request must be exactly 38 bytes" }
+        require(t3Ns >= t2Ns) { "time-sync server timestamps are invalid" }
+        return NativeCore.nativeTimeSyncResponseFrame(
+            nativeHandle, packet.copyOf(), t2Ns, t3Ns
+        )
+    }
+
+    @Synchronized
     fun onHello(protocolVersion: Int, token: ByteArray, platform: Int): ReceiverSessionResult {
         checkOpen()
         require(token.size == 16) { "session token must contain exactly 16 bytes" }
