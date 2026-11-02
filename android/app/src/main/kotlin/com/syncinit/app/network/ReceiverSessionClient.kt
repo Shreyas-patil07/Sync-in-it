@@ -220,7 +220,7 @@ class ReceiverSessionClient(
                             consecutiveUnreachable = 0
                             lastMeasurement = measurement
                             if (probeAttempts <= JOIN_BURST_PROBES || probeAttempts % 10 == 0) {
-                                onStatus("[DIAG] UDP_PROBE_OK attempt=$probeAttempts elapsedMs=${"%.2f".format(probeElapsedMs)} rttSampleMs=${"%.2f".format(measurement.rttMs)} offsetMs=${"%.3f".format(measurement.offsetNs / 1_000_000.0)}")
+                                onStatus("[DIAG] UDP_PROBE_OK attempt=$probeAttempts elapsedMs=${"%.2f".format(probeElapsedMs)} rttMedianMs=${"%.2f".format(measurement.rttMedianMs)} offsetMs=${"%.3f".format(measurement.offsetNs / 1_000_000.0)}")
                             }
                             audioPipeline.updateClockMeasurement(measurement)
                             onStatus(
