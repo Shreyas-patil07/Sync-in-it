@@ -71,15 +71,15 @@ function Brand({ compact = false }: { compact?: boolean }) {
 function Header({ page, navigate }: { page: Page; navigate: (page: Page) => void }) {
   const [open, setOpen] = useState(false);
   const go = (next: Page) => { navigate(next); setOpen(false); };
-  return <header className="topbar"><div className="container nav-inner">
+  return <header className="topbar"><a className="skip-link" href="#main-content">Skip to content</a><div className="container nav-inner">
     <Brand compact />
-    <nav className={open ? 'nav-links nav-open' : 'nav-links'}>
+    <nav id="primary-navigation" aria-label="Primary navigation" className={open ? 'nav-links nav-open' : 'nav-links'}>
       <button onClick={() => go('home')} className={page === 'home' ? 'nav-link active' : 'nav-link'} aria-current={page === 'home' ? 'page' : undefined}>Overview</button>
       <a href={DOCS} className="nav-link">Documentation <ArrowRight size={13} /></a>
       <button onClick={() => go('downloads')} className={page === 'downloads' ? 'nav-link active' : 'nav-link'} aria-current={page === 'downloads' ? 'page' : undefined}>Downloads</button>
       <a href={REPO} target="_blank" rel="noreferrer" className="nav-github"><Github size={16} /> GitHub</a>
     </nav>
-    <button className="mobile-menu" onClick={() => setOpen(!open)} aria-label="Toggle navigation" aria-expanded={open}>{open ? <X /> : <Menu />}</button>
+    <button className="mobile-menu" onClick={() => setOpen(!open)} aria-label={open ? "Close navigation" : "Open navigation"} aria-controls="primary-navigation" aria-expanded={open}>{open ? <X /> : <Menu />}</button>
   </div></header>;
 }
 
@@ -88,7 +88,7 @@ function SectionHeading({ tag, title, description }: { tag: string; title: strin
 }
 
 function Hero({ navigate }: { navigate: (page: Page) => void }) {
-  return <section className="hero container">
+  return <main id="main-content"><section className="hero container">
     <div className="hero-copy">
       <div className="eyebrow"><span className="eyebrow-dot" /> OFFLINE AUDIO SYNCHRONIZATION <span className="eyebrow-line" /></div>
       <h1>One sound.<br /><span className="gradient-text">Every phone.</span></h1>
@@ -114,6 +114,14 @@ function Hero({ navigate }: { navigate: (page: Page) => void }) {
 function StatStrip() {
   const stats = [['6–10', 'PHONE GROUP TARGET'], ['48 kHz', 'BASE AUDIO RATE'], ['20 ms', 'AUDIO CHUNK'], ['OFFLINE', 'NO INTERNET NEEDED']];
   return <div className="stat-strip"><div className="container stat-grid">{stats.map(([value, label]) => <div className="stat" key={label}><b>{value}</b><span>{label}</span></div>)}</div></div>;
+}
+
+function TaglineReveal() {
+  const words = ['Shared', 'timing.', 'Local', 'network.', 'Every', 'phone', 'follows', 'one', 'playback', 'timeline.'];
+  return <section className="tagline-section container" aria-label="Sync In It principle">
+    <p className="tagline-kicker">THE PRINCIPLE</p>
+    <h2 className="tagline-copy">{words.map((word, index) => <span className="tagline-word" style={{ transitionDelay: (index * 55) + 'ms' }} key={word + index}>{word}{index < words.length - 1 ? ' ' : ''}</span>)}</h2>
+  </section>;
 }
 
 function HowItWorks() {
@@ -177,7 +185,7 @@ function CTA({ navigate }: { navigate: (page: Page) => void }) {
 }
 
 function Downloads({ navigate }: { navigate: (page: Page) => void }) {
-  return <main className="container download-page">
+  return <main id="main-content" className="container download-page">
     <div className="download-hero"><div className="section-tag">DOWNLOAD CENTER</div><h1>Everything you need.<br /><span className="gradient-text">When it’s ready.</span></h1><p>Sync In It’s M0 timing simulator is in progress. No installable Android or iOS builds have been published yet. This page will host verified releases when the first prototype is ready.</p><div className="release-state"><span className="status-orb" /><div><b>No public builds yet</b><small>Development status: pre-release</small></div></div></div>
     <div className="download-grid">
       <article className="download-card"><div className="download-card-icon android-icon"><Smartphone size={24} /></div><div className="download-card-top"><span>ANDROID</span><em>COMING LATER</em></div><h2>Sync In It for Android</h2><p>Master and receiver modes. Local file playback first, followed by supported live capture.</p><button className="button button-disabled" disabled><ArrowDownToLine size={16} /> No APK available</button><small className="platform-note">Target: Android receiver baseline and newer master features are provisional.</small></article>
@@ -195,6 +203,20 @@ function Footer({ navigate }: { navigate: (page: Page) => void }) {
 
 export default function App() {
   const [page, navigate] = usePage();
-  useEffect(() => { document.title = page === 'downloads' ? 'Downloads — Sync In It' : 'Sync In It — One sound. Every phone.'; }, [page]);
-  return <div className="app-shell"><Background /><Header page={page} navigate={navigate} />{page === 'downloads' ? <Downloads navigate={navigate} /> : <><Hero navigate={navigate} /><StatStrip /><HowItWorks /><Features /><Architecture /><Targets /><Roadmap /><CTA navigate={navigate} /></>}<Footer navigate={navigate} /></div>;
+  useEffect(() => {
+    document.title = page === 'downloads' ? 'Downloads — Sync In It' : 'Sync In It — One sound. Every phone.';
+  }, [page]);
+  useEffect(() => {
+    const element = document.querySelector('.tagline-section');
+    if (!element || window.matchMedia('(prefers-reduced-motion: reduce)').matches) return;
+    const observer = new IntersectionObserver(([entry]) => {
+      if (entry.isIntersecting) {
+        element.classList.add('is-visible');
+        observer.disconnect();
+      }
+    }, { threshold: 0.25 });
+    observer.observe(element);
+    return () => observer.disconnect();
+  }, [page]);
+  return <div className="app-shell"><Background /><Header page={page} navigate={navigate} />{page === 'downloads' ? <Downloads navigate={navigate} /> : <><Hero navigate={navigate} /><StatStrip /><TaglineReveal /><HowItWorks /><Features /><Architecture /><Targets /><Roadmap /><CTA navigate={navigate} /></></main>}<Footer navigate={navigate} /></div>;
 }
