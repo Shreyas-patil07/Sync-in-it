@@ -540,3 +540,22 @@ No physical-device synchronization results are recorded in this initial log. Add
 **Verification:** Pending Android Gradle/NDK and native core CI on the final branch head. Release publication is blocked until the two repository secrets are configured.
 
 **Next action:** Configure the two Actions secrets, rerun Android app/JNI workflow to publish a signed preview artifact, merge PR #23, then install the first persistent-key build once.
+
+
+### 2 November 2026 — Android host listener readiness before LAN advertisement
+
+**Type:** Android TCP host lifecycle / nearby discovery reliability  
+**Status:** Implemented; CI validation pending  
+**Branch:** `fix/android-host-listener-lifecycle`
+
+**Observed device failure:** A receiver discovered a host at `192.168.1.35` but the TCP connection to port `47800` failed with `ECONNREFUSED`. mDNS discovery had succeeded, so the advertised service did not correspond to a reachable TCP listener at connection time. This is distinct from a time-sync or protocol-handshake failure.
+
+**Changes:**
+- Expose `TcpFrameServer.isListening` so the master can explicitly verify that the socket is bound and not closed.
+- Reorder `MasterSessionHost.start()`: bind both TCP listeners, publish the listener references, verify readiness, and start the accept loop before registering the DNS-SD/mDNS advertisement.
+- Advertise the service only after the control and audio TCP listeners are ready. This prevents discovery from racing ahead of server startup.
+- Add a transport test asserting that a TCP server reports listening immediately after a successful bind.
+
+**Validation:** Android Gradle/JNI build and Kotlin transport tests pending on this branch. This ordering fix addresses a discovery-before-listener startup race; if the error persists, the next investigation is host-process lifetime/background termination and Wi-Fi interface routing. Physical two-phone retest remains required.
+
+**Device retest:** Keep the host app open in the foreground, tap Start hosting, confirm it says the TCP listener is ready on port 47800, then refresh Nearby Sessions on the receiver and tap the host.
