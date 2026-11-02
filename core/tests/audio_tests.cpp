@@ -1,5 +1,6 @@
 // SPDX-License-Identifier: Apache-2.0
 #include "syit/audio.h"
+#include "wire_golden_vectors.h"
 
 #include <array>
 #include <cstdint>
@@ -39,6 +40,20 @@ syit::AudioChunk pcm_chunk(
         chunk.payload[i * 2U + 1U] = static_cast<std::uint8_t>(value >> 8U);
     }
     return chunk;
+}
+
+void test_shared_audio_wire_vectors() {
+    std::size_t audio_vectors = 0U;
+    for (const auto& item : wire_golden::kFrames) {
+        const std::string name(item.name);
+        if (name.rfind("pcm16_", 0U) != 0U) continue;
+        const auto frame = syit::decode_frame(item.bytes);
+        const auto chunk = syit::decode_audio_chunk(frame);
+        expect(syit::encode_frame(syit::encode_audio_chunk(chunk)) == item.bytes,
+               name + ": shared audio wire bytes round-trip exactly");
+        ++audio_vectors;
+    }
+    expect(audio_vectors == 2U, "both shared PCM audio fixtures are covered");
 }
 
 void test_audio_chunk_round_trip() {
@@ -199,6 +214,7 @@ void test_jitter_buffer_partial_late_and_underrun_silence() {
 }  // namespace
 
 int main() {
+    test_shared_audio_wire_vectors();
     test_audio_chunk_round_trip();
     test_signed_pcm16_and_reserved_flags();
     test_silence_and_gap_chunks();
