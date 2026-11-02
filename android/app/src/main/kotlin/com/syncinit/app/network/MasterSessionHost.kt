@@ -12,6 +12,7 @@ import com.syncinit.transport.UdpTimeSyncServer
 import java.io.Closeable
 import java.net.InetAddress
 import java.net.InetSocketAddress
+import java.net.SocketException
 import java.net.SocketTimeoutException
 import java.security.SecureRandom
 import java.util.concurrent.Executors
