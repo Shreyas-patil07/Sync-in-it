@@ -185,7 +185,7 @@ function CTA({ navigate }: { navigate: (page: Page) => void }) {
 }
 
 function Downloads({ navigate }: { navigate: (page: Page) => void }) {
-  return <main id="main-content" className="container download-page">
+  return <div className="container download-page">
     <div className="download-hero"><div className="section-tag">DOWNLOAD CENTER</div><h1>Everything you need.<br /><span className="gradient-text">When it’s ready.</span></h1><p>Sync In It’s M0 timing simulator is in progress. No installable Android or iOS builds have been published yet. This page will host verified releases when the first prototype is ready.</p><div className="release-state"><span className="status-orb" /><div><b>No public builds yet</b><small>Development status: pre-release</small></div></div></div>
     <div className="download-grid">
       <article className="download-card"><div className="download-card-icon android-icon"><Smartphone size={24} /></div><div className="download-card-top"><span>ANDROID</span><em>COMING LATER</em></div><h2>Sync In It for Android</h2><p>Master and receiver modes. Local file playback first, followed by supported live capture.</p><button className="button button-disabled" disabled><ArrowDownToLine size={16} /> No APK available</button><small className="platform-note">Target: Android receiver baseline and newer master features are provisional.</small></article>
@@ -194,7 +194,7 @@ function Downloads({ navigate }: { navigate: (page: Page) => void }) {
     </div>
     <div className="release-panel"><div className="release-panel-icon"><ArrowDownToLine size={20} /></div><div><h3>Looking for the latest release?</h3><p>Published binaries will appear in GitHub Releases with version notes, checksums and supported-device information.</p></div><a href={RELEASES} target="_blank" rel="noreferrer" className="text-link">Open releases <ArrowRight size={15} /></a></div>
     <div className="download-back"><button className="button button-ghost" onClick={() => navigate('home')}><ArrowRight className="rotate-180" size={16} /> Back to overview</button></div>
-  </main>;
+  </div>;
 }
 
 function Footer({ navigate }: { navigate: (page: Page) => void }) {
@@ -218,5 +218,5 @@ export default function App() {
     observer.observe(element);
     return () => observer.disconnect();
   }, [page]);
-  return <div className="app-shell"><Background /><Header page={page} navigate={navigate} />{page === 'downloads' ? <Downloads navigate={navigate} /> : <><Hero navigate={navigate} /><StatStrip /><TaglineReveal /><HowItWorks /><Features /><Architecture /><Targets /><Roadmap /><CTA navigate={navigate} /></></main>}<Footer navigate={navigate} /></div>;
+  return <div className="app-shell"><Background /><Header page={page} navigate={navigate} />{page === 'downloads' ? <Downloads navigate={navigate} /> : <main id="main-content"><Hero navigate={navigate} /><StatStrip /><TaglineReveal /><HowItWorks /><Features /><Architecture /><Targets /><Roadmap /><CTA navigate={navigate} /></main>}<Footer navigate={navigate} /></div>;
 }
