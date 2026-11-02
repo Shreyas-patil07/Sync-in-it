@@ -1,8 +1,10 @@
 # Implementation Plan — Sync In It
 
-**Document status:** Draft execution plan  
-**Version:** 1.0  
-**Last updated:** 1 November 2026
+**Document status:** Active execution plan  
+**Version:** 1.1  
+**Last updated:** 2 November 2026
+
+**Current progress:** M0 reference simulator implementation is in progress under `sim/`. It has a deterministic Python implementation and unit tests, but is not yet the complete M0 exit gate. No phone synchronization or audio playback has been validated.
 
 ## 1. Implementation strategy
 
@@ -187,18 +189,25 @@ Exit gate:
 - Include receiver count, device models, router model, band/channel, run duration, packet/RTT behavior, calibration state and failure count.
 - No tier claim without a repeatable report.
 
-## 3. Proposed repository layout
+## 3. Repository layout
 
-The directory layout below is a target, not a claim that these source folders already exist.
+- `core/`: portable C++17 timing and stream library, headers, source and unit tests.
+- `android/`: one native Kotlin app for both Host and Speaker roles, Android services, Oboe/AAudio adapters and JNI.
+- `ios/`: Swift Speaker app, AVAudioEngine adapter and Objective-C++ bridge (M7).
+- `sim/`: Python reference simulator and deterministic scenarios.
+- `protocol/`: wire-format definitions and golden test vectors.
+- `tools/`: click-track generation, analysis and telemetry visualization.
+- `docs/`: primary product and engineering documentation.
+- `docs_original/`: preserved original design references.
+- `frontend/`: informational React/TypeScript project website; not the mobile application.
 
-- core/: portable C++17 library, headers, source and unit tests.
-- android/: Kotlin app, Android services, native audio and JNI.
-- ios/: Swift receiver, audio engine and bridge.
-- sim/: Python reference model and scenarios.
-- protocol/: protocol document and golden vectors.
-- tools/: click-track generation, analysis and log visualization.
-- Docs2/: product and implementation documentation.
-- docs/: retained original design documents.
+This is the intended implementation layout; directories not yet present are not claimed as implemented.
+
+### 3.1 Reference application structure
+
+The supplied Gaming Cafe Manager project is a Flutter application. It is used as a reference for separation of screens, reusable widgets, models, services and theme—not as a framework or codebase to port. Its gaming-cafe models, persistence and business logic do not belong in Sync In It.
+
+Sync In It retains the native Android architecture selected in ADR-002: Kotlin UI and lifecycle, JNI to a shared C++17 timing core, and Oboe/AAudio for audio. The same separation can be expressed with native Android components. The iOS Speaker remains Swift with AVAudioEngine. Do not move clock estimation, sample scheduling or drift control into UI code.
 
 ## 4. Module implementation order
 

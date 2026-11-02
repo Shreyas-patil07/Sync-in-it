@@ -16,11 +16,11 @@
 
 ## Status
 
-**Design phase. No application or simulator code is released yet.** The website is informational; the audio synchronization system remains in planning. Commands and folders marked *(planned)* do not exist yet. The current specifications are organized in [`docs/`](docs/), with the original design references preserved in [`docs_original/`](docs_original/).
+**M0 is in progress.** A dependency-free Python reference simulator is available in [`sim/`](sim/). The Android application and physical-device playback prototype are not implemented yet. The project website is informational. The current specifications are organized in [`docs/`](docs/), with original design references preserved in [`docs_original/`](docs_original/).
 
 | Milestone | Description | State |
 |---|---|---|
-| M0 | Python simulator for time sync and drift control | Planned |
+| M0 | Python simulator for time sync and drift control | In progress |
 | M1 | Time sync between two real phones | Planned |
 | M2 | Scheduled click-track start on 2 receivers | Planned |
 | M3 | Output-timestamp mapping and manual offsets | Planned |
@@ -30,6 +30,18 @@
 | M7 | iOS receiver | Planned |
 | M8 | Acoustic calibration | Planned |
 | M9 | 6-10 receivers and train trial | Planned |
+
+### Run the M0 simulator
+
+Requires Python 3.11 or newer. No runtime dependencies are required.
+
+```bash
+cd sim
+PYTHONPATH=src python -m unittest discover -s tests -v
+PYTHONPATH=src python -m sync_in_it_sim --duration 60 --seed 7
+```
+
+M0 outputs are simulated, not measurements from Android devices. See [`sim/README.md`](sim/README.md) for scope and limitations.
 
 ---
 

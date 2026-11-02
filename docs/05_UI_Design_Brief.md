@@ -1,8 +1,10 @@
 # UI Design Brief — Sync In It
 
 **Document status:** Draft design brief  
-**Version:** 1.0  
-**Last updated:** 1 November 2026
+**Version:** 1.2  
+**Last updated:** 2 November 2026
+
+**Terminology:** User-facing roles are **Host** and **Speaker**. Internal state, protocol and core code keep the names **master** and **receiver**, respectively. The authoritative workflow is [04_App_Flow.md](04_App_Flow.md).
 
 ## 1. Design objective
 
@@ -14,51 +16,55 @@ The interface is a control surface for a real-time system. Accuracy and clear fa
 
 1. **State first:** connection and synchronization state must be immediately visible.
 2. **Honest status:** never show READY when only the network connection succeeded.
-3. **One obvious primary action:** the master should have a clear next action at each stage.
+3. **One obvious primary action:** the Host should have a clear next action at each stage.
 4. **Progressive disclosure:** ordinary users see simple status; diagnostics expose detailed timing data.
-5. **Safe failure:** an unsynchronized receiver is muted, not allowed to create an echo.
+5. **Safe failure:** an unsynchronized Speaker is muted, not allowed to create an echo.
 6. **Explain permissions in context:** show why local-network, microphone, capture or camera access is needed before prompting.
 7. **No false precision:** show measured timing with units and confidence; do not imply guaranteed zero-ms synchronization.
 
 ## 3. Information architecture
 
-### 3.1 Android master
+### 3.1 Android Host
 
 | Screen | Primary content | Primary action |
 |---|---|---|
 | Role selection | Create session / Join session | Select role |
-| Lobby | QR code, session status, receiver list, network state | Admit/manage receivers |
+| Lobby | QR code, session status, Speaker list, network state | Admit/manage Speakers |
 | Source selection | Local file, supported live capture, capture limitation | Select source |
-| Preparing | Buffer and clock readiness per receiver | Wait or remove unready receiver |
+| Preparing | Buffer and clock readiness per Speaker | Wait or remove unready Speaker |
 | Player | Playback controls, group health, session delay | Play/Pause/Resume |
 | Calibration | Placement instructions, measurement progress, result table | Start calibration |
 | Diagnostics | Timing, network, buffer and event data | Export diagnostics |
 
-### 3.2 Android and iOS receiver
+### 3.2 Android and iOS Speaker
 
 | Screen | Primary content | Primary action |
 |---|---|---|
 | Join | QR scanner and manual connection alternative | Join |
-| Status | Master connection, sync state, buffer, audio route | Retry/reconnect |
+| Status | Host connection, sync state, buffer, audio route | Retry/reconnect |
 | Settings | Channel, local volume, manual offset | Apply setting |
 | Diagnostics | Clock, RTT, drift, gaps, underruns | Export diagnostics |
 
+### 3.3 M1 build boundary
+
+M1 is limited to Home, a minimal Host lobby, diagnostics, Speaker join by typing the Host address, and Speaker diagnostics. The QR scanner, full network-check screen, file selection, preparing/player screens, calibration, and later recovery workflows are built at their specified milestones. Do not create nonfunctional versions of later screens merely to make the app look complete.
+
 ## 4. Screen requirements
 
-### 4.1 Master lobby
+### 4.1 Host lobby
 
 Must show:
 - Session active/inactive.
 - Join QR code and short manual connection instructions.
-- Connected receiver count.
-- One row per receiver with name/model, platform and current state.
+- Connected Speaker count.
+- One row per Speaker with name/model, platform and current state.
 - Sync quality indicator with a textual label.
 - Last report time and network health warning.
-- Remove receiver and end-session actions.
+- Remove Speaker and end-session actions.
 
 Do not put raw nanosecond values in the primary lobby. Reserve detailed values for diagnostics.
 
-### 4.2 Receiver list item
+### 4.2 Speaker list item
 
 Each row should include:
 - Device label, model and platform.
@@ -71,14 +77,14 @@ Use text labels in addition to color so the UI remains understandable with color
 
 ### 4.3 Preparing screen
 
-Display per receiver:
+Display per Speaker:
 - Clock synchronization status.
 - Buffer fill in milliseconds or seconds.
 - Required buffer threshold.
 - READY or a blocking reason.
 - Estimated preparation only when enough measurement data exists.
 
-The master must not start a group merely because most receiver rows are green unless the admission policy explicitly excludes the remaining receivers.
+The Host must not start a group merely because most Speaker rows are green unless the admission policy explicitly excludes the remaining Speakers.
 
 ### 4.4 Player screen
 
@@ -87,8 +93,8 @@ Display:
 - Play/pause/resume controls appropriate to source mode.
 - Shared timeline status.
 - Group delay for live capture.
-- Active receiver count.
-- Degraded/muted receiver summary.
+- Active Speaker count.
+- Degraded/muted Speaker summary.
 - Calibration status and a route to recalibrate.
 
 Live-capture mode must not show file seek controls unless seek behavior is actually implemented and valid for that source.
@@ -96,12 +102,12 @@ Live-capture mode must not show file seek controls unless seek behavior is actua
 ### 4.5 Calibration screen
 
 Explain:
-- Where the master microphone must be placed.
-- That each receiver emits a short test chirp.
+- Where the Host microphone must be placed.
+- That each Speaker emits a short test chirp.
 - That the result applies only to current device placement and listening position.
 - That the area should be quiet during measurement.
 
-Show each receiver's measured delay, confidence/status, compensation and manual adjustment. Provide repeat, reset and undo actions. Never silently apply a low-confidence measurement.
+Show each Speaker's measured delay, confidence/status, compensation and manual adjustment. Provide repeat, reset and undo actions. Never silently apply a low-confidence measurement.
 
 ### 4.6 Diagnostics screen
 
@@ -163,7 +169,7 @@ The final palette, typography and iconography can be selected during UI design. 
 
 ## 8. Notifications and interruptions
 
-- Android master uses a foreground-service notification while hosting.
+- Android Host uses a foreground-service notification while hosting.
 - Notification content should identify active session state and provide a safe return-to-app action.
 - Handle incoming calls, audio focus loss and route changes explicitly.
 - On iOS, handle audio interruptions and background-audio lifecycle.

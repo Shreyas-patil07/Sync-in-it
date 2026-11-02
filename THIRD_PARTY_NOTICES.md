@@ -4,7 +4,7 @@ This file lists third-party software, fonts and reference material connected to 
 
 Last updated: 2 November 2026.
 
-## 1. Referenced in the repository today (frontend)
+## 1. Referenced in the repository today
 
 | Component | Use | License | Notes |
 |---|---|---|---|
@@ -15,6 +15,7 @@ Last updated: 2 November 2026.
 | @vitejs/plugin-react | Frontend build | MIT | Development dependency |
 | @types/react, @types/react-dom | Type definitions | MIT | Development dependencies |
 | Inter, Outfit, DM Mono | Frontend fonts | SIL Open Font License 1.1 | Loaded from Google Fonts at runtime, not stored in this repository |
+| setuptools (>=68) | Python simulator package build backend | MIT | Build-time dependency only; no simulator runtime dependency |
 
 ## 2. Planned dependencies (not yet in the repository)
 

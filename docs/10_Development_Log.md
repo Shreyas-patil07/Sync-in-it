@@ -38,7 +38,7 @@
 **Verification:** All five root licensing files are present; README license references resolve; ADR-017 records the split-license decision.  
 **Result:** Code, documentation, brand assets and third-party components have an explicit licensing map.  
 **Risks or limitations:** `NOTICE` uses the GitHub account name as the copyright holder. Confirm the right to reserve the logo/name before relying on the brand-rights statement. Dependency license entries must be re-verified for exact versions at release. Not legal advice.  
-**Next action:** Continue Dev-0 repository hygiene, then begin M0.
+**Next action:** Continue M0 simulator scenarios, cross-language golden vectors and C++ parity before proceeding to M1.
 
 ## 3. Current engineering status
 
@@ -47,7 +47,7 @@
 | Product requirements | Drafted | Review and approve capacity/device scope |
 | Technical requirements | Drafted | Confirm device OS baselines and hardware inventory |
 | Architecture | Drafted | Resolve open ADRs and review timing boundaries |
-| App flow | Drafted | UX review and state-transition validation |
+| App flow | Draft v2.0 | Validate state transitions and accept remaining open UX choices |
 | UI design brief | Drafted | Visual design and usability review |
 | Protocol/data schema | Draft proposal | Protocol review, test vectors and parser tests |
 | Implementation plan | Drafted | M0 repository skeleton and task breakdown |
@@ -59,7 +59,7 @@
 
 | Milestone | Description | Status |
 |---|---|---|
-| M0 | Python simulator for time sync and drift control | Planned |
+| M0 | Python simulator for time sync and drift control | In progress |
 | M1 | Time sync between two physical phones | Planned |
 | M2 | Scheduled click-track start on two receivers | Planned |
 | M3 | Output timestamp mapping and manual offsets | Planned |
@@ -77,7 +77,7 @@
 3. Confirm whether a Mac and physical iPhone are available for M7.
 4. Verify OS minimums against the required audio and background APIs.
 5. Choose and record the final C++ unit-test framework.
-6. Select the project license after checking whether any third-party code will be reused.
+6. Review the NOTICE copyright holder and confirm rights over reserved project branding before release.
 7. Decide when authenticated encryption becomes mandatory.
 
 ## 6. Test evidence index
@@ -104,3 +104,25 @@ No physical-device synchronization results are recorded in this initial log. Add
 **Result:** What was observed  
 **Risks or limitations:** What remains uncertain  
 **Next action:** Specific next step
+
+
+### 2 November 2026 — Host/Speaker workflow v2.0 and M0 simulator started
+
+**Type:** UX specification / Implementation  
+**Status:** In progress  
+**Summary:**
+- Replaced `docs/04_App_Flow.md` v1.0 with the supplied Host/Speaker workflow v2.0. User-facing role names are Host and Speaker; protocol/core names remain master and receiver.
+- Updated the UI design brief to use Host/Speaker terminology and reference the workflow's Home, network-check, lobby, prepare, player, join, ready and problem-state flows.
+- Added the initial dependency-free Python M0 simulator under `sim/`: simulated monotonic clocks, four-timestamp exchanges, directional delay/jitter/loss/spikes, lowest-RTT offset/skew estimation, sample timeline, DAC clock model, drift decisions, late join and a synthetic ten-receiver fan-out scenario.
+- Used the supplied Flutter Gaming Cafe Manager project as a structural/UI reference only. Sync In It remains native Kotlin + JNI + C++17 + Oboe/AAudio under ADR-002; no Flutter runtime or gaming-cafe domain logic was copied.
+
+**Verification:**
+- `PYTHONPATH=sim/src python -m unittest discover -s sim/tests -v`: 9 tests passed.
+- `PYTHONPATH=sim/src python -m sync_in_it_sim --duration 60 --seed 7`: all nine named scenarios and the ten-receiver fan-out scenario completed.
+- In the synthetic +30 ppm case, estimated skew was 29.89 ppm and final offset error was -0.011 ms.
+
+**Result:** M0 has a working reference-simulator baseline, but remains **In progress** and is not marked complete.
+
+**Risks or limitations:** These are simulated results, not measurements from phones. The ten-receiver fan-out uses independent paths and does not model shared Wi-Fi airtime contention. M0 still needs fuller playout-error/drift tracking, scenario acceptance thresholds, shared golden vectors and C++ parity. No Android UI, network session or audio playback has been built yet.
+
+**Next action:** Complete the M0 validation work, then begin the M1 native Android Home/minimal lobby/diagnostics and typed-address Speaker join flow.

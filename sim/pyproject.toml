@@ -1,0 +1,16 @@
+[build-system]
+requires = ["setuptools>=68"]
+build-backend = "setuptools.build_meta"
+
+[project]
+name = "sync-in-it-sim"
+version = "0.1.0"
+description = "Deterministic reference simulator for Sync In It clock synchronization and playout timing"
+requires-python = ">=3.11"
+dependencies = []
+
+[project.scripts]
+sync-in-it-sim = "sync_in_it_sim.cli:main"
+
+[tool.setuptools.packages.find]
+where = ["src"]
