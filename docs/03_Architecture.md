@@ -115,6 +115,18 @@ The master maintains one `ReceiverSession` per authenticated control connection.
 
 The session object is single-owner-thread state; the platform adapter must serialize events for each connection. Buffer and clock-quality thresholds are configuration, not hard-coded protocol truths. This state machine validates lifecycle and identity but does not authenticate the audio transport cryptographically or replace socket-level timeout and disconnect handling.
 
+### 4.6 Kotlin/JVM socket transport module
+
+The current `android/transport` module is a pure Kotlin/JVM adapter built on Java networking APIs. It can be consumed by a future Android application, but it is not an Android application module and has no manifest, UI, foreground service, permissions or JNI wiring.
+
+- `TcpFrameServer` provides the master-side listener; `TcpFrameConnection.connect` provides the receiver-side client. Each accepted connection owns its own length-prefixed frame reader, validates the 4-byte little-endian length before allocating the body, and enforces the 65,536-byte frame maximum.
+- TCP reads are blocking and distinguish clean EOF between frames from truncated frames. TCP writes are synchronized per connection. Connect, accept and read timeouts are configurable; TCP_NODELAY and keepalive are enabled.
+- `UdpTimeSyncServer` receives fixed 38-byte v1 datagrams and returns the peer endpoint for the response. `UdpTimeSyncClient` uses a connected UDP socket so responses from another endpoint are filtered.
+- All socket operations run on dedicated I/O threads. This adapter does not create a send queue: callers must use bounded outbound queues and keep network I/O out of the audio callback.
+- Kotlin currently duplicates the small TCP frame envelope parser because the C++ core has no JNI bridge yet. Keep it byte-compatible with `core/src/protocol.cpp` and `protocol/vectors/wire_protocol.json`; the UDP adapter validates datagram size only and delegates packet semantics to the shared protocol/session layer.
+
+The Gradle `check` task runs loopback TCP/UDP integration tests, including fragmented and coalesced TCP frames, oversized/truncated TCP frames, malformed UDP sizes and a request/response exchange. Passing loopback tests proves local socket behavior only; it does not prove Android permission/lifecycle behavior, Wi-Fi peer connectivity or synchronization on phones.
+
 ## 5. Data and clock domains
 
 The system has at least three clock domains per receiver:
