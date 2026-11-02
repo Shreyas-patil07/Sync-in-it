@@ -126,3 +126,30 @@ No physical-device synchronization results are recorded in this initial log. Add
 **Risks or limitations:** These are simulated results, not measurements from phones. The ten-receiver fan-out uses independent paths and does not model shared Wi-Fi airtime contention. M0 still needs fuller playout-error/drift tracking, scenario acceptance thresholds, shared golden vectors and C++ parity. No Android UI, network session or audio playback has been built yet.
 
 **Next action:** Complete the M0 validation work, then begin the M1 native Android Home/minimal lobby/diagnostics and typed-address Speaker join flow.
+
+### 2 November 2026 — M0 burst-loss and playout-tracking diagnostics
+
+**Type:** Implementation / Test  
+**Status:** In progress  
+**Branch:** `feature/m0-tracking-metrics`
+
+**Summary:**
+- Added configurable contiguous burst loss to the network model, alongside independent packet loss.
+- Added finite/range validation for simulated network profiles, clock rates and simulation inputs.
+- Added progressive estimator diagnostics. Convergence is reported only after three consecutive updates satisfy the 1 ms offset-error and 5 ppm skew-error thresholds.
+- Added a simplified 20 ms playout-control simulation that reports frame slips per minute, hard resync count, and p95/maximum/final modeled playout error.
+- Added burst-loss, severe-asymmetry, and ten-receiver fan-out coverage to the scenario report.
+- Updated the simulator CLI and documentation to define the new metrics and their limits.
+
+**Verification:**
+- `PYTHONPATH=src python -m unittest discover -s tests -v`: 18 tests passed locally on Python 3.13.
+- `PYTHONPATH=src python -m sync_in_it_sim --duration 60 --seed 7`: 12 scenario reports completed.
+- JSON output parsed successfully; Python bytecode compilation completed.
+- The `fast_clock_30ppm` scenario reported 0.131 ms final offset error, 30.20 ppm estimated receiver skew, 55.0 s convergence time, 0.128 ms p95 and 0.143 ms maximum modeled playout error, 180 frame slips/minute, and zero hard resyncs.
+- The `severe_asymmetric_delay` scenario reported about 7 ms offset bias and exercised one hard resync.
+
+**Result:** The simulator now emits the M0 diagnostic metrics and exercises burst-loss and hard-resync paths. M0 remains **In progress**; no C++ parity, shared golden vectors, Android device timing or acoustic playback is claimed.
+
+**Risks or limitations:** Playout tracking is a simplified 20 ms control-policy model, not a sample-accurate audio engine. Its error statistics are synthetic and sampled before each correction. The ten-receiver fan-out still models independent paths, not shared Wi-Fi airtime contention. The current one-frame slip policy does not implement continuous resampling/slew correction. GitHub Actions matrix results must be checked after the PR is opened.
+
+**Next action:** Define shared estimator/timing golden vectors and implement the matching C++17 reference before starting M1 networking.

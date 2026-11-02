@@ -1,10 +1,10 @@
 # Implementation Plan — Sync In It
 
 **Document status:** Active execution plan  
-**Version:** 1.1  
+**Version:** 1.2  
 **Last updated:** 2 November 2026
 
-**Current progress:** M0 reference simulator implementation is in progress under `sim/`. It has a deterministic Python implementation and unit tests, but is not yet the complete M0 exit gate. No phone synchronization or audio playback has been validated.
+**Current progress:** M0 reference simulator implementation is in progress under `sim/`. It has deterministic Python scenarios, input validation, burst-loss modeling, convergence diagnostics and a simplified playout-tracking loop, but is not yet the complete M0 exit gate. No phone synchronization or audio playback has been validated.
 
 ## 1. Implementation strategy
 
@@ -55,6 +55,8 @@ Exit gate:
 - M0 scenarios pass.
 - The +30 ppm simulation case remains within the agreed 1 ms estimator/tracking gate.
 - Offset, skew, convergence time, slip rate, hard resync count and resulting playout error are reported.
+
+The convergence diagnostic requires three consecutive estimator updates with absolute offset error at or below 1 ms and absolute skew error at or below 5 ppm. The playout metrics come from a simplified 20 ms control-policy simulation; they are not acoustic measurements and do not model a production audio callback or continuous resampling.
 
 ### Phase 2 — Protocol and clock sync on two Android phones (M1)
 
