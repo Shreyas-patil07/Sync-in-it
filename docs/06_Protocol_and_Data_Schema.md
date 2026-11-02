@@ -244,9 +244,22 @@ Event types include:
 
 Store explicit units in field names. Never mix nanoseconds and microseconds in the same untyped field.
 
-## 12. Protocol test vectors
+## 12. Timing and protocol test vectors
 
-Before native implementation, create golden vectors for:
+### 12.1 M0 timing vectors
+
+The shared M0 reference vectors are stored in `protocol/vectors/m0_timing.json`. They are consumed directly by the Python tests and converted to a generated C++ header by the CMake build. They cover:
+- Four-timestamp RTT and offset, including negative-floor behavior.
+- Lowest-RTT offset/skew regression, invalid/expired/future sample filtering and insufficient skew samples.
+- Timeline mapping, paused anchors and ties-to-even rounding.
+- DAC frame/time conversion with positive and negative ppm drift.
+- Drift-controller dead-band, one-frame slip and hard-resync thresholds.
+
+These vectors establish Python/C++ algorithm parity; they are not wire-message serialization vectors or proof of acoustic synchronization.
+
+### 12.2 Wire-protocol vectors (required before M1 protocol implementation)
+
+Before native protocol implementation, create shared vectors for:
 1. Valid and invalid HELLO/WELCOME frames.
 2. Every control message type.
 3. Audio PCM16 chunk with known sample indices.
@@ -257,7 +270,6 @@ Before native implementation, create golden vectors for:
 8. Little-endian edge values and signed timestamp handling.
 
 Both Python reference code and C++ encoders/decoders must pass the same vectors.
-
 ## 13. Outstanding protocol questions
 
 - Capacity definition: 10 total phones versus 10 receivers plus master.
