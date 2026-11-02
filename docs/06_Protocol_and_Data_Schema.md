@@ -135,7 +135,7 @@ Audio uses message type 0x80 over the audio TCP connection. It uses the common 4
 | seq | 4 bytes | Chunk sequence |
 | sampleIdx | 8 bytes | First frame index in the chunk |
 | frames | 2 bytes | Number of audio frames |
-| codec | 1 byte | PCM16 in v1 |
+| codec | 1 byte | `0` = PCM16 in v1 |
 | channels | 1 byte | Number of channels |
 | flags | 1 byte | Chunk flags |
 | payload | Variable | Encoded audio |
