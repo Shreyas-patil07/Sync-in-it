@@ -226,6 +226,7 @@ class TcpFrameServer(
     private val closed = AtomicBoolean(false)
 
     val localPort: Int get() = server.localPort
+    val localBindAddress: String get() = server.inetAddress?.hostAddress ?: "unknown"
     val isListening: Boolean get() = server.isBound && !server.isClosed
 
     init {
