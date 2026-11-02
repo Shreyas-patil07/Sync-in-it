@@ -109,10 +109,11 @@ class MasterSessionHost(context: Context, private val onStatus: (String) -> Unit
                 var audio: TcpFrameConnection? = null
                 try {
                     onStatus("Waiting for receiver HELLO on TCP $CONTROL_PORT…")
-                    control = checkNotNull(controlServer).accept()
-                    controlConnection = control
+                    val acceptedControl = checkNotNull(controlServer).accept()
+                    control = acceptedControl
+                    controlConnection = acceptedControl
 
-                    val hello = control.readFrame() ?: error("receiver closed before HELLO")
+                    val hello = acceptedControl.readFrame() ?: error("receiver closed before HELLO")
                     check(hello.messageType == 0x01 && hello.flags == 0) {
                         "first control frame must be HELLO"
                     }
@@ -125,15 +126,16 @@ class MasterSessionHost(context: Context, private val onStatus: (String) -> Unit
                     val welcome = checkNotNull(currentSession.welcomeFrame()) {
                         "native WELCOME was not produced"
                     }
-                    control.writeEncodedFrame(welcome)
+                    acceptedControl.writeEncodedFrame(welcome)
                     onStatus("HELLO accepted. Waiting for the separate audio connection…")
 
-                    audio = checkNotNull(audioServer).accept()
-                    audioConnection = audio
-                    check(audio.remoteAddress == control.remoteAddress) {
+                    val acceptedAudio = checkNotNull(audioServer).accept()
+                    audio = acceptedAudio
+                    audioConnection = acceptedAudio
+                    check(acceptedAudio.remoteAddress == acceptedControl.remoteAddress) {
                         "audio TCP peer does not match the admitted control peer"
                     }
-                    val audioHello = audio.readFrame() ?: error("receiver closed before AUDIO_HELLO")
+                    val audioHello = acceptedAudio.readFrame() ?: error("receiver closed before AUDIO_HELLO")
                     check(audioHello.messageType == 0x03 && audioHello.flags == 0) {
                         "first audio-channel frame must be AUDIO_HELLO"
                     }
@@ -146,7 +148,7 @@ class MasterSessionHost(context: Context, private val onStatus: (String) -> Unit
                     onStatus(
                         "Receiver admitted · native state ${currentSession.state()} · starting UDP clock sync."
                     )
-                    runTimeSyncServer(control)
+                    runTimeSyncServer(acceptedControl)
                     return
                 } catch (error: Exception) {
                     if (closed.get()) break
