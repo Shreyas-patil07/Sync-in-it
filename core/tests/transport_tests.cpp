@@ -90,11 +90,11 @@ void test_time_sync_responder_identity_and_packet_creation() {
                syit::TimeSyncRequestStatus::WrongSession,
            "responder rejects wrong session");
     request.session_id -= 1U;
-    request.receiver_id += 1U;
+    request.receiver_id = static_cast<std::uint16_t>(request.receiver_id + 1U);
     expect(responder.make_response(request, 1, 2, response) ==
                syit::TimeSyncRequestStatus::WrongReceiver,
            "responder rejects wrong receiver identity");
-    request.receiver_id -= 1U;
+    request.receiver_id = static_cast<std::uint16_t>(request.receiver_id - 1U);
     request.packet_type = 2U;
     expect(responder.make_response(request, 1, 2, response) ==
                syit::TimeSyncRequestStatus::WrongPacketType,
