@@ -44,6 +44,7 @@ class MasterSessionHost(context: Context, private val onStatus: (String) -> Unit
     @Volatile private var controlConnection: TcpFrameConnection? = null
     @Volatile private var audioConnection: TcpFrameConnection? = null
     @Volatile private var nativeSession: NativeReceiverSession? = null
+    @Volatile private var nativeSessionConfig: ReceiverSessionConfig? = null
     @Volatile private var advertiser: LanSessionAdvertiser? = null
 
     fun start(): HostInvitation {
@@ -52,6 +53,7 @@ class MasterSessionHost(context: Context, private val onStatus: (String) -> Unit
 
         var control: TcpFrameServer? = null
         var audio: TcpFrameServer? = null
+        var time: UdpTimeSyncServer? = null
         var session: NativeReceiverSession? = null
         try {
             val anyAddress = InetAddress.getByName("0.0.0.0")
@@ -59,19 +61,21 @@ class MasterSessionHost(context: Context, private val onStatus: (String) -> Unit
             audio = audioListener
             val controlListener = TcpFrameServer(anyAddress, CONTROL_PORT, connectionReadTimeoutMs = AUDIO_READ_TIMEOUT_MS)
             control = controlListener
+            // Bind UDP before advertising to avoid a receiver racing the time-sync listener.
+            val timeListener = UdpTimeSyncServer(anyAddress, TIME_PORT, receiveTimeoutMs = 500)
+            time = timeListener
 
             val random = SecureRandom()
             val token = ByteArray(16).also(random::nextBytes)
             val sessionId = random.nextInt().toLong() and 0xffff_ffffL
-            session = NativeReceiverSession.create(
-                ReceiverSessionConfig(
-                    sessionId = sessionId,
-                    receiverId = 1,
-                    token = token,
-                    audioPort = audioListener.localPort,
-                    timePort = TIME_PORT
-                )
+            val config = ReceiverSessionConfig(
+                sessionId = sessionId,
+                receiverId = 1,
+                token = token.copyOf(),
+                audioPort = audioListener.localPort,
+                timePort = TIME_PORT
             )
+            session = NativeReceiverSession.create(config)
 
             check(!closed.get()) { "host session was stopped while starting" }
             val deviceLabel = Build.MODEL.trim().take(32).ifBlank { "Android" }
@@ -81,7 +85,9 @@ class MasterSessionHost(context: Context, private val onStatus: (String) -> Unit
 
             controlServer = controlListener
             audioServer = audioListener
+            timeSyncServer = timeListener
             nativeSession = session
+            nativeSessionConfig = config
             advertiser = serviceAdvertiser
             executor.execute(::serve)
             onStatus("Hosting and advertising on this Wi-Fi network. Waiting for a receiver.")
@@ -90,57 +96,49 @@ class MasterSessionHost(context: Context, private val onStatus: (String) -> Unit
             session?.close()
             control?.close()
             audio?.close()
+            time?.close()
             closed.set(true)
             executor.shutdownNow()
             throw error
         }
-    }
-
     private fun serve() {
+        var admitted = false
         try {
-            onStatus("Waiting for receiver HELLO on TCP $CONTROL_PORT…")
-            val control = checkNotNull(controlServer).accept()
-            controlConnection = control
+            while (!closed.get()) {
+                var control: TcpFrameConnection? = null
+                var audio: TcpFrameConnection? = null
+                try {
+                    onStatus("Waiting for receiver HELLO on TCP $CONTROL_PORT…")
+                    control = checkNotNull(controlServer).accept()
+                    controlConnection = control
 
-            val hello = control.readFrame() ?: error("receiver closed before HELLO")
-            check(hello.messageType == 0x01 && hello.flags == 0) { "first control frame must be HELLO" }
-            val helloResult = checkNotNull(nativeSession).onHelloFrame(hello.toEncodedBytes())
-            check(helloResult == ReceiverSessionResult.Accepted) { "HELLO rejected: $helloResult" }
+                    val hello = control.readFrame() ?: error("receiver closed before HELLO")
+                    check(hello.messageType == 0x01 && hello.flags == 0) {
+                        "first control frame must be HELLO"
+                    }
+                    val currentSession = checkNotNull(nativeSession)
+                    val helloResult = currentSession.onHelloFrame(hello.toEncodedBytes())
+                    check(helloResult == ReceiverSessionResult.Accepted) {
+                        "HELLO rejected: $helloResult"
+                    }
 
-            val welcome = checkNotNull(nativeSession?.welcomeFrame()) { "native WELCOME was not produced" }
-            control.writeEncodedFrame(welcome)
-            onStatus("HELLO accepted. Waiting for the separate audio connection…")
+                    val welcome = checkNotNull(currentSession.welcomeFrame()) {
+                        "native WELCOME was not produced"
+                    }
+                    control.writeEncodedFrame(welcome)
+                    onStatus("HELLO accepted. Waiting for the separate audio connection…")
 
-            val audio = checkNotNull(audioServer).accept()
-            audioConnection = audio
-            check(audio.remoteAddress == control.remoteAddress) {
-                "audio TCP peer does not match the admitted control peer"
-            }
-            val audioHello = audio.readFrame() ?: error("receiver closed before AUDIO_HELLO")
-            check(audioHello.messageType == 0x03 && audioHello.flags == 0) {
-                "first audio-channel frame must be AUDIO_HELLO"
-            }
-            val audioResult = checkNotNull(nativeSession).onAudioHelloFrame(audioHello.toEncodedBytes())
-            check(audioResult == ReceiverSessionResult.Accepted) { "AUDIO_HELLO rejected: $audioResult" }
-
-            onStatus(
-                "Receiver admitted · native state ${nativeSession?.state()} · starting UDP clock sync."
-            )
-            runTimeSyncServer(control)
-        } catch (error: Exception) {
-            if (!closed.get()) onStatus("Host handshake failed: ${error.message ?: error.javaClass.simpleName}")
-        } finally {
-            closeResources()
-        }
-    }
-
-    private fun runTimeSyncServer(control: TcpFrameConnection) {
-        val server = UdpTimeSyncServer(
-            bindAddress = InetAddress.getByName("0.0.0.0"),
-            port = TIME_PORT,
-            receiveTimeoutMs = 500
-        )
-        timeSyncServer = server
+                    audio = checkNotNull(audioServer).accept()
+                    audioConnection = audio
+                    check(audio.remoteAddress == control.remoteAddress) {
+                        "audio TCP peer does not match the admitted control peer"
+                    }
+                    val audioHello = audio.readFrame() ?: error("receiver closed before AUDIO_HELLO")
+                    check(audioHello.messageType == 0x03 && audioHello.flags == 0) {
+                        "first audio-channel frame must be AUDIO_HELLO"
+                    }
+                    val audioResult = currentSession.onAudioHelloFrame(audioHe    private fun runTimeSyncServer(control: TcpFrameConnection) {
+        val server = checkNotNull(timeSyncServer) { "UDP time-sync listener was not started" }
 
         val controlReader = Thread({ readControlFrames(control) }, "syncinit-master-control-reader").apply {
             isDaemon = true
@@ -246,6 +244,7 @@ class MasterSessionHost(context: Context, private val onStatus: (String) -> Unit
         timeSyncServer = null
         advertiser = null
         nativeSession = null
+        nativeSessionConfig = null
     }
 
     private fun ByteArray.toHex(): String = joinToString("") { "%02X".format(it.toInt() and 0xff) }
