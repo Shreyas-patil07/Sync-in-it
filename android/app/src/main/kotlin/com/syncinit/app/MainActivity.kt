@@ -235,7 +235,6 @@ class MainActivity : Activity() {
                 message.startsWith("Admitted receiver disconnected:")
             if (hostEnded && masterHost != null) {
                 masterHost = null
-                hostServiceName = null
                 if (::hostDetails.isInitialized) {
                     hostDetails.text = "Host session ended. Tap Start hosting to advertise again."
                 }
