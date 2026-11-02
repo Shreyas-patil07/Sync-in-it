@@ -38,33 +38,21 @@ function Brand({ compact = false }: { compact?: boolean }) {
 }
 
 function Header({ page, navigate }: { page: Page; navigate: (page: NavigablePage) => void }) {
-  const [menuOpen, setMenuOpen] = useState(false);
-  useEffect(() => {
-    document.body.classList.toggle('menu-open', menuOpen);
-    return () => document.body.classList.remove('menu-open');
-  }, [menuOpen]);
-  const go = (next: NavigablePage) => { navigate(next); setMenuOpen(false); };
+  const go = (next: NavigablePage) => navigate(next);
 
   return <>
     <a className="skip-link" href="#main-content">Skip to content</a>
     <header className="site-header">
-      <div className="nav-island">
+      <div className="brand-island">
         <Brand compact />
-        <nav id="primary-navigation" className={menuOpen ? 'nav-links nav-open' : 'nav-links'} aria-label="Primary navigation">
-          <a href="/downloads" onClick={(event) => { event.preventDefault(); go('downloads'); }} aria-current={page === 'downloads' ? 'page' : undefined}>Downloads</a>
-          <a className="nav-source" href={REPO} target="_blank" rel="noreferrer">GitHub <span aria-hidden="true">↗</span></a>
-        </nav>
-        <button className={menuOpen ? 'menu-toggle is-open' : 'menu-toggle'} type="button"
-          aria-label={menuOpen ? 'Close navigation' : 'Open navigation'}
-          aria-controls="primary-navigation" aria-expanded={menuOpen}
-          onClick={() => setMenuOpen((open) => !open)}>
-          <span /><span />
-        </button>
       </div>
     </header>
+    <nav id="primary-navigation" className="nav-links action-island" aria-label="Primary navigation">
+      <a href="/downloads" onClick={(event) => { event.preventDefault(); go('downloads'); }} aria-current={page === 'downloads' ? 'page' : undefined}>Downloads</a>
+      <a className="nav-source" href={REPO} target="_blank" rel="noreferrer">GitHub <span aria-hidden="true">↗</span></a>
+    </nav>
   </>;
 }
-
 function Eyebrow({ children }: { children: ReactNode }) {
   return <p className="eyebrow"><span className="eyebrow-mark" />{children}</p>;
 }
