@@ -101,6 +101,8 @@ class MasterSessionHost(context: Context, private val onStatus: (String) -> Unit
             executor.shutdownNow()
             throw error
         }
+    }
+
     private fun serve() {
         var admitted = false
         try {
