@@ -6,6 +6,7 @@ import android.view.Gravity
 import android.widget.LinearLayout
 import android.widget.TextView
 import com.syncinit.app.core.NativeCore
+import com.syncinit.app.core.NativeSessionSmokeTest
 
 class MainActivity : Activity() {
     override fun onCreate(savedInstanceState: Bundle?) {
@@ -39,8 +40,10 @@ class MainActivity : Activity() {
     }
 
     private fun nativeStatus(): String = try {
-        "Native C++ core loaded · API ${NativeCore.nativeCoreVersion()}"
+        "Native C++ core API ${NativeCore.nativeCoreVersion()} · ${NativeSessionSmokeTest.run()}"
     } catch (error: LinkageError) {
         "Native C++ core failed to load: ${error.message ?: "unknown linker error"}"
+    } catch (error: Exception) {
+        "Native JNI smoke test failed: ${error.message ?: "unknown native error"}"
     }
 }
