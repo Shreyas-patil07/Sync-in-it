@@ -61,7 +61,7 @@ def main() -> None:
     print(
         f"{'Scenario':<24} {'RX/Samp':>7} {'Offset err (ms)':>15} {'Skew (ppm)':>11} "
         f"{'Conv (s)':>9} {'Slip/min':>9} {'Slip p95/max':>15} "
-        f"{'Resamp p95/max':>15} {'Rate RMS/peak':>15}"
+        f"{'Resamp p95/max':>15} {'Rate RMS/peak':>15} {'Resync S/R':>12}"
     )
     comparison = results.get("acquisition_schedule_comparison")
     for name, result in results.items():
@@ -84,10 +84,14 @@ def main() -> None:
         rate_rms = result.get("resampler_rate_adjustment_rms_ppm")
         rate_peak = result.get("resampler_rate_adjustment_max_abs_ppm")
         rate_text = "n/a" if rate_rms is None or rate_peak is None else f"{rate_rms:.1f}/{rate_peak:.1f}"
+        slip_resyncs = result.get("hard_resync_count")
+        resampler_resyncs = result.get("resampler_hard_resync_count")
+        resync_text = "n/a" if slip_resyncs is None or resampler_resyncs is None else f"{slip_resyncs}/{resampler_resyncs}"
         receiver_count = result.get("receiver_count", result["samples_received"])
         print(
             f"{name:<24} {receiver_count:>4} {result['offset_error_ms']:>15.3f} {skew_text:>11} "
-            f"{convergence_text:>9} {slips_text:>9} {slip_text:>15} {resample_text:>15} {rate_text:>15}"
+            f"{convergence_text:>9} {slips_text:>9} {slip_text:>15} {resample_text:>15} "
+            f"{rate_text:>15} {resync_text:>12}"
         )
 
     if comparison is not None:
