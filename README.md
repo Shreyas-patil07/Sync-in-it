@@ -16,22 +16,30 @@
 
 ## Status
 
-**M0 remains in progress; M1 protocol integration is underway.** The Python reference simulator uses adaptive clock acquisition: a 20-probe join burst, 500 ms retries until three consecutive estimator updates meet the stability gate, then a 2 s steady-state interval. A portable C++17 timing core and shared Python/C++ golden vectors are also available. The M1 implementation now includes shared TCP/UDP wire codecs, typed control-message codecs, a bounded incremental TCP frame decoder in Python and C++, bounded C++ transport primitives for frame queues and time-sync exchange correlation, and a master-side receiver session state machine covering HELLO, AUDIO_HELLO, READY, playback anchors, degradation and re-synchronization. A minimal Android launcher app and JNI bridge now expose the C++ receiver-session lifecycle, with a runtime JNI smoke test for HELLO, WELCOME, AUDIO_HELLO and READY/ARMED transitions. The Kotlin/JVM socket adapter is included as a Gradle module. The Android app now advertises host sessions with Android NSD/mDNS and displays discovered hosts in a Nearby Sessions list; receivers can tap a host instead of entering an IP address and token manually. A one-master/one-receiver join sends HELLO over TCP, receives a native-encoded WELCOME, opens the separate audio TCP channel and sends AUDIO_HELLO. JNI routes those frames through the shared C++ protocol codecs and master-side ReceiverSession. A device-local loopback smoke test exercises both TCP channels and one native UDP four-timestamp exchange. The receiver now runs the shared C++ time-sync correlator and clock estimator using the simulator's 20-probe/50 ms join burst, 500 ms unstable retry, 2 s stable cadence, and three-update acquisition gate (8 selected samples, 10 s span, residual RMS below 0.25 ms). It sends READY only after clock acquisition passes; the master rejects the current 0 ms audio buffer and keeps the session in Synchronizing. The portable C++ audio layer now implements the v1 `0x80` PCM16 audio-chunk codec and a bounded sample-indexed jitter buffer with out-of-order insertion, duplicate/late/window rejection and silence-on-underrun accounting. These core primitives are compiled into the Android JNI library, but the Android app does not yet capture/select a master audio source, stream chunks over the audio TCP connection, fill the buffer or render to `AudioTrack`/Oboe. Scheduled playback, iOS sockets and measured acoustic synchronization remain pending. The prototype currently includes the join token in the local DNS-SD TXT record for one-tap joining; this exposes it to devices on the same LAN, so use only a trusted private Wi-Fi network until host approval or a safer pairing exchange is implemented. DNS-SD discovery requires mDNS/multicast and client-to-client traffic to be allowed by the Wi-Fi access point. The project website is informational. The current specifications are organized in [`docs/`](docs/), with original design references preserved in [`docs_original/`](docs_original/).
+**Current engineering preview: multi-receiver Android networking and PCM fan-out are implemented; physical validation is pending.**
+
+The Android Host advertises sessions over DNS-SD/mDNS. Speaker phones can discover and join over a local Wi-Fi network or phone hotspot; internet access is not required when the hotspot allows client-to-client traffic. The receiver explicitly selects the Wi-Fi network routing to the discovered Host and binds its control TCP, audio TCP and UDP time-sync sockets to that same network.
+
+The Host admits up to **8 Speakers** in one session. Each Speaker receives a unique receiver ID and independent native readiness/clock state. Control/leave handling and UDP time-sync validation are per Speaker. Audio is generated once as a 48 kHz stereo PCM16 timing-click stream and fanned out with identical sample indexes through bounded per-Speaker send queues; one slow Speaker cannot block the others.
+
+The current Android audio source is a generated 1 kHz timing-click test signal, not user-selected music or system audio. Each receiver begins local AudioTrack playback after its own prebuffer and clock acquisition. The group does **not** yet start on a common future T0; DAC output timestamp mapping, drift correction and measured acoustic alignment remain pending. CI validates builds and protocol/state-machine behavior, but physical hotspot, multi-phone and acoustic tests are still required.
+
+The Python reference simulator, portable C++17 timing core and shared Python/C++ golden vectors remain available. The Kotlin/JVM TCP/UDP transport is a separate Gradle module. The current product target is 6–10 phones in total; the Android preview's initial admission cap is 8 Speakers.
 
 | Milestone | Description | State |
 |---|---|---|
-| M0 | Python simulator for time sync and drift control | In progress |
-| M1 | Time sync between two real phones | In progress |
-| M2a | PCM16 audio chunk codec and bounded jitter-buffer core | In progress |
-| M2b | Android audio source, TCP chunk stream and speaker output | Planned |
-| M2 | PCM16 audio transport and AudioTrack test playback; scheduled click-track start on 2 receivers | In progress |
+| M0 | Python simulator for time sync, drift and shared Wi-Fi airtime | In progress |
+| M1 | Android LAN discovery, TCP admission and UDP clock acquisition | In progress; physical-device validation pending |
+| M2a | PCM16 audio codec and bounded sample-indexed jitter-buffer core | Complete |
+| M2b | Android PCM16 TCP transport and AudioTrack test playback | Complete |
+| M2c | Multi-Speaker admission, independent receiver state and shared PCM fan-out (up to 8) | Implemented; physical validation pending |
 | M3 | Output-timestamp mapping and manual offsets | Planned |
-| M4 | Drift controller, 30-minute run | Planned |
-| M5 | 3-4 receivers, group deadline, reconnect | Planned |
-| M6 | Opus codec, system audio capture | Planned |
+| M4 | Drift controller and 30-minute endurance run | Planned |
+| M5 | Hotspot resilience, receiver reconnect and measured 4+ Speaker testing | Planned |
+| M6 | Opus codec and user-selected/system audio source | Planned |
 | M7 | iOS receiver | Planned |
 | M8 | Acoustic calibration | Planned |
-| M9 | 6-10 receivers and train trial | Planned |
+| M9 | 6–10 Speaker scaling and train trial | Planned |
 
 ### Run the M0 simulator
 
