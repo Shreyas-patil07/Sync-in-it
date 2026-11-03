@@ -80,8 +80,8 @@ jobs:
         run: |
           mkdir -p release-assets
           cp android/app/build/outputs/apk/debug/app-debug.apk \
-            release-assets/SyncInIt-Android-preview-v0.5.0.apk
-          sha256sum release-assets/SyncInIt-Android-preview-v0.5.0.apk \
+            release-assets/SyncInIt-Android-preview-v0.5.1.apk
+          sha256sum release-assets/SyncInIt-Android-preview-v0.5.1.apk \
             | awk '{print $1}' > release-assets/SHA256SUMS.txt
 
       - name: Create GitHub pre-release and upload APK
@@ -89,36 +89,38 @@ jobs:
           GH_TOKEN: ${{ secrets.GITHUB_TOKEN }}
         run: |
           cat > release-notes.md <<'EOF'
-          ## Sync In It Android Preview v0.5.0
+          ## Sync In It Android Preview v0.5.1
 
-          This engineering preview adds the first end-to-end Android PCM16 audio transport and rendering path on top of the LAN discovery and clock-synchronization foundation.
+          This engineering preview adds deep Android LAN diagnostics to the existing PCM16 audio transport and rendering path.
 
           ### Included
-          - Android host and receiver join flow using local mDNS/DNS-SD discovery.
-          - Separate TCP control and audio channels, with UDP four-timestamp clock acquisition.
-          - Master-side generated 1 kHz timing-click test signal, encoded as 48 kHz stereo PCM16 in 20 ms chunks.
-          - Receiver-side AUDIO_CHUNK validation through the shared C++ codec and bounded sample-indexed jitter buffer via JNI.
-          - Android AudioTrack output on a dedicated writer thread, gated by a 3.5-second contiguous prebuffer.
-          - Receiver sends READY only after clock acquisition is stable and at least 3 seconds of PCM remain buffered.
-          - Native PCM16 JNI smoke test covering frame encoding, duplicate rejection and sample-preserving jitter-buffer reads.
-          - Stable preview signing key, monotonically increasing versionCode, and native APK builds for arm64-v8a and x86_64.
+          - Everything included in v0.5.0: LAN discovery, separate TCP control/audio channels, UDP four-timestamp clock acquisition, PCM16 48 kHz stereo test stream, native bounded jitter buffer via JNI, and AudioTrack rendering.
+          - On-device Network debugger with a timestamped, bounded 240-event diagnostic log and clipboard export.
+          - Active Android network snapshot: transport type, interface, device/API details, IP addresses and prefixes, DNS, routes/default route, proxy state, active interfaces and MTU.
+          - Peer analysis: IPv4 address scope, self-address detection, same-subnet assessment and routing hint.
+          - Detailed mDNS lifecycle tracing: service found/lost, resolution success/failure, invalid/stale record rejection and advertisement registration.
+          - Correlated join-attempt IDs and stage-by-stage tracing for control TCP connect, HELLO/WELCOME, audio TCP connect, AUDIO_HELLO, audio pipeline startup and UDP clock probes.
+          - TCP/UDP local and remote socket endpoints, connect/probe timings, timeout counters, malformed/unmatched packet counters and nested OS exception classification.
+          - Host-side listener readiness, accepted peer endpoints, UDP peer pinning, and explicit counters for rejected UDP source IPs/ports and invalid native clock packets.
+          - Diagnostic logs omit session tokens, Wi-Fi passwords, SSID, BSSID and MAC addresses.
+          - Persistent preview signing key, monotonically increasing versionCode, and native APK builds for arm64-v8a and x86_64.
 
           ### Validation
-          - Android Gradle/JNI build, Kotlin transport checks and APK signature verification passed in GitHub Actions.
-          - Native core and simulator checks passed in GitHub Actions.
-          - Physical two-phone playback and acoustic timing measurements have not yet been completed.
+          - Android Gradle/JNI build, Kotlin TCP/UDP transport integration tests and APK signature verification passed in GitHub Actions.
+          - Python 3.11, 3.12 and 3.13 plus C++17 core/simulator matrix passed in GitHub Actions.
+          - This release adds observability; the Redmi 9 Power-to-Redmi 9 Power connectivity issue still requires physical-device diagnosis using exported logs.
 
           ### Important limitations
-          The audio source is a generated timing-click test signal, not user-selected music or system audio. Playback currently begins locally after the prebuffer is filled; it is not yet scheduled against a shared future T0. DAC output timestamp mapping, drift correction, gap concealment tuning, multi-receiver admission, foreground playback service, iOS support and measured acoustic synchronization remain pending. This is an engineering preview, not a completed synchronized-speaker release.
+          The audio source remains a generated timing-click test signal, not user-selected music or system audio. Playback is not scheduled against a shared future T0; DAC output timestamp mapping, drift correction, gap concealment tuning, multi-receiver admission, foreground playback service, iOS support and measured acoustic synchronization remain pending. The app currently supports one receiver per host. This is an engineering preview, not a completed synchronized-speaker release.
 
-          Use on a private Wi-Fi network with client-to-client communication enabled. Install as an update over a previous preview signed with the persistent Sync In It preview key.
+          Use on a trusted private Wi-Fi network with client-to-client communication enabled. Install as an update over a previous preview signed with the persistent Sync In It preview key.
           EOF
 
-          gh release create "v0.5.0-preview.1" \
-            "release-assets/SyncInIt-Android-preview-v0.5.0.apk#SyncInIt-Android-preview-v0.5.0.apk" \
+          gh release create "v0.5.1-preview.1" \
+            "release-assets/SyncInIt-Android-preview-v0.5.1.apk#SyncInIt-Android-preview-v0.5.1.apk" \
             "release-assets/SHA256SUMS.txt#SHA256SUMS.txt" \
             --repo "$GITHUB_REPOSITORY" \
             --target "$GITHUB_SHA" \
-            --title "Sync In It Android Preview v0.5.0" \
+            --title "Sync In It Android Preview v0.5.1" \
             --notes-file release-notes.md \
             --prerelease
