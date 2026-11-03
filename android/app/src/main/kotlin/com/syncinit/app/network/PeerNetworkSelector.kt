@@ -51,7 +51,7 @@ internal object PeerNetworkSelector {
             val route = properties.routes
                 .asSequence()
                 .filter { it.matches(peer) }
-                .maxByOrNull { it.destination.prefixLength }
+                .maxByOrNull { it.destination?.prefixLength ?: 0 }
                 ?: return@mapNotNull null
 
             Candidate(
