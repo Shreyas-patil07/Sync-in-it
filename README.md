@@ -185,17 +185,18 @@ Results are reported as mean, maximum and 95th-percentile error. A literal zero-
 
 ---
 
-## Quickstart *(planned)*
+## Android preview quickstart
 
-> These steps describe the intended workflow. They will work once milestones M1-M5 land.
+The current Android preview supports one Host and up to 8 connected Speaker phones. It plays a generated timing-click test signal only; synchronized user-selected music is not implemented.
 
-1. **Set up the network.** Power the router, disable client isolation, connect all phones to it.
-2. **Install the apps.** Install the master app on the Android source phone and the receiver app on every receiver.
-3. **Start a session.** On the master, tap *Start session*. A QR code appears.
-4. **Join receivers.** Scan the QR code on each receiver.
-5. **Wait for READY.** The master shows each receiver's buffer and offset status.
-6. **Play.** Choose a local audio file (or, in a later milestone, capture system audio) and press *Play*. All phones start at the common deadline.
-7. **Calibrate (optional).** Place the master's microphone at your listening position and run *Calibrate*.
+1. **Set up the local network.** Enable the Host phone's mobile hotspot, then connect the Speaker phones to it. No internet/mobile data is required for local traffic. A trusted Wi-Fi router also works when client-to-client traffic is allowed.
+2. **Install the Android preview.** Use the latest signed pre-release from [GitHub Releases](https://github.com/Shreyas-patil07/Sync-in-it/releases). Install updates over the previous preview; do not uninstall it.
+3. **Start the Host.** Open Sync In It on the Host phone and tap **Start hosting**.
+4. **Join each Speaker.** Open Sync In It on each Speaker phone, tap **Refresh nearby sessions**, then select the Host.
+5. **Check the Host count.** The Host should show the number of connected Speakers (for example, `2/8 connected`). Each Speaker independently acquires the Host clock and buffers PCM16.
+6. **Verify the audio path.** Each connected Speaker should reach READY and play the generated 1 kHz timing-click stream. A Speaker leaving should not terminate the other connected Speakers.
+
+**Important:** Physical multi-phone validation is still pending. Hotspot implementations can filter mDNS multicast or block client-to-client traffic. If the Host does not appear, confirm the phones are connected to the same hotspot and that local peer traffic/multicast is permitted. A QR/manual pairing fallback is not implemented yet. READY confirms transport, clock acquisition and buffering—not a common scheduled playback start or acoustic synchronization.
 
 ---
 
