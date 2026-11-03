@@ -680,3 +680,34 @@ No physical-device synchronization results are recorded in this initial log. Add
 5. Confirm one slow/disconnected receiver does not stop the other audio writers.
 
 **Next action:** Pass Android/JNI and native-core CI; then run the two-Speaker test before publishing the multi-receiver preview.
+
+
+## 2026-11-04 — Android coordinated group playback
+
+**Type:** Android group timeline / PCM prebuffer / playback scheduling  
+**Status:** Implemented on `feature/coordinated-group-playback`; CI and physical-device acceptance pending
+
+**Summary:**
+- Reused the existing typed C++ ANCHOR message codec and native ReceiverSession state transitions; added JNI encode/decode helpers and Kotlin `PlaybackAnchor` parsing.
+- Changed receiver behavior so buffered PCM remains queued while clock acquisition and group admission complete. READY is emitted only after the existing stable-clock gate and at least 3 seconds of contiguous PCM.
+- Added a native sample-indexed jitter-buffer seek operation that advances the playback cursor while preserving buffered samples at and after the chosen group start. Added a C++ regression test for preserving the expected PCM samples through a seek.
+- Added a 6-second group admission window beginning when the first Speaker is admitted. After the window closes and all current Speakers are READY, the Host arms every receiver, selects a shared sample index approximately 2 seconds behind the producer head, and sends one ANCHOR with a common future Host monotonic timestamp.
+- Each receiver maps the Host timestamp to its own monotonic clock using the latest offset estimate, seeks to the shared sample index, primes AudioTrack with two 20 ms chunks, and calls `AudioTrack.play()` at the scheduled local target.
+- Serialized new Speaker admission against group arming so a receiver cannot be admitted after the coordinator snapshots the cohort.
+- Increased the receiver PCM jitter buffer to 20 seconds to cover the existing 10-second clock-stability sample span plus the 6-second group admission window. The PCM and ring-slot arrays use approximately 19 MiB per receiver at 48 kHz stereo, excluding runtime overhead.
+
+**Important limitations:**
+- This milestone schedules calls to Android `AudioTrack.play()` against a common monotonic-clock target. It does not schedule the hardware DAC against a presentation timestamp and does not guarantee acoustic alignment across different phone models.
+- AudioTrack startup latency, audio mixer latency, Bluetooth routing, device-specific resampling and OS thread scheduling remain unmeasured. No acoustic synchronization result is claimed.
+- The audio is still the generated 1 kHz timing-click integration source, not user-selected media or supported system playback capture.
+- The group is fixed after the 6-second admission window; late Speakers require restarting Host and forming a new group.
+- The 20-second buffer is intentionally bounded but has a noticeable native-memory footprint.
+
+**Validation required:**
+1. Build Android/JNI and run the full C++/Python CI matrix.
+2. Install the updateable preview on at least two phones using the persistent signing key.
+3. Run the same-hotspot test with one Host and two Speakers; confirm both remain silent while buffering, then both start on the group anchor.
+4. Repeat with one Speaker joining near the end of the admission window; verify the common start sample is still available.
+5. Record loopback or external microphone output from both phones and measure acoustic skew. This is a separate measurement from the software anchor timestamps.
+
+**Next action:** Pass CI, review the PR, then perform two- and three-phone hotspot acceptance tests before publishing a new preview.
