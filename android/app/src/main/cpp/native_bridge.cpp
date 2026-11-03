@@ -882,7 +882,7 @@ Java_com_syncinit_app_core_NativeCore_nativeEncodePcmChunkFrame(
 
 
 extern "C" JNIEXPORT void JNICALL
-Java_com_syncinit_app_core_NativeCore_nativeResetPcmBuffer(
+Java_com_syncinit_app_core_NativeCore_nativeSeekPcmBuffer(
     JNIEnv* env, jobject, jlong handle, jlong first_sample_index) {
     auto native_buffer = find_pcm_buffer(handle);
     if (!native_buffer) {
@@ -890,12 +890,12 @@ Java_com_syncinit_app_core_NativeCore_nativeResetPcmBuffer(
         return;
     }
     if (first_sample_index < 0) {
-        throw_illegal_argument(env, "PCM start sample index must be non-negative");
+        throw_illegal_argument(env, "PCM seek sample index must be non-negative");
         return;
     }
     try {
         std::lock_guard<std::mutex> lock(native_buffer->initialization_mutex);
-        native_buffer->buffer.reset(static_cast<syit::SampleIndex>(first_sample_index));
+        native_buffer->buffer.seek(static_cast<syit::SampleIndex>(first_sample_index));
         native_buffer->initialized = true;
     } catch (const std::exception& error) {
         throw_illegal_argument(env, error.what());
