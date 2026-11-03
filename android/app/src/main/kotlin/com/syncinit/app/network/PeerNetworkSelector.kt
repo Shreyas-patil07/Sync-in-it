@@ -34,6 +34,7 @@ internal object PeerNetworkSelector {
             val network: Network,
             val interfaceName: String,
             val route: android.net.RouteInfo,
+            val routePrefixLength: Int,
             val hasInternet: Boolean,
             val isValidated: Boolean
         )
@@ -57,6 +58,7 @@ internal object PeerNetworkSelector {
                 network = network,
                 interfaceName = properties.interfaceName ?: "unknown",
                 route = route,
+                routePrefixLength = route.destination?.prefixLength ?: 0,
                 hasInternet = capabilities.hasCapability(NetworkCapabilities.NET_CAPABILITY_INTERNET),
                 isValidated = capabilities.hasCapability(NetworkCapabilities.NET_CAPABILITY_VALIDATED)
             )
@@ -69,8 +71,8 @@ internal object PeerNetworkSelector {
             )
         }
 
-        val bestPrefix = candidates.maxOf { it.route.destination.prefixLength }
-        val best = candidates.filter { it.route.destination.prefixLength == bestPrefix }
+        val bestPrefix = candidates.maxOf { it.routePrefixLength }
+        val best = candidates.filter { it.routePrefixLength == bestPrefix }
         val selected = when {
             best.size == 1 -> best.single()
             best.any { it.network == activeNetwork } -> best.first { it.network == activeNetwork }
@@ -113,10 +115,13 @@ internal object PeerNetworkSelector {
         }
     }
 
-    private fun parseIpv4(value: String): Inet4Address? = try {
-        val parsed = InetAddress.getByName(value)
-        parsed as? Inet4Address
-    } catch (_: Exception) {
-        null
+    private fun parseIpv4(value: String): Inet4Address? {
+        if (!value.matches(Regex("(?:\\d{1,3}\\.){3}\\d{1,3}"))) return null
+        return try {
+            val parsed = InetAddress.getByName(value) as? Inet4Address ?: return null
+            if (parsed.hostAddress == value) parsed else null
+        } catch (_: Exception) {
+            null
+        }
     }
 }
