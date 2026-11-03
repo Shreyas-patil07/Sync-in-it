@@ -38,6 +38,7 @@ class MasterSessionHost(context: Context, private val onStatus: (String) -> Unit
         const val TIME_PORT = 47_802
         const val MAX_RECEIVERS = 8
         private const val AUDIO_READ_TIMEOUT_MS = 0
+        private const val AUDIO_ACCEPT_TIMEOUT_MS = 15_000
         private const val AUDIO_QUEUE_CHUNKS = 8
         private const val SAMPLE_RATE_HZ = 48_000
         private const val CHANNELS = 2
@@ -71,7 +72,12 @@ class MasterSessionHost(context: Context, private val onStatus: (String) -> Unit
         var time: UdpTimeSyncServer? = null
         try {
             val anyAddress = InetAddress.getByName("0.0.0.0")
-            val audioListener = TcpFrameServer(anyAddress, 0, connectionReadTimeoutMs = AUDIO_READ_TIMEOUT_MS)
+            val audioListener = TcpFrameServer(
+                anyAddress,
+                0,
+                acceptTimeoutMs = AUDIO_ACCEPT_TIMEOUT_MS,
+                connectionReadTimeoutMs = 10_000
+            )
             audio = audioListener
             val controlListener = TcpFrameServer(anyAddress, CONTROL_PORT, connectionReadTimeoutMs = AUDIO_READ_TIMEOUT_MS)
             control = controlListener
@@ -121,11 +127,13 @@ class MasterSessionHost(context: Context, private val onStatus: (String) -> Unit
         } catch (error: Exception) {
             onStatus("DIAG HOST_START_FAILED ${NetworkDiagnostics.exceptionDetails(error)}")
             onStatus("DIAG HOST_NETWORK_AT_FAILURE\n${NetworkDiagnostics.networkSnapshot(appContext)}")
-            control?.close()
-            audio?.close()
-            time?.close()
             closed.set(true)
             executor.shutdownNow()
+            timeSyncThread?.interrupt()
+            closeQuietly(control)
+            closeQuietly(audio)
+            closeQuietly(time)
+            closeResources()
             throw error
         }
     }
