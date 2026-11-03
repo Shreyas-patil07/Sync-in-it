@@ -1,6 +1,7 @@
 package com.syncinit.app.network
 
 import android.content.Context
+import android.net.Network
 import android.os.SystemClock
 import com.syncinit.app.audio.PcmAudioReceiver
 import com.syncinit.app.core.NativeProtocol
@@ -9,6 +10,7 @@ import com.syncinit.transport.TcpFrameConnection
 import com.syncinit.transport.FrameProtocolException
 import com.syncinit.transport.UdpTimeSyncClient
 import java.io.Closeable
+import java.net.DatagramSocket
 import java.net.InetAddress
 import java.net.PortUnreachableException
 import java.io.IOException
@@ -54,8 +56,16 @@ class ReceiverSessionClient(
             try {
                 onStatus("[DIAG $attemptId] JOIN_BEGIN target=$host:$controlPort")
                 onStatus(NetworkDiagnostics.networkSnapshot(context, host))
+                val peerRoute = PeerNetworkSelector.select(context, host)
+                onStatus(
+                    "[DIAG $attemptId] PEER_NETWORK_SELECTED network=${peerRoute.network} " +
+                        "interface=${peerRoute.interfaceName} route=${peerRoute.matchedRoute} " +
+                        "internet=${peerRoute.hasInternet} validated=${peerRoute.isValidated}"
+                )
                 onStatus("[DIAG $attemptId] STAGE_CONTROL_TCP_CONNECT_BEGIN target=$host:$controlPort timeoutMs=$CONNECT_TIMEOUT_MS")
-                val control = connectTcp(attemptId, "CONTROL", host, controlPort, HANDSHAKE_READ_TIMEOUT_MS)
+                val control = connectTcp(
+                    attemptId, "CONTROL", host, controlPort, HANDSHAKE_READ_TIMEOUT_MS, peerRoute.network
+                )
                 controlConnection = control
                 diagnosticStage(attemptId, "CONTROL_HELLO_WRITE") {
                     control.writeEncodedFrame(NativeProtocol.encodeHelloFrame(token))
@@ -74,7 +84,7 @@ class ReceiverSessionClient(
                 )
 
                 onStatus("Master accepted HELLO. Opening audio channel…")
-                val audio = connectTcp(attemptId, "AUDIO", host, welcome.audioPort, 0)
+                val audio = connectTcp(attemptId, "AUDIO", host, welcome.audioPort, 0, peerRoute.network)
                 audioConnection = audio
                 diagnosticStage(attemptId, "AUDIO_HELLO_WRITE") {
                     audio.writeEncodedFrame(NativeProtocol.encodeAudioHelloFrame(welcome))
@@ -107,7 +117,8 @@ class ReceiverSessionClient(
                     welcome.sessionId,
                     welcome.receiverId,
                     welcome.timePort,
-                    pipeline
+                    pipeline,
+                    peerRoute.network
                 )
             } catch (error: Exception) {
                 if (!closed.get()) {
@@ -126,7 +137,8 @@ class ReceiverSessionClient(
         channel: String,
         host: String,
         port: Int,
-        readTimeoutMs: Int
+        readTimeoutMs: Int,
+        network: Network
     ): TcpFrameConnection {
         val startedAt = SystemClock.elapsedRealtime()
         onStatus("[DIAG $attemptId] TCP_${channel}_CONNECT_BEGIN remote=$host:$port connectTimeoutMs=$CONNECT_TIMEOUT_MS readTimeoutMs=$readTimeoutMs")
@@ -135,7 +147,8 @@ class ReceiverSessionClient(
                 host = host,
                 port = port,
                 connectTimeoutMs = CONNECT_TIMEOUT_MS,
-                readTimeoutMs = readTimeoutMs
+                readTimeoutMs = readTimeoutMs,
+                socketFactory = network.socketFactory
             )
             onStatus(
                 "[DIAG $attemptId] TCP_${channel}_CONNECT_OK " +
@@ -181,14 +194,23 @@ class ReceiverSessionClient(
         sessionId: Long,
         receiverId: Int,
         timePort: Int,
-        audioPipeline: PcmAudioReceiver
+        audioPipeline: PcmAudioReceiver,
+        network: Network
     ) {
         val address = InetAddress.getByName(masterHost)
         NativeTimeSyncClient.create(sessionId, receiverId).use { nativeClock ->
+            val networkBoundDatagram = DatagramSocket(null)
+            try {
+                network.bindSocket(networkBoundDatagram)
+            } catch (error: Exception) {
+                networkBoundDatagram.close()
+                throw IOException("Could not bind UDP time-sync socket to selected Wi-Fi network $network", error)
+            }
             UdpTimeSyncClient(
                 masterAddress = address,
                 masterPort = timePort,
-                receiveTimeoutMs = TIME_SYNC_RECEIVE_TIMEOUT_MS
+                receiveTimeoutMs = TIME_SYNC_RECEIVE_TIMEOUT_MS,
+                datagramSocket = networkBoundDatagram
             ).use { udp ->
                 var probeAttempts = 0
                 var lastMeasurement: com.syncinit.app.core.ClockSyncMeasurement? = null
