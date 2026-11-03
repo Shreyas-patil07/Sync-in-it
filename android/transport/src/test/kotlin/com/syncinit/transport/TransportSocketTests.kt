@@ -113,6 +113,47 @@ private fun tcpRoundTrip() {
     }
 }
 
+private fun tcpReadTimeoutCanBeDisabledAfterHandshake() {
+    val loopback = InetAddress.getByName("127.0.0.1")
+    TcpFrameServer(loopback, 0, acceptTimeoutMs = 3_000, connectionReadTimeoutMs = 3_000).use { server ->
+        val failure = ArrayBlockingQueue<Throwable>(1)
+        val worker = Thread {
+            try {
+                server.accept().use { peer ->
+                    val hello = peer.readFrame()
+                    expect(hello?.messageType == 0x01, "server receives the handshake frame")
+                    peer.writeFrame(WireFrame(0x02))
+                    Thread.sleep(400)
+                    peer.writeFrame(WireFrame(0x04, payload = byteArrayOf(9)))
+                }
+            } catch (error: Throwable) {
+                failure.offer(error)
+            }
+        }
+        worker.start()
+
+        TcpFrameConnection.connect(
+            "127.0.0.1",
+            server.localPort,
+            connectTimeoutMs = 3_000,
+            readTimeoutMs = 100
+        ).use { client ->
+            client.writeFrame(WireFrame(0x01))
+            expect(client.readFrame()?.messageType == 0x02, "handshake response arrives inside the initial timeout")
+            client.setReadTimeoutMs(0)
+            val delayedAnchor = client.readFrame()
+            expect(
+                delayedAnchor?.messageType == 0x04 && delayedAnchor.payload.contentEquals(byteArrayOf(9)),
+                "control channel remains readable after an idle period longer than the handshake timeout"
+            )
+        }
+
+        worker.join(4_000)
+        expect(!worker.isAlive, "read-timeout transition server worker completed")
+        failure.poll()?.let { throw it }
+    }
+}
+
 private fun tcpConnectFailureIncludesEndpointAndTiming() {
     val loopback = InetAddress.getByName("127.0.0.1")
     val unusedPort = ServerSocket(0, 1, loopback).use { it.localPort }
@@ -301,6 +342,7 @@ private fun udpRejectsMalformedDatagrams() {
 fun main() {
     encodedFrameCodecRoundTrip()
     tcpRoundTrip()
+    tcpReadTimeoutCanBeDisabledAfterHandshake()
     tcpConnectFailureIncludesEndpointAndTiming()
     tcpCoalescedFramesSingleWrite()
     tcpFragmentedRead()
