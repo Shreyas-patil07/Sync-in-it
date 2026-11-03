@@ -235,29 +235,31 @@ class MasterSessionHost(context: Context, private val onStatus: (String) -> Unit
                         "AUDIO_HELLO rejected: $audioResult"
                     }
 
-                    check(!groupStartScheduled.get()) {
-                        "group playback started while this Speaker was joining"
-                    }
-                    val admissionWindowStartedAt = firstReceiverAdmissionNs
-                    check(admissionWindowStartedAt == 0L ||
-                        System.nanoTime() - admissionWindowStartedAt < GROUP_ADMISSION_WINDOW_NS) {
-                        "group admission window closed while this Speaker was joining"
-                    }
                     val peer = HostReceiverPeer(receiverId, receiverSession, acceptedControl, acceptedAudio)
-                    check(receivers.putIfAbsent(receiverId, peer) == null) {
-                        "receiver ID $receiverId is already active"
+                    synchronized(groupStartLock) {
+                        check(!groupStartScheduled.get()) {
+                            "group playback started while this Speaker was joining"
+                        }
+                        val admissionWindowStartedAt = firstReceiverAdmissionNs
+                        check(admissionWindowStartedAt == 0L ||
+                            System.nanoTime() - admissionWindowStartedAt < GROUP_ADMISSION_WINDOW_NS) {
+                            "group admission window closed while this Speaker was joining"
+                        }
+                        check(receivers.putIfAbsent(receiverId, peer) == null) {
+                            "receiver ID $receiverId is already active"
+                        }
+                        if (receivers.size == 1) {
+                            firstReceiverAdmissionNs = System.nanoTime()
+                            onStatus("Group admission window open · add up to $MAX_RECEIVERS speakers within 6 seconds.")
+                        }
+                        ownershipTransferred = true
                     }
-                    ownershipTransferred = true
                     control = null
                     audio = null
                     session = null
 
                     peer.startAudioWriter()
                     startControlReader(peer)
-                    if (receivers.size == 1) {
-                        firstReceiverAdmissionNs = System.nanoTime()
-                        onStatus("Group admission window open · add up to $MAX_RECEIVERS speakers within 6 seconds.")
-                    }
                     onStatus(
                         "Speaker connected · receiverId=$receiverId · native state ${peer.session.state()} · " +
                             "${receivers.size}/$MAX_RECEIVERS connected."
@@ -409,6 +411,7 @@ class MasterSessionHost(context: Context, private val onStatus: (String) -> Unit
             }
             if (!allReady) return
 
+            val nowNs = System.nanoTime()
             val admissionStartedAt = firstReceiverAdmissionNs
             if (admissionStartedAt == 0L) return
             val admissionDeadlineNs = admissionStartedAt + GROUP_ADMISSION_WINDOW_NS
@@ -444,7 +447,6 @@ class MasterSessionHost(context: Context, private val onStatus: (String) -> Unit
                 return
             }
 
-            val nowNs = System.nanoTime()
             val targetMasterTimeNs = nowNs + GROUP_START_LEAD_NS
             val bufferedOffsetFrames = SAMPLE_RATE_HZ.toLong() * GROUP_START_BUFFER_MS / 1_000L
             val latestAlignedSample = cursor.nextSampleIndex -
