@@ -647,3 +647,36 @@ No physical-device synchronization results are recorded in this initial log. Add
 **Limitations:** This change does not add multi-receiver admission or scheduled common-T0 playback. The current host still admits one receiver. No physical hotspot result is claimed until tested on devices.
 
 **Next action:** Pass Android/JNI and Kotlin transport CI, install the updateable preview on both phones, and run the router-free hotspot acceptance test before expanding to multi-receiver session management.
+
+## 2026-11-03 — Multi-receiver Host admission and shared PCM fan-out
+
+**Type:** Android session management / audio transport  
+**Status:** Implemented on branch; CI and multi-phone validation pending  
+**Branch:** `feature/multi-receiver-audio-fanout`
+
+**Summary:**
+- Replaced the single native receiver session with one independent native receiver state machine per admitted Speaker. All receivers share the host session ID and authentication token, but receive unique monotonically assigned receiver IDs.
+- Kept the protocol wire format unchanged: each per-receiver WELCOME assigns its receiver ID; AUDIO_HELLO validates the same session/receiver pair; UDP time-sync packets are dispatched through native session validation to the matching receiver ID.
+- Changed admission to continue accepting new control/audio socket pairs after each Speaker is admitted. Admission is serialized so a Speaker receives WELCOME before the Host accepts that Speaker's audio connection, preventing cross-pairing on the shared audio listener.
+- Added a hard initial limit of 8 connected Speakers.
+- Replaced per-receiver audio generation with one shared PCM source. A single encoded 48 kHz stereo PCM16 chunk/sample index is fanned out to each connected Speaker.
+- Added a separate bounded 8-chunk (about 160 ms) audio send queue and writer per Speaker. A persistently slow receiver is disconnected on queue overflow so it cannot block all other receivers.
+- Moved UDP time sync to a host-lifetime listener. The Host matches the packet against each same-IP admitted native session, pins the validated UDP endpoint independently per receiver, and responds only for the receiver ID authenticated by the native session.
+- Added per-Speaker control readers and independent READY/LEAVE handling. A Speaker leaving no longer closes the whole Host session.
+- Updated Host UI text and status to display the current connected Speaker count.
+- Added a C++ core test proving two receiver state machines can share one session ID, use distinct receiver IDs, reach READY independently, and leave independently.
+
+**Design constraints:**
+- This is multi-receiver connection and stream fan-out, not yet scheduled synchronized playback. The generated test signal is shared and sample-indexed, but receivers still begin local playback after their own prebuffer and clock acquisition.
+- The admission handshake is intentionally serialized; admitted Speakers stream concurrently. Concurrent HELLO/AUDIO_HELLO orchestration and a more explicit BUSY rejection frame can be added later if connection bursts or better overload UX require them.
+- The initial limit is 8; performance and hotspot airtime need measurement on physical devices before increasing it.
+- QR/manual pairing fallback, app-managed hotspot creation, user-selected audio, common future T0, DAC output timestamp mapping and drift correction remain separate work.
+
+**Validation required:**
+1. Connect Speaker 1, confirm READY, then join Speaker 2 while Speaker 1 remains connected.
+2. Confirm both receive the same test stream and host shows 2/8 connected.
+3. Send LEAVE/disable Speaker 1 and confirm Speaker 2 continues receiving audio and UDP clock replies.
+4. Join a third Speaker; test admission to the 8-Speaker limit and observe the full-host response.
+5. Confirm one slow/disconnected receiver does not stop the other audio writers.
+
+**Next action:** Pass Android/JNI and native-core CI; then run the two-Speaker test before publishing the multi-receiver preview.
