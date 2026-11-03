@@ -183,6 +183,14 @@ void test_jitter_buffer_seek_preserves_future_audio() {
            "seek starts at the exact requested interleaved PCM sample");
     expect(buffer.insert(pcm_chunk(7U, 2U, 108LL, 4U)) == syit::JitterInsertResult::Inserted,
            "new stream data continues after the seek point");
+
+    bool rejected = false;
+    try {
+        buffer.seek(200LL);
+    } catch (const std::invalid_argument&) {
+        rejected = true;
+    }
+    expect(rejected, "seek beyond contiguous buffered audio is rejected");
 }
 void test_jitter_buffer_duplicate_late_and_window_rules() {
     syit::PcmJitterBuffer buffer(8U, 2U);
