@@ -80,8 +80,8 @@ jobs:
         run: |
           mkdir -p release-assets
           cp android/app/build/outputs/apk/debug/app-debug.apk \
-            release-assets/SyncInIt-Android-preview-v0.5.2.apk
-          sha256sum release-assets/SyncInIt-Android-preview-v0.5.2.apk \
+            release-assets/SyncInIt-Android-preview-v0.5.3.apk
+          sha256sum release-assets/SyncInIt-Android-preview-v0.5.3.apk \
             | awk '{print $1}' > release-assets/SHA256SUMS.txt
 
       - name: Create GitHub pre-release and upload APK
@@ -89,39 +89,46 @@ jobs:
           GH_TOKEN: ${{ secrets.GITHUB_TOKEN }}
         run: |
           cat > release-notes.md <<'EOF'
-          ## Sync In It Android Preview v0.5.2
+          ## Sync In It Android Preview v0.5.3
 
-          This engineering preview adds explicit Android Wi-Fi network selection for phone-hotspot sessions. No external router or internet connection is required when the hotspot allows peer-to-peer traffic.
+          This engineering preview adds multi-Speaker admission and shared sample-indexed PCM fan-out to the Android Host. One Host can now admit up to eight Speaker phones in the same local session.
 
           ### Included
-          - Everything from v0.5.0: nearby discovery, separate TCP control/audio channels, UDP four-timestamp clock acquisition, 48 kHz stereo PCM16 test stream, native bounded sample-indexed jitter buffer via JNI, and Android AudioTrack output.
-          - Everything from v0.5.1: detailed on-device LAN diagnostics, network snapshots, mDNS tracing, join-stage tracing, TCP/UDP endpoint diagnostics and nested OS exception classification.
-          - Select the connected Wi-Fi Network whose route table matches the discovered host IPv4 address. Network selection does not require INTERNET or VALIDATED capabilities, allowing no-internet mobile-hotspot networks.
-          - Bind receiver control TCP, audio TCP and UDP time-sync sockets to the same selected Android Network, avoiding inconsistent default-network routing.
-          - Ignore mDNS records that resolve to one of this phone's own interface addresses.
-          - Updated connection guidance for a phone hotspot or offline local Wi-Fi network.
-          - Persistent preview signing key, monotonically increasing versionCode, and native APK builds for arm64-v8a and x86_64.
+          - Everything from v0.5.0: LAN discovery, separate TCP control/audio channels, UDP four-timestamp clock acquisition, 48 kHz stereo PCM16 test stream, native bounded sample-indexed jitter buffer via JNI, and Android AudioTrack output.
+          - Everything from v0.5.1: on-device LAN diagnostics, active network snapshots, mDNS tracing, join-stage tracing, TCP/UDP endpoint details and nested OS exception classification.
+          - Everything from v0.5.2: select the Wi-Fi Network that routes to the discovered Host and bind receiver TCP/UDP sockets to it; no internet validation is required for phone-hotspot networking.
+          - One independent native receiver state machine and unique receiver ID per admitted Speaker, while all Speakers share the Host session ID and authentication.
+          - Continued Host admission after each Speaker is connected; up to eight connected Speakers in the initial implementation.
+          - Independent control readers, READY state, LEAVE/disconnect cleanup and UDP clock-sync endpoint pinning for each Speaker.
+          - One shared PCM producer that generates each sample-indexed audio chunk once and fans the same encoded frame out to every Speaker.
+          - A bounded per-Speaker audio writer queue. A persistently slow receiver is removed instead of blocking the other Speakers.
+          - Host UI reports connected Speaker count. The Host continues to run when an individual Speaker leaves.
+          - Persistent preview signing key, monotonic versionCode, and native APK builds for arm64-v8a and x86_64.
 
           ### Validation
           - Android Gradle/JNI build, Kotlin TCP/UDP transport integration tests and APK signature verification passed in GitHub Actions.
           - Python 3.11, 3.12 and 3.13 plus C++17 core/simulator matrix passed in GitHub Actions.
-          - CI validates network selection/socket injection paths at build and transport-test level. Physical hotspot testing across phone manufacturers is still required.
+          - Native C++ tests cover two receiver identities sharing one session ID while maintaining independent readiness and leave state.
+          - Physical two-or-more-phone hotspot validation is still required. CI does not prove actual multi-device audio delivery or acoustic synchronization.
 
-          ### Setup and limitations
-          - Enable the Host phone's Android mobile hotspot, then connect each Speaker phone to that hotspot. Internet/mobile data is not required for local session traffic.
-          - Start hosting on the Host phone and refresh nearby sessions on the Speaker phone. Some hotspot implementations may filter mDNS multicast or block client-to-client traffic; those cases require a future QR/manual pairing fallback or a different hotspot implementation.
-          - The app currently admits one receiver per Host. App-managed LocalOnlyHotspot creation, QR pairing and multi-receiver admission are not included yet.
-          - The audio source remains a generated 1 kHz timing-click test signal, not user-selected music or system audio. Playback is not scheduled against a shared future T0; DAC timestamp mapping, drift correction, robust gap concealment, foreground playback service, iOS and acoustic synchronization validation remain pending.
-          - This is an engineering preview, not a completed synchronized-speaker release.
+          ### Setup and test
+          - Enable the Host phone's Android mobile hotspot, then connect all Speaker phones to that hotspot. Internet/mobile data is not required for local session traffic.
+          - Start hosting on the Host phone. On each Speaker phone, refresh nearby sessions and join the Host.
+          - Confirm the Host count increments (for example, 2/8 connected), both Speakers reach READY, and both receive the shared timing-click stream.
+          - Disconnect Speaker 1 and verify Speaker 2 continues receiving PCM and UDP clock replies.
+          - The initial limit is eight. Admission is serialized; already-admitted Speakers stream concurrently. Some hotspot implementations may filter mDNS multicast or client-to-client traffic; a QR/manual pairing fallback is not implemented yet.
+
+          ### Important limitations
+          The audio source remains a generated 1 kHz timing-click test signal, not user-selected music or system audio. The shared sample index is common, but each receiver currently begins local playback after its own prebuffer and clock acquisition; there is no shared future T0 or guaranteed synchronized start. DAC output timestamp mapping, drift correction, robust gap concealment tuning, foreground playback service, iOS support, acoustic calibration and measured multi-phone synchronization remain pending. This is an engineering preview, not a completed synchronized-speaker release.
 
           Install as an update over a previous preview signed with the persistent Sync In It preview key.
           EOF
 
-          gh release create "v0.5.2-preview.1" \
-            "release-assets/SyncInIt-Android-preview-v0.5.2.apk#SyncInIt-Android-preview-v0.5.2.apk" \
+          gh release create "v0.5.3-preview.1" \
+            "release-assets/SyncInIt-Android-preview-v0.5.3.apk#SyncInIt-Android-preview-v0.5.3.apk" \
             "release-assets/SHA256SUMS.txt#SHA256SUMS.txt" \
             --repo "$GITHUB_REPOSITORY" \
             --target "$GITHUB_SHA" \
-            --title "Sync In It Android Preview v0.5.2" \
+            --title "Sync In It Android Preview v0.5.3" \
             --notes-file release-notes.md \
             --prerelease
