@@ -51,6 +51,14 @@ After both secrets exist, run the **Android app and JNI** workflow again from th
 
 **One-time migration warning:** older APKs were signed with disposable GitHub-runner debug keys. Their private keys were not retained, so a persistent-key APK cannot be guaranteed to update those installs. Expect to uninstall the currently installed preview once, install the first persistent-key build, and then install every later preview directly over it without uninstalling. The package ID remains the same after this migration.
 
+## Coordinated playback preview
+
+The current Android preview does not start AudioTrack as soon as an individual Speaker reaches its prebuffer threshold. Each receiver sends READY only after clock acquisition is stable and at least 3 seconds of contiguous PCM is buffered. The Host admits a cohort for 6 seconds after the first successful admission, waits until every admitted Speaker is READY, and sends one shared ANCHOR start message with a future Host monotonic timestamp and a common sample index.
+
+The receiver maps that timestamp to its local monotonic clock using the latest clock-offset estimate, moves the native PCM jitter-buffer cursor to the common sample index, primes AudioTrack, and schedules `AudioTrack.play()`. The sample-indexed buffer capacity is 20 seconds because the current clock estimator requires a 10-second sample span before declaring acquisition stable. This buffer has a materially higher per-receiver native-memory cost than the earlier 5-second default (approximately 19 MiB for its PCM and ring-slot arrays at 48 kHz stereo, excluding object/runtime overhead).
+
+This is software-level scheduling on Android monotonic clocks. A call to `AudioTrack.play()` from a worker thread is not a hardware presentation timestamp. Do not describe this milestone as acoustically synchronized: DAC output timestamp mapping, device-latency compensation, drift correction and microphone-based acoustic validation are still required. The current source remains a generated 1 kHz test signal.
+
 ## Native session bridge
 
 `NativeCore` loads `libsyncinit_jni.so`. `NativeReceiverSession` provides a synchronized Kotlin facade around the C++ `syit::ReceiverSession` API. The current bridge supports:
