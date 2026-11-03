@@ -44,6 +44,9 @@ class NativePcmJitterBuffer(
         require(channels in 1..2)
         require(capacitySeconds in 1..20)
         val capacityFrames = Math.multiplyExact(sampleRateHz, capacitySeconds)
+        require(capacityFrames in 1..960_000) {
+            "native PCM jitter buffer capacity is limited to 960,000 frames"
+        }
         handle = NativeCore.nativeCreatePcmBuffer(capacityFrames.toLong(), channels, sessionId)
         check(handle != 0L) { "native PCM jitter buffer allocation failed" }
     }
