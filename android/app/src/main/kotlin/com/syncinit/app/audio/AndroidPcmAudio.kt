@@ -54,6 +54,11 @@ class NativePcmJitterBuffer(
             ?: error("Unknown native PCM insert result: $result")
     }
 
+    fun seekToSampleIndex(firstSampleIndex: Long) {
+        require(firstSampleIndex >= 0L) { "PCM seek sample index must be non-negative" }
+        NativeCore.nativeSeekPcmBuffer(checkOpen(), firstSampleIndex)
+    }
+
     fun snapshot(): PcmBufferSnapshot {
         val values = checkNotNull(NativeCore.nativePcmBufferStats(checkOpen())) {
             "native PCM buffer statistics are unavailable"
