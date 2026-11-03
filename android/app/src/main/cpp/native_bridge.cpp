@@ -879,3 +879,84 @@ Java_com_syncinit_app_core_NativeCore_nativeEncodePcmChunkFrame(
         return nullptr;
     }
 }
+
+
+extern "C" JNIEXPORT void JNICALL
+Java_com_syncinit_app_core_NativeCore_nativeResetPcmBuffer(
+    JNIEnv* env, jobject, jlong handle, jlong first_sample_index) {
+    auto native_buffer = find_pcm_buffer(handle);
+    if (!native_buffer) {
+        throw_illegal_argument(env, "PCM jitter buffer handle is closed");
+        return;
+    }
+    if (first_sample_index < 0) {
+        throw_illegal_argument(env, "PCM start sample index must be non-negative");
+        return;
+    }
+    try {
+        std::lock_guard<std::mutex> lock(native_buffer->initialization_mutex);
+        native_buffer->buffer.reset(static_cast<syit::SampleIndex>(first_sample_index));
+        native_buffer->initialized = true;
+    } catch (const std::exception& error) {
+        throw_illegal_argument(env, error.what());
+    }
+}
+
+extern "C" JNIEXPORT jbyteArray JNICALL
+Java_com_syncinit_app_core_NativeCore_nativeEncodeAnchorFrame(
+    JNIEnv* env,
+    jobject,
+    jint kind,
+    jlong master_time_ns,
+    jlong sample_index,
+    jboolean playing,
+    jint crossfade_ms) {
+    if (kind < 0 || kind > 4 || master_time_ns < 0 || sample_index < 0 ||
+        crossfade_ms < 0 || crossfade_ms > 65'535) {
+        throw_illegal_argument(env, "ANCHOR fields are outside the supported wire range");
+        return nullptr;
+    }
+    try {
+        const syit::Anchor anchor{
+            static_cast<std::uint8_t>(kind),
+            static_cast<std::int64_t>(master_time_ns),
+            static_cast<std::int64_t>(sample_index),
+            playing == JNI_TRUE,
+            static_cast<std::uint16_t>(crossfade_ms)};
+        return make_byte_array(
+            env,
+            syit::encode_frame(syit::encode_control_message(syit::ControlMessage{anchor})));
+    } catch (const std::exception& error) {
+        throw_illegal_argument(env, error.what());
+        return nullptr;
+    }
+}
+
+extern "C" JNIEXPORT jlongArray JNICALL
+Java_com_syncinit_app_core_NativeCore_nativeDecodeAnchorFrame(
+    JNIEnv* env, jobject, jbyteArray encoded_frame) {
+    std::vector<std::uint8_t> wire;
+    if (!copy_wire_frame(env, encoded_frame, wire)) return nullptr;
+    try {
+        const auto frame = syit::decode_frame(wire);
+        if (frame.flags != 0U || frame.message_type != syit::kAnchorMessageType) {
+            throw std::invalid_argument("expected an ANCHOR frame with zero flags");
+        }
+        const auto message = syit::decode_control_message(frame);
+        const auto* anchor = std::get_if<syit::Anchor>(&message);
+        if (anchor == nullptr) throw std::invalid_argument("decoded control message is not ANCHOR");
+        const std::array<jlong, 5> values{{
+            static_cast<jlong>(anchor->kind),
+            static_cast<jlong>(anchor->master_time_ns),
+            static_cast<jlong>(anchor->sample_idx),
+            anchor->playing ? 1LL : 0LL,
+            static_cast<jlong>(anchor->crossfade_ms)}};
+        jlongArray output = env->NewLongArray(static_cast<jsize>(values.size()));
+        if (output == nullptr) return nullptr;
+        env->SetLongArrayRegion(output, 0, static_cast<jsize>(values.size()), values.data());
+        return output;
+    } catch (const std::exception& error) {
+        throw_illegal_argument(env, error.what());
+        return nullptr;
+    }
+}
