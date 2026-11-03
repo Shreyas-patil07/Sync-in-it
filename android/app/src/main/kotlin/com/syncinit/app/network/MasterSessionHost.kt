@@ -385,11 +385,18 @@ class MasterSessionHost(context: Context, private val onStatus: (String) -> Unit
     }
 
     private fun removeReceiver(peer: HostReceiverPeer, reason: String) {
-        if (!receivers.remove(peer.receiverId, peer)) return
-        peer.close()
-        if (receivers.isEmpty() && !groupStartScheduled.get()) {
-            firstReceiverAdmissionNs = 0L
+        val removed = synchronized(groupStartLock) {
+            if (!receivers.remove(peer.receiverId, peer)) {
+                false
+            } else {
+                if (receivers.isEmpty() && !groupStartScheduled.get()) {
+                    firstReceiverAdmissionNs = 0L
+                }
+                true
+            }
         }
+        if (!removed) return
+        peer.close()
         if (!closed.get()) {
             onStatus("Speaker disconnected · receiverId=${peer.receiverId} · $reason · ${receivers.size}/$MAX_RECEIVERS connected.")
         }
