@@ -261,7 +261,7 @@ class MainActivity : Activity() {
                     message.startsWith("Speaker disconnected") ||
                     message.startsWith("Host is full"))
             ) {
-                hostDetails.text = "${hostServiceName ?: "Hosting"}\\n$message"
+                hostDetails.text = "${hostServiceName ?: "Hosting"}\n$message"
             }
 
             val hostEnded = message.startsWith("Receiver sent LEAVE.") ||
