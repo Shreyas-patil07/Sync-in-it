@@ -393,6 +393,13 @@ class MasterSessionHost(context: Context, private val onStatus: (String) -> Unit
         if (!closed.get()) {
             onStatus("Speaker disconnected · receiverId=${peer.receiverId} · $reason · ${receivers.size}/$MAX_RECEIVERS connected.")
         }
+
+        if (!closed.get() && !groupStartScheduled.get() && receivers.isNotEmpty()) {
+            Thread(::tryScheduleGroupStart, "syncinit-group-start-recheck").apply {
+                isDaemon = true
+                start()
+            }
+        }
     }
 
     /**
