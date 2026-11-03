@@ -107,6 +107,7 @@ class ReceiverSessionClient(
                 }
                 audioPipeline = pipeline
                 diagnosticStage(attemptId, "AUDIO_PIPELINE_START") { pipeline.start() }
+                startControlReader(attemptId, control, pipeline)
 
                 onStatus("[DIAG $attemptId] JOIN_TRANSPORT_READY control=${control.localEndpoint}->${control.remoteEndpoint} audio=${audio.localEndpoint}->${audio.remoteEndpoint}")
                 onStatus("Control and audio channels established. Receiving PCM16 while acquiring the master clock…")
@@ -129,6 +130,55 @@ class ReceiverSessionClient(
             } finally {
                 closeResources()
             }
+        }
+    }
+
+    /**
+     * Owns the receiver-side control read stream after WELCOME. Time-sync continues to write
+     * READY on this connection; this reader handles the master's playback ANCHOR frames.
+     */
+    private fun startControlReader(
+        attemptId: String,
+        control: TcpFrameConnection,
+        audioPipeline: PcmAudioReceiver
+    ) {
+        Thread({
+            try {
+                while (!closed.get()) {
+                    val frame = control.readFrame()
+                        ?: throw IOException("master closed the control channel")
+                    if (frame.flags != 0) {
+                        throw FrameProtocolException("control frame flags must be zero")
+                    }
+                    when (frame.messageType) {
+                        NativeProtocol.ANCHOR_TYPE -> {
+                            val anchor = NativeProtocol.decodeAnchorFrame(frame)
+                            onStatus(
+                                "[DIAG $attemptId] GROUP_ANCHOR_RECEIVED " +
+                                    "kind=${anchor.kind} masterTimeNs=${anchor.masterTimeNs} " +
+                                    "sampleIndex=${anchor.sampleIndex}"
+                            )
+                            audioPipeline.onPlaybackAnchor(anchor)
+                        }
+                        else -> onStatus(
+                            "[DIAG $attemptId] CONTROL_FRAME_IGNORED " +
+                                "messageType=0x${frame.messageType.toString(16)}"
+                        )
+                    }
+                }
+            } catch (error: Exception) {
+                if (!closed.get()) {
+                    onStatus(
+                        "[DIAG $attemptId] CONTROL_READER_FAILURE " +
+                            NetworkDiagnostics.exceptionDetails(error)
+                    )
+                    onStatus("Control channel failed: ${error.message ?: error.javaClass.simpleName}")
+                    close()
+                }
+            }
+        }, "syncinit-control-reader").apply {
+            isDaemon = true
+            start()
         }
     }
 
