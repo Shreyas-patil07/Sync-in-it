@@ -13,6 +13,7 @@ object NativeCore {
     external fun nativePcmBufferStats(handle: Long): LongArray?
     external fun nativeReadPcmBuffer(handle: Long, output: ShortArray): Long
     external fun nativeClosePcmBuffer(handle: Long)
+    external fun nativeSeekPcmBuffer(handle: Long, firstSampleIndex: Long)
 
     external fun nativeEncodePcmChunkFrame(
         sessionId: Long,
@@ -28,6 +29,16 @@ object NativeCore {
     external fun nativeEncodeAudioHelloFrame(sessionId: Long, receiverId: Int): ByteArray?
     external fun nativeOnHelloFrame(handle: Long, encodedFrame: ByteArray): Int
     external fun nativeOnAudioHelloFrame(handle: Long, encodedFrame: ByteArray): Int
+
+    external fun nativeEncodeAnchorFrame(
+        kind: Int,
+        masterTimeNs: Long,
+        sampleIndex: Long,
+        playing: Boolean,
+        crossfadeMs: Int
+    ): ByteArray?
+
+    external fun nativeDecodeAnchorFrame(encodedFrame: ByteArray): LongArray?
 
     external fun nativeEncodeReadyFrame(
         bufferedMs: Long,

@@ -8,6 +8,8 @@
     <application
         android:allowBackup="false"
         android:label="Sync In It"
+        android:icon="@drawable/sync_in_it"
+        android:roundIcon="@drawable/sync_in_it"
         android:supportsRtl="true"
         android:theme="@android:style/Theme.Material.Light.NoActionBar">
         <activity

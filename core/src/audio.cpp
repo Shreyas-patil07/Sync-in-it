@@ -143,6 +143,36 @@ void PcmJitterBuffer::reset(SampleIndex first_sample_index) {
     initialized_ = true;
 }
 
+void PcmJitterBuffer::seek(SampleIndex first_sample_index) {
+    if (first_sample_index < 0) {
+        throw std::invalid_argument("seek sample index must be non-negative");
+    }
+    std::lock_guard<std::mutex> lock(mutex_);
+    if (!initialized_) throw std::logic_error("jitter buffer must be initialized before seeking");
+    if (first_sample_index < next_sample_index_) {
+        throw std::invalid_argument("jitter buffer seek cannot move behind the read cursor");
+    }
+
+    std::size_t contiguous = 0U;
+    while (contiguous < capacity_frames_) {
+        const auto index = next_sample_index_ + static_cast<SampleIndex>(contiguous);
+        const auto slot = slot_for(index);
+        if (!slots_[slot].occupied || slots_[slot].sample_index != index) break;
+        ++contiguous;
+    }
+    const auto distance = static_cast<std::uint64_t>(first_sample_index - next_sample_index_);
+    if (distance >= static_cast<std::uint64_t>(contiguous)) {
+        throw std::invalid_argument("jitter buffer seek target must be inside contiguous buffered audio");
+    }
+
+    for (auto& slot : slots_) {
+        if (slot.occupied && slot.sample_index < first_sample_index) {
+            slot.occupied = false;
+        }
+    }
+    next_sample_index_ = first_sample_index;
+}
+
 std::size_t PcmJitterBuffer::slot_for(SampleIndex sample_index) const noexcept {
     return static_cast<std::size_t>(
         static_cast<std::uint64_t>(sample_index) % static_cast<std::uint64_t>(capacity_frames_));

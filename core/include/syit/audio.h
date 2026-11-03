@@ -57,6 +57,7 @@ public:
     PcmJitterBuffer(std::size_t capacity_frames, std::uint8_t channels = kAudioV1Channels);
 
     void reset(SampleIndex first_sample_index);
+    void seek(SampleIndex first_sample_index);
     JitterInsertResult insert(const AudioChunk& chunk);
     JitterReadResult read(
         SampleIndex first_sample_index,

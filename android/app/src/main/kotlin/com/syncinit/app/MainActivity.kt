@@ -1,12 +1,16 @@
 package com.syncinit.app
 
 import android.app.Activity
+import android.graphics.Color
+import android.graphics.Typeface
 import android.content.ClipData
 import android.content.ClipboardManager
+import android.graphics.drawable.GradientDrawable
 import android.os.Bundle
 import android.widget.Toast
 import android.view.Gravity
 import android.widget.Button
+import android.widget.ImageView
 import android.widget.LinearLayout
 import android.widget.ScrollView
 import android.widget.TextView
@@ -37,89 +41,186 @@ class MainActivity : Activity() {
 
     override fun onCreate(savedInstanceState: Bundle?) {
         super.onCreate(savedInstanceState)
+        window.statusBarColor = Color.rgb(6, 9, 19)
+        window.navigationBarColor = Color.rgb(6, 9, 19)
+        window.decorView.systemUiVisibility = 0
 
+        val scroll = ScrollView(this).apply {
+            isFillViewport = true
+            setBackgroundColor(Color.rgb(6, 9, 19))
+        }
         val content = LinearLayout(this).apply {
             orientation = LinearLayout.VERTICAL
-            gravity = Gravity.CENTER_VERTICAL
-            setPadding(24, 28, 24, 28)
+            setPadding(dp(20), dp(22), dp(20), dp(32))
         }
+        scroll.addView(content, ScrollView.LayoutParams(
+            ScrollView.LayoutParams.MATCH_PARENT,
+            ScrollView.LayoutParams.WRAP_CONTENT
+        ))
 
-        content.addView(TextView(this).apply {
+        val brandCard = LinearLayout(this).apply {
+            orientation = LinearLayout.HORIZONTAL
+            gravity = Gravity.CENTER_VERTICAL
+            setPadding(dp(15), dp(13), dp(15), dp(13))
+            background = panelBackground()
+        }
+        val logo = ImageView(this).apply {
+            setImageResource(R.drawable.sync_in_it)
+            contentDescription = "Sync In It logo"
+            scaleType = ImageView.ScaleType.FIT_CENTER
+        }
+        brandCard.addView(logo, LinearLayout.LayoutParams(dp(54), dp(54)))
+        val brandCopy = LinearLayout(this).apply {
+            orientation = LinearLayout.VERTICAL
+            setPadding(dp(13), 0, 0, 0)
+        }
+        brandCopy.addView(TextView(this).apply {
             text = "Sync In It"
-            textSize = 30f
+            textSize = 22f
+            setTextColor(Color.rgb(244, 247, 255))
+            typeface = Typeface.create("sans-serif", Typeface.BOLD)
+            letterSpacing = -0.025f
         })
+        brandCopy.addView(TextView(this).apply {
+            text = "OFFLINE AUDIO · ONE SHARED CLOCK"
+            textSize = 9f
+            setTextColor(Color.rgb(126, 148, 183))
+            typeface = Typeface.create("sans-serif-medium", Typeface.NORMAL)
+            letterSpacing = 0.11f
+            setPadding(0, dp(4), 0, 0)
+        })
+        brandCard.addView(brandCopy, LinearLayout.LayoutParams(0, LinearLayout.LayoutParams.WRAP_CONTENT, 1f))
+        brandCard.addView(TextView(this).apply {
+            text = "PREVIEW"
+            textSize = 9f
+            typeface = Typeface.create("sans-serif", Typeface.BOLD)
+            letterSpacing = 0.08f
+            setTextColor(Color.rgb(104, 233, 246))
+            setPadding(dp(10), dp(7), dp(10), dp(7))
+            background = pillBackground(Color.rgb(13, 47, 62), Color.rgb(32, 198, 220))
+        })
+        content.addView(brandCard, sectionMargins())
+
+        TextView(this).apply {
+            text = "One timeline.\nEvery phone in sync."
+            textSize = 27f
+            setTextColor(Color.rgb(241, 245, 255))
+            typeface = Typeface.create("sans-serif", Typeface.BOLD)
+            letterSpacing = -0.035f
+            setPadding(dp(2), dp(23), dp(2), dp(7))
+        }.also { content.addView(it) }
+
+        TextView(this).apply {
+            text = "Create a local speaker group over your phone hotspot or private Wi-Fi. No internet connection is needed."
+            textSize = 14f
+            setTextColor(Color.rgb(157, 169, 194))
+            setLineSpacing(dp(2).toFloat(), 1f)
+            setPadding(dp(2), 0, dp(2), dp(14))
+        }.also { content.addView(it) }
+
+        val featureRow = LinearLayout(this).apply {
+            orientation = LinearLayout.HORIZONTAL
+        }
+        featureRow.addView(featureChip("NO INTERNET"), LinearLayout.LayoutParams(
+            LinearLayout.LayoutParams.WRAP_CONTENT, LinearLayout.LayoutParams.WRAP_CONTENT
+        ).apply { rightMargin = dp(8) })
+        featureRow.addView(featureChip("UP TO 8 SPEAKERS"))
+        content.addView(featureRow, sectionMargins(bottom = 18))
+
         foundationStatus = TextView(this).apply {
             text = "Running native protocol and TCP/UDP loopback checks…"
-            textSize = 14f
-            setPadding(0, 8, 0, 20)
+            textSize = 12f
+            setTextColor(Color.rgb(169, 185, 211))
+            setPadding(dp(13), dp(12), dp(13), dp(12))
+            background = panelBackground(Color.rgb(13, 20, 34))
         }
-        content.addView(foundationStatus)
+        content.addView(foundationStatus, sectionMargins(bottom = 20))
 
-        content.addView(sectionTitle("Host a session"))
-        content.addView(TextView(this).apply {
-            text = "Make this phone visible to devices connected to this phone's hotspot or the same local Wi-Fi network. Internet is not required."
-            textSize = 14f
-        })
-        content.addView(actionButton("Start hosting") { startHosting() })
+        val hostCard = sectionCard(
+            parent = content,
+            eyebrow = "01 / HOST",
+            title = "Start a speaker group",
+            description = "This phone becomes the Host and shares one generated test stream with connected Speakers."
+        )
+        hostCard.addView(actionButton("Start hosting") { startHosting() }, sectionMargins(top = 12, bottom = 8))
         hostDetails = TextView(this).apply {
             text = "You are not hosting a session."
-            textSize = 14f
-            setPadding(0, 8, 0, 4)
+            textSize = 13f
+            setTextColor(Color.rgb(159, 174, 198))
+            setPadding(dp(12), dp(11), dp(12), dp(11))
+            background = insetBackground()
         }
-        content.addView(hostDetails)
+        hostCard.addView(hostDetails)
 
-        content.addView(sectionTitle("Nearby sessions"))
-        content.addView(TextView(this).apply {
-            text = "Choose a phone to join. Hosts appear automatically when they are advertising on the same local network."
-            textSize = 14f
-        })
-        content.addView(actionButton("Refresh nearby sessions") { scanNearbySessions() })
+        val nearbyCard = sectionCard(
+            parent = content,
+            eyebrow = "02 / JOIN",
+            title = "Nearby sessions",
+            description = "Hosts on the same local network appear here. Select a session to connect this phone as a Speaker."
+        )
+        nearbyCard.addView(actionButton("Refresh nearby sessions") { scanNearbySessions() }, sectionMargins(top = 12, bottom = 8))
         discoveryStatus = TextView(this).apply {
             text = "Searching when this screen is open…"
-            textSize = 13f
-            setPadding(0, 8, 0, 4)
+            textSize = 12f
+            setTextColor(Color.rgb(142, 160, 190))
+            setPadding(dp(2), dp(7), dp(2), dp(10))
         }
-        content.addView(discoveryStatus)
+        nearbyCard.addView(discoveryStatus)
         nearbySessionsContainer = LinearLayout(this).apply {
             orientation = LinearLayout.VERTICAL
         }
-        content.addView(nearbySessionsContainer)
+        nearbyCard.addView(nearbySessionsContainer)
 
-        content.addView(sectionTitle("Connection status"))
+        val connectionCard = sectionCard(
+            parent = content,
+            eyebrow = "03 / SESSION",
+            title = "Connection status",
+            description = "Live host, clock and receiver updates appear here."
+        )
         status = TextView(this).apply {
-            text = "Idle · connect all phones to the same phone hotspot or local Wi-Fi network. Internet is not required."
-            textSize = 14f
-            setPadding(0, 8, 0, 16)
+            text = "Idle · connect all phones to the same hotspot or private Wi-Fi network."
+            textSize = 13f
+            setTextColor(Color.rgb(190, 204, 228))
+            setLineSpacing(dp(2).toFloat(), 1f)
+            setPadding(dp(13), dp(12), dp(13), dp(12))
+            background = insetBackground()
         }
-        content.addView(status)
-        content.addView(actionButton("Stop session / disconnect") { stopConnections() })
+        connectionCard.addView(status, sectionMargins(top = 10, bottom = 10))
+        connectionCard.addView(actionButton("Stop session / disconnect") { stopConnections() })
 
-        content.addView(sectionTitle("Network debugger"))
-        content.addView(TextView(this).apply {
-            text = "Captures this phone's active Android network, interfaces, IP prefixes, routes, discovery events, and exact join stages. No session token, Wi-Fi password, SSID, BSSID, or MAC address is recorded."
-            textSize = 12f
-        })
-        content.addView(actionButton("Capture local network state") { captureNetworkSnapshot() })
-        content.addView(actionButton("Copy full diagnostic log") { copyDiagnosticLog() })
-        content.addView(actionButton("Clear diagnostic log") { clearDiagnosticLog() })
+        val diagnosticsCard = sectionCard(
+            parent = content,
+            eyebrow = "04 / DIAGNOSTICS",
+            title = "Network debugger",
+            description = "Capture the active network and connection stages when troubleshooting a hotspot or join issue."
+        )
+        val diagnosticActions = LinearLayout(this).apply {
+            orientation = LinearLayout.VERTICAL
+        }
+        diagnosticActions.addView(actionButton("Capture local network state") { captureNetworkSnapshot() })
+        diagnosticActions.addView(actionButton("Copy full diagnostic log") { copyDiagnosticLog() }, sectionMargins(top = 7))
+        diagnosticActions.addView(actionButton("Clear diagnostic log") { clearDiagnosticLog() }, sectionMargins(top = 7))
+        diagnosticsCard.addView(diagnosticActions, sectionMargins(top = 12, bottom = 10))
         debugLog = TextView(this).apply {
             text = "No diagnostic events yet."
+            textSize = 10f
+            typeface = Typeface.MONOSPACE
+            setTextColor(Color.rgb(144, 165, 194))
+            setPadding(dp(12), dp(12), dp(12), dp(12))
+            maxHeight = dp(220)
+            isVerticalScrollBarEnabled = true
+            background = insetBackground()
+        }
+        diagnosticsCard.addView(debugLog)
+
+        TextView(this).apply {
+            text = "PLAYBACK NOTE\nThe Host waits for the admitted Speakers to become clock-stable and buffered, then sends a shared start anchor. This preview schedules AudioTrack against local monotonic clocks; hardware output latency and acoustic alignment are not yet calibrated. Audio source: generated 1 kHz test tone."
             textSize = 11f
-            typeface = android.graphics.Typeface.MONOSPACE
-            setPadding(0, 8, 0, 12)
-        }
-        content.addView(debugLog)
+            setTextColor(Color.rgb(119, 137, 168))
+            setLineSpacing(dp(2).toFloat(), 1f)
+            setPadding(dp(3), dp(18), dp(3), 0)
+        }.also { content.addView(it) }
 
-        content.addView(TextView(this).apply {
-            text = "Nearby discovery and audio use the local network only. Use a trusted phone hotspot or private Wi-Fi network; internet is not required. The host sends one shared generated 1 kHz timing-click test stream to up to 8 receivers; each prebuffers PCM16 and plays it through AudioTrack. User-selected audio and scheduled group playback are not implemented yet."
-            textSize = 12f
-            setPadding(0, 24, 0, 0)
-        })
-
-        val scroll = ScrollView(this).apply {
-            addView(content)
-            isFillViewport = true
-        }
         setContentView(scroll)
         runStartupSmokeTests()
     }
@@ -224,13 +325,27 @@ class MainActivity : Activity() {
             discoveryStatus.text = "No hosts found yet. Keep this screen open and check that all phones are on the same hotspot or local Wi-Fi network."
             return
         }
-        discoveryStatus.text = "${sessions.size} nearby session(s) found. Tap one to join."
+        discoveryStatus.text = "${sessions.size} nearby session(s) found · tap to join."
         for (session in sessions) {
-            nearbySessionsContainer.addView(
-                actionButton("${session.serviceName}\n${session.hostAddress} · Tap to join") {
-                    joinNearby(session)
-                }
-            )
+            val item = LinearLayout(this).apply {
+                orientation = LinearLayout.VERTICAL
+                setPadding(dp(12), dp(12), dp(12), dp(12))
+                background = insetBackground()
+            }
+            item.addView(TextView(this).apply {
+                text = session.serviceName
+                textSize = 14f
+                setTextColor(Color.rgb(235, 242, 255))
+                typeface = Typeface.create("sans-serif", Typeface.BOLD)
+            })
+            item.addView(TextView(this).apply {
+                text = "${session.hostAddress} · Port ${session.controlPort}"
+                textSize = 11f
+                setTextColor(Color.rgb(136, 157, 188))
+                setPadding(0, dp(4), 0, dp(9))
+            })
+            item.addView(actionButton("Join this session") { joinNearby(session) })
+            nearbySessionsContainer.addView(item, sectionMargins(bottom = 8))
         }
     }
 
@@ -323,17 +438,107 @@ class MainActivity : Activity() {
         }
     }
 
-    private fun sectionTitle(value: String) = TextView(this).apply {
-        text = value
-        textSize = 19f
-        setPadding(0, 20, 0, 6)
+    private fun sectionCard(
+        parent: LinearLayout,
+        eyebrow: String,
+        title: String,
+        description: String
+    ): LinearLayout {
+        val card = LinearLayout(this).apply {
+            orientation = LinearLayout.VERTICAL
+            setPadding(dp(15), dp(15), dp(15), dp(15))
+            background = panelBackground()
+        }
+        card.addView(TextView(this).apply {
+            text = eyebrow
+            textSize = 9f
+            letterSpacing = 0.14f
+            typeface = Typeface.create("sans-serif-medium", Typeface.NORMAL)
+            setTextColor(Color.rgb(56, 205, 225))
+        })
+        card.addView(TextView(this).apply {
+            text = title
+            textSize = 18f
+            typeface = Typeface.create("sans-serif", Typeface.BOLD)
+            setTextColor(Color.rgb(239, 244, 255))
+            setPadding(0, dp(5), 0, dp(4))
+        })
+        card.addView(TextView(this).apply {
+            text = description
+            textSize = 12f
+            setLineSpacing(dp(2).toFloat(), 1f)
+            setTextColor(Color.rgb(151, 166, 193))
+        })
+        parent.addView(card, sectionMargins(bottom = 13))
+        return card
+    }
+
+    private fun featureChip(label: String) = TextView(this).apply {
+        text = label
+        textSize = 9f
+        letterSpacing = 0.08f
+        typeface = Typeface.create("sans-serif-medium", Typeface.NORMAL)
+        setTextColor(Color.rgb(149, 215, 231))
+        setPadding(dp(10), dp(7), dp(10), dp(7))
+        background = pillBackground(Color.rgb(12, 30, 44), Color.rgb(38, 105, 125))
     }
 
     private fun actionButton(label: String, action: () -> Unit) = Button(this).apply {
         text = label
         isAllCaps = false
+        textSize = 13f
+        minHeight = dp(46)
+        setPadding(dp(14), dp(5), dp(14), dp(5))
+        typeface = Typeface.create("sans-serif-medium", Typeface.NORMAL)
+        val isPrimary = label == "Start hosting" || label == "Join this session"
+        val isDanger = label.startsWith("Stop session")
+        background = when {
+            isPrimary -> pillBackground(Color.rgb(35, 111, 224), Color.rgb(35, 111, 224))
+            isDanger -> pillBackground(Color.rgb(44, 27, 38), Color.rgb(117, 58, 76))
+            else -> pillBackground(Color.rgb(21, 31, 49), Color.rgb(48, 69, 99))
+        }
+        setTextColor(if (isDanger) Color.rgb(255, 177, 193) else Color.rgb(232, 241, 255))
+        stateListAnimator = null
+        elevation = 0f
         setOnClickListener { action() }
     }
+
+    private fun panelBackground(
+        fill: Int = Color.rgb(13, 19, 32)
+    ) = GradientDrawable().apply {
+        shape = GradientDrawable.RECTANGLE
+        cornerRadius = dp(18).toFloat()
+        setColor(fill)
+        setStroke(dp(1), Color.rgb(35, 48, 70))
+    }
+
+    private fun insetBackground() = GradientDrawable().apply {
+        shape = GradientDrawable.RECTANGLE
+        cornerRadius = dp(12).toFloat()
+        setColor(Color.rgb(9, 14, 25))
+        setStroke(dp(1), Color.rgb(30, 42, 63))
+    }
+
+    private fun pillBackground(fill: Int, stroke: Int) = GradientDrawable().apply {
+        shape = GradientDrawable.RECTANGLE
+        cornerRadius = dp(999).toFloat()
+        setColor(fill)
+        setStroke(dp(1), stroke)
+    }
+
+    private fun sectionMargins(
+        top: Int = 0,
+        bottom: Int = 0
+    ) = LinearLayout.LayoutParams(
+        LinearLayout.LayoutParams.MATCH_PARENT,
+        LinearLayout.LayoutParams.WRAP_CONTENT
+    ).apply {
+        topMargin = dp(top)
+        bottomMargin = dp(bottom)
+    }
+
+    private fun dp(value: Int): Int =
+        (value * resources.displayMetrics.density + 0.5f).toInt()
 
     private fun runStartupSmokeTests() {
         Thread({
