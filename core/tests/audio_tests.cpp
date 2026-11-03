@@ -163,6 +163,27 @@ void test_jitter_buffer_orders_chunks_by_sample_index() {
     expect(buffer.next_sample_index() == 6LL, "jitter buffer advances sample cursor");
 }
 
+void test_jitter_buffer_seek_preserves_future_audio() {
+    syit::PcmJitterBuffer buffer(16U, 2U);
+    buffer.reset(100LL);
+    const auto queued = pcm_chunk(7U, 1U, 100LL, 8U);
+    expect(buffer.insert(queued) == syit::JitterInsertResult::Inserted,
+           "buffer receives audio before a scheduled start anchor");
+    buffer.seek(104LL);
+    expect(buffer.next_sample_index() == 104LL,
+           "seek moves the read cursor to the shared anchor sample");
+    expect(buffer.contiguous_buffered_frames() == 4U,
+           "seek preserves the buffered samples at and after the anchor");
+
+    std::array<std::int16_t, 8> output{};
+    const auto result = buffer.read(104LL, 4U, output.data(), output.size());
+    expect(result.missing_frames == 0U,
+           "preserved group-start audio reads without an underrun");
+    expect(output[0] == 9 && output[1] == 10 && output[6] == 15 && output[7] == 16,
+           "seek starts at the exact requested interleaved PCM sample");
+    expect(buffer.insert(pcm_chunk(7U, 2U, 108LL, 4U)) == syit::JitterInsertResult::Inserted,
+           "new stream data continues after the seek point");
+}
 void test_jitter_buffer_duplicate_late_and_window_rules() {
     syit::PcmJitterBuffer buffer(8U, 2U);
     buffer.reset(10LL);
@@ -220,6 +241,7 @@ int main() {
     test_silence_and_gap_chunks();
     test_invalid_audio_frames_rejected();
     test_jitter_buffer_orders_chunks_by_sample_index();
+    test_jitter_buffer_seek_preserves_future_audio();
     test_jitter_buffer_duplicate_late_and_window_rules();
     test_jitter_buffer_partial_late_and_underrun_silence();
     if (failures != 0) {
