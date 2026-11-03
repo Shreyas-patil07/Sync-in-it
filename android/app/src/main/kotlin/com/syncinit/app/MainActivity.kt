@@ -3,9 +3,9 @@ package com.syncinit.app
 import android.app.Activity
 import android.graphics.Color
 import android.graphics.Typeface
-import android.graphics.drawable.GradientDrawable
 import android.content.ClipData
 import android.content.ClipboardManager
+import android.graphics.drawable.GradientDrawable
 import android.os.Bundle
 import android.widget.Toast
 import android.view.Gravity
@@ -41,6 +41,9 @@ class MainActivity : Activity() {
 
     override fun onCreate(savedInstanceState: Bundle?) {
         super.onCreate(savedInstanceState)
+        window.statusBarColor = Color.rgb(6, 9, 19)
+        window.navigationBarColor = Color.rgb(6, 9, 19)
+        window.decorView.systemUiVisibility = 0
 
         val scroll = ScrollView(this).apply {
             isFillViewport = true
