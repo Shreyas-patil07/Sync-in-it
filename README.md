@@ -22,7 +22,7 @@ The Android Host advertises sessions over DNS-SD/mDNS. Speaker phones can discov
 
 The Host admits up to **8 Speakers** in one session. Each Speaker receives a unique receiver ID and independent native readiness/clock state. Control/leave handling and UDP time-sync validation are per Speaker. Audio is generated once as a 48 kHz stereo PCM16 timing-click stream and fanned out with identical sample indexes through bounded per-Speaker send queues; one slow Speaker cannot block the others.
 
-The current Android audio source is a generated 1 kHz timing-click test signal, not user-selected music or system audio. Each receiver begins local AudioTrack playback after its own prebuffer and clock acquisition. The group does **not** yet start on a common future T0; DAC output timestamp mapping, drift correction and measured acoustic alignment remain pending. CI validates builds and protocol/state-machine behavior, but physical hotspot, multi-phone and acoustic tests are still required.
+The current Android audio source is a generated 1 kHz timing-click test signal, not user-selected music or system audio. The Host opens a 6-second Speaker admission window; once every admitted Speaker has a stable clock estimate and at least 3 seconds buffered, it sends one shared future ANCHOR timestamp and sample index. Receivers seek to that same sample and schedule AudioTrack start against their mapped local monotonic clock. A 20-second receiver PCM buffer preserves audio while the existing 10-second clock-stability estimator and group admission window complete. This is software-level common-time scheduling only: Android AudioTrack/DAC output timestamps, device output-latency compensation, drift correction and measured acoustic alignment remain pending. CI validates builds and protocol/state-machine behavior, but physical hotspot, multi-phone and acoustic tests are still required.
 
 The Python reference simulator, portable C++17 timing core and shared Python/C++ golden vectors remain available. The Kotlin/JVM TCP/UDP transport is a separate Gradle module. The current product target is 6–10 phones in total; the Android preview's initial admission cap is 8 Speakers.
 
@@ -33,6 +33,7 @@ The Python reference simulator, portable C++17 timing core and shared Python/C++
 | M2a | PCM16 audio codec and bounded sample-indexed jitter-buffer core | Complete |
 | M2b | Android PCM16 TCP transport and AudioTrack test playback | Complete |
 | M2c | Multi-Speaker admission, independent receiver state and shared PCM fan-out (up to 8) | Implemented; physical validation pending |
+| M2d | Shared future-T0 playback anchor and sample-indexed group start | Implemented on branch; CI and physical validation pending |
 | M3 | Output-timestamp mapping and manual offsets | Planned |
 | M4 | Drift controller and 30-minute endurance run | Planned |
 | M5 | Hotspot resilience, receiver reconnect and measured 4+ Speaker testing | Planned |
