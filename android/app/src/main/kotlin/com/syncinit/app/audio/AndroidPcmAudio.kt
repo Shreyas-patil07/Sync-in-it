@@ -33,7 +33,7 @@ class NativePcmJitterBuffer(
     val sessionId: Long,
     val sampleRateHz: Int,
     val channels: Int,
-    capacitySeconds: Int = 10
+    capacitySeconds: Int = 20
 ) : Closeable {
     @Volatile private var handle: Long
 
@@ -41,7 +41,7 @@ class NativePcmJitterBuffer(
         require(sessionId in 0L..0xffff_ffffL)
         require(sampleRateHz in 8_000..192_000)
         require(channels in 1..2)
-        require(capacitySeconds in 1..10)
+        require(capacitySeconds in 1..20)
         val capacityFrames = Math.multiplyExact(sampleRateHz, capacitySeconds)
         handle = NativeCore.nativeCreatePcmBuffer(capacityFrames.toLong(), channels, sessionId)
         check(handle != 0L) { "native PCM jitter buffer allocation failed" }
