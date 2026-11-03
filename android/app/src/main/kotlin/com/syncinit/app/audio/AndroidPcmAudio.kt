@@ -33,7 +33,7 @@ class NativePcmJitterBuffer(
     val sessionId: Long,
     val sampleRateHz: Int,
     val channels: Int,
-    capacitySeconds: Int = 5
+    capacitySeconds: Int = 10
 ) : Closeable {
     @Volatile private var handle: Long
 
