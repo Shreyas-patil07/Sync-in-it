@@ -1,9 +1,8 @@
 package com.syncinit.app.network
 
-import com.syncinit.app.audio.NativePcmJitterBuffer
 import android.content.Context
 import android.os.Build
-import com.syncinit.app.core.NativeCore
+import com.syncinit.app.audio.NativePcmJitterBuffer
 import com.syncinit.app.core.NativeReceiverSession
 import com.syncinit.app.core.ReceiverSessionConfig
 import com.syncinit.app.core.ReceiverSessionResult
@@ -17,8 +16,13 @@ import java.net.InetSocketAddress
 import java.net.SocketException
 import java.net.SocketTimeoutException
 import java.security.SecureRandom
+import java.util.concurrent.ArrayBlockingQueue
+import java.util.concurrent.ConcurrentHashMap
 import java.util.concurrent.Executors
+import java.util.concurrent.TimeUnit
 import java.util.concurrent.atomic.AtomicBoolean
+import java.util.concurrent.atomic.AtomicInteger
+import java.util.concurrent.atomic.AtomicReference
 import kotlin.math.PI
 import kotlin.math.sin
 
@@ -27,30 +31,37 @@ data class HostInvitation(
     val controlPort: Int
 )
 
-/** One-receiver Android master that performs control and audio-channel admission only. */
+/** Android master that admits several independent receivers into one shared audio session. */
 class MasterSessionHost(context: Context, private val onStatus: (String) -> Unit) : Closeable {
     companion object {
         const val CONTROL_PORT = 47_800
         const val TIME_PORT = 47_802
+        const val MAX_RECEIVERS = 8
         private const val AUDIO_READ_TIMEOUT_MS = 0
+        private const val AUDIO_ACCEPT_TIMEOUT_MS = 15_000
+        private const val AUDIO_QUEUE_CHUNKS = 8
+        private const val SAMPLE_RATE_HZ = 48_000
+        private const val CHANNELS = 2
+        private const val CHUNK_FRAMES = 960
+        private const val CHUNK_PERIOD_NS = 20_000_000L
     }
 
     private val appContext = context.applicationContext
     private val closed = AtomicBoolean(false)
     private val started = AtomicBoolean(false)
+    private val nextReceiverId = AtomicInteger(1)
+    private val receivers = ConcurrentHashMap<Int, HostReceiverPeer>()
     private val executor = Executors.newSingleThreadExecutor { task ->
-        Thread(task, "syncinit-master-handshake").apply { isDaemon = true }
+        Thread(task, "syncinit-master-admission").apply { isDaemon = true }
     }
 
     @Volatile private var controlServer: TcpFrameServer? = null
     @Volatile private var audioServer: TcpFrameServer? = null
     @Volatile private var timeSyncServer: UdpTimeSyncServer? = null
-    @Volatile private var controlConnection: TcpFrameConnection? = null
-    @Volatile private var audioConnection: TcpFrameConnection? = null
-    @Volatile private var nativeSession: NativeReceiverSession? = null
     @Volatile private var nativeSessionConfig: ReceiverSessionConfig? = null
     @Volatile private var advertiser: LanSessionAdvertiser? = null
     @Volatile private var audioSenderThread: Thread? = null
+    @Volatile private var timeSyncThread: Thread? = null
 
     fun start(): HostInvitation {
         check(!closed.get()) { "host service is closed" }
@@ -59,10 +70,14 @@ class MasterSessionHost(context: Context, private val onStatus: (String) -> Unit
         var control: TcpFrameServer? = null
         var audio: TcpFrameServer? = null
         var time: UdpTimeSyncServer? = null
-        var session: NativeReceiverSession? = null
         try {
             val anyAddress = InetAddress.getByName("0.0.0.0")
-            val audioListener = TcpFrameServer(anyAddress, 0, connectionReadTimeoutMs = AUDIO_READ_TIMEOUT_MS)
+            val audioListener = TcpFrameServer(
+                anyAddress,
+                0,
+                acceptTimeoutMs = AUDIO_ACCEPT_TIMEOUT_MS,
+                connectionReadTimeoutMs = 10_000
+            )
             audio = audioListener
             val controlListener = TcpFrameServer(anyAddress, CONTROL_PORT, connectionReadTimeoutMs = AUDIO_READ_TIMEOUT_MS)
             control = controlListener
@@ -75,17 +90,13 @@ class MasterSessionHost(context: Context, private val onStatus: (String) -> Unit
             val sessionId = random.nextInt().toLong() and 0xffff_ffffL
             val config = ReceiverSessionConfig(
                 sessionId = sessionId,
-                receiverId = 1,
+                receiverId = 0,
                 token = token.copyOf(),
                 audioPort = audioListener.localPort,
                 timePort = TIME_PORT
             )
-            session = NativeReceiverSession.create(config)
 
             check(!closed.get()) { "host session was stopped while starting" }
-
-            // Publish the fully bound listeners and start the accept loop before advertising
-            // the service. A discovered DNS-SD record must never precede TCP readiness.
             check(controlListener.isListening) { "control TCP listener did not bind" }
             check(audioListener.isListening) { "audio TCP listener did not bind" }
             onStatus(
@@ -96,9 +107,12 @@ class MasterSessionHost(context: Context, private val onStatus: (String) -> Unit
             controlServer = controlListener
             audioServer = audioListener
             timeSyncServer = timeListener
-            nativeSession = session
             nativeSessionConfig = config
+
+            // These loops are independent: admission accepts new TCP pairs while UDP serves every
+            // admitted receiver, and the shared audio producer fans identical chunks out to peers.
             executor.execute(::serve)
+            startTimeSyncServer()
 
             val deviceLabel = Build.MODEL.trim().take(32).ifBlank { "Android" }
             val serviceName = "Sync In It - $deviceLabel ${token.toHex().take(4)}"
@@ -107,146 +121,262 @@ class MasterSessionHost(context: Context, private val onStatus: (String) -> Unit
             serviceAdvertiser.start(serviceName, controlListener.localPort, token.toHex())
 
             onStatus("DIAG HOST_READY controlPort=${controlListener.localPort} audioPort=${audioListener.localPort} timePort=$TIME_PORT controlListening=${controlListener.isListening} audioListening=${audioListener.isListening}")
-            onStatus("TCP listener ready on port ${controlListener.localPort}. Advertising nearby session.")
+            onStatus("TCP listener ready on port ${controlListener.localPort}. Advertising a session for up to $MAX_RECEIVERS speakers.")
+            onStatus("Waiting for speakers · 0/$MAX_RECEIVERS connected.")
             return HostInvitation(serviceName, controlListener.localPort)
         } catch (error: Exception) {
             onStatus("DIAG HOST_START_FAILED ${NetworkDiagnostics.exceptionDetails(error)}")
             onStatus("DIAG HOST_NETWORK_AT_FAILURE\n${NetworkDiagnostics.networkSnapshot(appContext)}")
-            session?.close()
-            control?.close()
-            audio?.close()
-            time?.close()
             closed.set(true)
             executor.shutdownNow()
+            timeSyncThread?.interrupt()
+            closeQuietly(control)
+            closeQuietly(audio)
+            closeQuietly(time)
+            closeResources()
             throw error
         }
     }
 
+    /**
+     * Admits one control/audio pair at a time. A WELCOME is sent before accepting that receiver's
+     * audio socket, so the ordering of control handshakes also establishes audio-socket ownership.
+     * Once admitted, the receiver's reader/writer and clock state are independent of this loop.
+     */
     private fun serve() {
-        var admitted = false
         try {
             while (!closed.get()) {
                 var control: TcpFrameConnection? = null
                 var audio: TcpFrameConnection? = null
+                var session: NativeReceiverSession? = null
+                var ownershipTransferred = false
                 try {
-                    onStatus("Waiting for receiver HELLO on TCP $CONTROL_PORT…")
                     val listeningControl = checkNotNull(controlServer)
-                    onStatus("DIAG HOST_ACCEPT_WAIT controlPort=${listeningControl.localPort} listening=${listeningControl.isListening}")
+                    if (receivers.size >= MAX_RECEIVERS) {
+                        val rejected = listeningControl.accept()
+                        onStatus("Host is full · rejected another connection (limit $MAX_RECEIVERS).")
+                        closeQuietly(rejected)
+                        continue
+                    }
+
+                    onStatus("Waiting for Speaker HELLO · ${receivers.size}/$MAX_RECEIVERS connected.")
                     val acceptedControl = listeningControl.accept()
                     control = acceptedControl
-                    controlConnection = acceptedControl
                     onStatus("DIAG HOST_CONTROL_ACCEPTED local=${acceptedControl.localEndpoint} peer=${acceptedControl.remoteEndpoint}")
 
-                    onStatus("DIAG HOST_HELLO_READ_BEGIN peer=${acceptedControl.remoteEndpoint}")
                     val hello = acceptedControl.readFrame() ?: error("receiver closed before HELLO")
                     onStatus("DIAG HOST_HELLO_RECEIVED peer=${acceptedControl.remoteEndpoint} messageType=0x${hello.messageType.toString(16)} flags=${hello.flags} payloadBytes=${hello.payload.size}")
                     check(hello.messageType == 0x01 && hello.flags == 0) {
                         "first control frame must be HELLO"
                     }
-                    val currentSession = checkNotNull(nativeSession)
-                    val helloResult = currentSession.onHelloFrame(hello.toEncodedBytes())
+
+                    val receiverId = nextReceiverId.getAndIncrement()
+                    check(receiverId in 1..0xffff) { "receiver ID space is exhausted" }
+                    val baseConfig = checkNotNull(nativeSessionConfig)
+                    val receiverConfig = baseConfig.copy(
+                        receiverId = receiverId,
+                        token = baseConfig.token.copyOf()
+                    )
+                    val receiverSession = NativeReceiverSession.create(receiverConfig)
+                    session = receiverSession
+                    val helloResult = receiverSession.onHelloFrame(hello.toEncodedBytes())
                     check(helloResult == ReceiverSessionResult.Accepted) {
                         "HELLO rejected: $helloResult"
                     }
 
-                    val welcome = checkNotNull(currentSession.welcomeFrame()) {
+                    val welcome = checkNotNull(receiverSession.welcomeFrame()) {
                         "native WELCOME was not produced"
                     }
                     acceptedControl.writeEncodedFrame(welcome)
-                    onStatus("HELLO accepted. Waiting for the separate audio connection…")
+                    onStatus("HELLO accepted for receiverId=$receiverId. Waiting for its separate audio connection…")
 
-                    val listeningAudio = checkNotNull(audioServer)
-                    onStatus("DIAG HOST_AUDIO_ACCEPT_WAIT audioPort=${listeningAudio.localPort} listening=${listeningAudio.isListening}")
-                    val acceptedAudio = listeningAudio.accept()
+                    val acceptedAudio = checkNotNull(audioServer).accept()
                     audio = acceptedAudio
-                    audioConnection = acceptedAudio
-                    onStatus("DIAG HOST_AUDIO_ACCEPTED local=${acceptedAudio.localEndpoint} peer=${acceptedAudio.remoteEndpoint}")
+                    onStatus("DIAG HOST_AUDIO_ACCEPTED receiverId=$receiverId local=${acceptedAudio.localEndpoint} peer=${acceptedAudio.remoteEndpoint}")
                     check(acceptedAudio.remoteAddress == acceptedControl.remoteAddress) {
                         "audio TCP peer does not match the admitted control peer"
                     }
-                    onStatus("DIAG HOST_AUDIO_HELLO_READ_BEGIN peer=${acceptedAudio.remoteEndpoint}")
+
                     val audioHello = acceptedAudio.readFrame() ?: error("receiver closed before AUDIO_HELLO")
-                    onStatus("DIAG HOST_AUDIO_HELLO_RECEIVED peer=${acceptedAudio.remoteEndpoint} messageType=0x${audioHello.messageType.toString(16)} flags=${audioHello.flags} payloadBytes=${audioHello.payload.size}")
+                    onStatus("DIAG HOST_AUDIO_HELLO_RECEIVED receiverId=$receiverId peer=${acceptedAudio.remoteEndpoint} messageType=0x${audioHello.messageType.toString(16)} flags=${audioHello.flags} payloadBytes=${audioHello.payload.size}")
                     check(audioHello.messageType == 0x03 && audioHello.flags == 0) {
                         "first audio-channel frame must be AUDIO_HELLO"
                     }
-                    val audioResult = currentSession.onAudioHelloFrame(audioHello.toEncodedBytes())
+                    val audioResult = receiverSession.onAudioHelloFrame(audioHello.toEncodedBytes())
                     check(audioResult == ReceiverSessionResult.Accepted) {
                         "AUDIO_HELLO rejected: $audioResult"
                     }
 
-                    admitted = true
+                    val peer = HostReceiverPeer(receiverId, receiverSession, acceptedControl, acceptedAudio)
+                    check(receivers.putIfAbsent(receiverId, peer) == null) {
+                        "receiver ID $receiverId is already active"
+                    }
+                    ownershipTransferred = true
+                    control = null
+                    audio = null
+                    session = null
+
+                    peer.startAudioWriter()
+                    startControlReader(peer)
                     onStatus(
-                        "Receiver admitted · native state ${currentSession.state()} · starting PCM16 test audio and UDP clock sync."
+                        "Speaker connected · receiverId=$receiverId · native state ${peer.session.state()} · " +
+                            "${receivers.size}/$MAX_RECEIVERS connected."
                     )
-                    startAudioTestStream(
-                        acceptedAudio,
-                        checkNotNull(nativeSessionConfig).sessionId
-                    )
-                    runTimeSyncServer(acceptedControl)
-                    return
-                } catch (error: Exception) {
+                    startAudioTestStream(baseConfig.sessionId)
+                } catch (error: SocketException) {
                     if (closed.get()) break
-                    if (admitted) {
-                        onStatus("Admitted receiver disconnected: ${error.message ?: error.javaClass.simpleName}")
-                        break
-                    }
-
-                    onStatus("DIAG HOST_JOIN_ATTEMPT_FAILED peer=${control?.remoteEndpoint ?: "unknown"} ${NetworkDiagnostics.exceptionDetails(error)}")
-                    onStatus("DIAG HOST_NETWORK_AT_JOIN_FAILURE\n${NetworkDiagnostics.networkSnapshot(appContext)}")
-                    onStatus(
-                        "Receiver join attempt failed: ${error.message ?: error.javaClass.simpleName}. " +
-                            "Host remains available; retry from the receiver."
-                    )
-                    closeQuietly(control)
-                    closeQuietly(audio)
-                    if (controlConnection === control) controlConnection = null
-                    if (audioConnection === audio) audioConnection = null
-
-                    nativeSession?.close()
-                    val config = nativeSessionConfig
-                    if (config == null) {
-                        onStatus("Host session could not reset after a failed join attempt.")
-                        break
-                    }
-                    nativeSession = try {
-                        NativeReceiverSession.create(config.copy(token = config.token.copyOf()))
-                    } catch (resetError: Exception) {
-                        onStatus("Host session reset failed: ${resetError.message ?: resetError.javaClass.simpleName}")
-                        break
+                    reportJoinFailure(control, error)
+                } catch (error: SocketTimeoutException) {
+                    if (!closed.get()) reportJoinFailure(control, error)
+                } catch (error: Exception) {
+                    if (!closed.get()) reportJoinFailure(control, error)
+                } finally {
+                    if (!ownershipTransferred) {
+                        closeQuietly(control)
+                        closeQuietly(audio)
+                        closeQuietly(session)
                     }
                 }
             }
         } finally {
-            if (closed.compareAndSet(false, true)) executor.shutdownNow()
-            closeResources()
+            if (closed.get()) closeResources()
         }
     }
 
-    private fun startAudioTestStream(connection: TcpFrameConnection, sessionId: Long) {
+    private fun reportJoinFailure(control: TcpFrameConnection?, error: Exception) {
+        onStatus("DIAG HOST_JOIN_ATTEMPT_FAILED peer=${control?.remoteEndpoint ?: "unknown"} ${NetworkDiagnostics.exceptionDetails(error)}")
+        onStatus("DIAG HOST_NETWORK_AT_JOIN_FAILURE\n${NetworkDiagnostics.networkSnapshot(appContext)}")
+        onStatus(
+            "Speaker join attempt failed: ${error.message ?: error.javaClass.simpleName}. " +
+                "Host remains available; retry from the Speaker."
+        )
+    }
+
+    private inner class HostReceiverPeer(
+        val receiverId: Int,
+        val session: NativeReceiverSession,
+        val control: TcpFrameConnection,
+        val audio: TcpFrameConnection
+    ) : Closeable {
+        private val peerClosed = AtomicBoolean(false)
+        private val audioQueue = ArrayBlockingQueue<ByteArray>(AUDIO_QUEUE_CHUNKS)
+        val udpPeer = AtomicReference<InetSocketAddress?>(null)
+        private var audioWriter: Thread? = null
+
+        fun startAudioWriter() {
+            check(audioWriter == null) { "receiver audio writer has already started" }
+            val writer = Thread({
+                try {
+                    while (!peerClosed.get() && !closed.get()) {
+                        val frame = audioQueue.poll(500, TimeUnit.MILLISECONDS) ?: continue
+                        audio.writeEncodedFrame(frame)
+                    }
+                } catch (_: InterruptedException) {
+                    if (!peerClosed.get() && !closed.get()) Thread.currentThread().interrupt()
+                } catch (error: Exception) {
+                    if (!peerClosed.get() && !closed.get()) {
+                        removeReceiver(this, "audio channel failed: ${error.message ?: error.javaClass.simpleName}")
+                    }
+                }
+            }, "syncinit-audio-writer-$receiverId").apply { isDaemon = true }
+            audioWriter = writer
+            writer.start()
+        }
+
+        fun offerAudio(frame: ByteArray): Boolean =
+            !peerClosed.get() && audioQueue.offer(frame)
+
+        override fun close() {
+            if (!peerClosed.compareAndSet(false, true)) return
+            audioQueue.clear()
+            audioWriter?.interrupt()
+            audioWriter = null
+            closeQuietly(audio)
+            closeQuietly(control)
+            closeQuietly(session)
+        }
+    }
+
+    private fun startControlReader(peer: HostReceiverPeer) {
+        Thread({ readControlFrames(peer) }, "syncinit-control-reader-${peer.receiverId}").apply {
+            isDaemon = true
+            start()
+        }
+    }
+
+    private fun readControlFrames(peer: HostReceiverPeer) {
+        var reason = "control channel closed"
+        try {
+            while (!closed.get()) {
+                val frame = peer.control.readFrame() ?: break
+                when (frame.messageType) {
+                    0x04 -> {
+                        check(frame.flags == 0) { "READY frame flags must be zero" }
+                        val result = peer.session.onReadyFrame(frame.toEncodedBytes())
+                        when (result) {
+                            ReceiverSessionResult.Accepted ->
+                                onStatus("Speaker READY · receiverId=${peer.receiverId} · native state ${peer.session.state()}.")
+                            ReceiverSessionResult.BufferInsufficient ->
+                                onStatus("Speaker ${peer.receiverId}: clock is stable; waiting for sufficient audio buffer.")
+                            ReceiverSessionResult.ClockNotStable ->
+                                onStatus("Speaker ${peer.receiverId}: READY arrived before clock stability.")
+                            ReceiverSessionResult.ClockResidualTooHigh ->
+                                onStatus("Speaker ${peer.receiverId}: READY rejected because clock residual exceeded the configured gate.")
+                            else ->
+                                onStatus("Speaker ${peer.receiverId}: READY rejected · $result.")
+                        }
+                    }
+                    0x0A -> {
+                        reason = "Speaker sent LEAVE"
+                        break
+                    }
+                    else -> onStatus("Ignoring unsupported control message 0x${frame.messageType.toString(16)} from receiverId=${peer.receiverId}.")
+                }
+            }
+        } catch (error: Exception) {
+            if (!closed.get()) reason = "control channel failed: ${error.message ?: error.javaClass.simpleName}"
+        } finally {
+            removeReceiver(peer, reason)
+        }
+    }
+
+    private fun removeReceiver(peer: HostReceiverPeer, reason: String) {
+        if (!receivers.remove(peer.receiverId, peer)) return
+        peer.close()
+        if (!closed.get()) {
+            onStatus("Speaker disconnected · receiverId=${peer.receiverId} · $reason · ${receivers.size}/$MAX_RECEIVERS connected.")
+        }
+    }
+
+    /** One producer generates a single sample-indexed stream; each speaker gets the same frames. */
+    private fun startAudioTestStream(sessionId: Long) {
+        if (audioSenderThread?.isAlive == true) return
         val sender = Thread({
-            val sampleRate = 48_000
-            val channels = 2
-            val chunkFrames = 960
-            val chunkPeriodNs = 20_000_000L
             var sequence = 0L
             var sampleIndex = 0L
             var nextDeadlineNs = System.nanoTime()
 
             try {
-                onStatus("Streaming a 1 kHz timing-click test track to the receiver.")
-                while (!closed.get() && !connection.isClosed) {
-                    val pcm = ByteArray(chunkFrames * channels * 2)
-                    for (frameIndex in 0 until chunkFrames) {
+                onStatus("Shared 1 kHz timing-click source ready · fan-out limit $MAX_RECEIVERS speakers.")
+                while (!closed.get()) {
+                    val peers = receivers.values.toList()
+                    if (peers.isEmpty()) {
+                        nextDeadlineNs = System.nanoTime()
+                        Thread.sleep(50)
+                        continue
+                    }
+
+                    val pcm = ByteArray(CHUNK_FRAMES * CHANNELS * 2)
+                    for (frameIndex in 0 until CHUNK_FRAMES) {
                         val absoluteSample = sampleIndex + frameIndex
-                        val positionInSecond = absoluteSample % sampleRate.toLong()
+                        val positionInSecond = absoluteSample % SAMPLE_RATE_HZ.toLong()
                         val sample = if (positionInSecond < 1_440L) {
-                            (sin(2.0 * PI * 1_000.0 * positionInSecond / sampleRate) * 6_000.0).toInt()
+                            (sin(2.0 * PI * 1_000.0 * positionInSecond / SAMPLE_RATE_HZ) * 6_000.0).toInt()
                         } else {
                             0
                         }
-                        for (channel in 0 until channels) {
-                            val offset = (frameIndex * channels + channel) * 2
+                        for (channel in 0 until CHANNELS) {
+                            val offset = (frameIndex * CHANNELS + channel) * 2
                             pcm[offset] = (sample and 0xff).toByte()
                             pcm[offset + 1] = ((sample shr 8) and 0xff).toByte()
                         }
@@ -256,15 +386,19 @@ class MasterSessionHost(context: Context, private val onStatus: (String) -> Unit
                         sessionId = sessionId,
                         sequence = sequence,
                         sampleIndex = sampleIndex,
-                        frames = chunkFrames,
-                        channels = channels,
+                        frames = CHUNK_FRAMES,
+                        channels = CHANNELS,
                         pcm16LittleEndian = pcm
                     )
-                    connection.writeEncodedFrame(encoded)
+                    peers.forEach { peer ->
+                        if (!peer.offerAudio(encoded)) {
+                            removeReceiver(peer, "audio send queue exceeded $AUDIO_QUEUE_CHUNKS chunks")
+                        }
+                    }
 
                     sequence = (sequence + 1L) and 0xffff_ffffL
-                    sampleIndex += chunkFrames
-                    nextDeadlineNs += chunkPeriodNs
+                    sampleIndex += CHUNK_FRAMES
+                    nextDeadlineNs += CHUNK_PERIOD_NS
                     val remainingNs = nextDeadlineNs - System.nanoTime()
                     if (remainingNs > 0L) {
                         Thread.sleep(
@@ -279,31 +413,34 @@ class MasterSessionHost(context: Context, private val onStatus: (String) -> Unit
                 if (!closed.get()) Thread.currentThread().interrupt()
             } catch (error: Exception) {
                 if (!closed.get()) {
-                    onStatus("PCM16 test stream stopped: ${error.message ?: error.javaClass.simpleName}")
+                    onStatus("Shared PCM16 test stream stopped: ${error.message ?: error.javaClass.simpleName}")
                     close()
                 }
             }
-        }, "syncinit-master-audio-source").apply {
-            isDaemon = true
-        }
+        }, "syncinit-master-audio-source").apply { isDaemon = true }
         audioSenderThread = sender
         sender.start()
     }
 
-    private fun runTimeSyncServer(control: TcpFrameConnection) {
-        val server = checkNotNull(timeSyncServer) { "UDP time-sync listener was not started" }
-        onStatus("DIAG HOST_UDP_SOCKET_READY bind=0.0.0.0:${server.localPort} bound=true expectedPeer=${control.remoteEndpoint}")
-
-        val controlReader = Thread({ readControlFrames(control) }, "syncinit-master-control-reader").apply {
+    private fun startTimeSyncServer() {
+        check(timeSyncThread == null) { "UDP time-sync server is already running" }
+        val worker = Thread(::runTimeSyncServer, "syncinit-master-time-sync").apply {
             isDaemon = true
-            start()
         }
+        timeSyncThread = worker
+        worker.start()
+    }
+
+    /** One UDP listener dispatches each packet to the native receiver session named in it. */
+    private fun runTimeSyncServer() {
+        val server = checkNotNull(timeSyncServer) { "UDP time-sync listener was not started" }
+        onStatus("DIAG HOST_UDP_SOCKET_READY bind=0.0.0.0:${server.localPort} bound=true multiReceiver=true")
+
         var responseCount = 0
         var malformedUdpCount = 0
         var rejectedUdpAddressCount = 0
         var rejectedUdpPortCount = 0
         var rejectedNativePacketCount = 0
-        var admittedUdpPeer: InetSocketAddress? = null
         try {
             while (!closed.get()) {
                 val datagram = try {
@@ -321,89 +458,72 @@ class MasterSessionHost(context: Context, private val onStatus: (String) -> Unit
                     throw error
                 }
 
-                // The UDP peer must match the admitted TCP peer, including its client port.
-                if (datagram.source.address != control.remoteAddress) {
+                val candidates = receivers.values.filter { it.control.remoteAddress == datagram.source.address }
+                if (candidates.isEmpty()) {
                     rejectedUdpAddressCount += 1
                     if (rejectedUdpAddressCount == 1 || rejectedUdpAddressCount % 10 == 0) {
-                        onStatus("DIAG HOST_UDP_SOURCE_IP_REJECTED count=$rejectedUdpAddressCount source=${datagram.source} expectedPeer=${control.remoteEndpoint}")
-                    }
-                    continue
-                }
-                val pinnedPeer = admittedUdpPeer
-                if (pinnedPeer != null && datagram.source != pinnedPeer) {
-                    rejectedUdpPortCount += 1
-                    if (rejectedUdpPortCount == 1 || rejectedUdpPortCount % 10 == 0) {
-                        onStatus("DIAG HOST_UDP_SOURCE_PORT_REJECTED count=$rejectedUdpPortCount source=${datagram.source} pinnedPeer=$pinnedPeer")
+                        onStatus("DIAG HOST_UDP_SOURCE_IP_REJECTED count=$rejectedUdpAddressCount source=${datagram.source} reason=no admitted control peer has this address")
                     }
                     continue
                 }
 
                 val t3Ns = System.nanoTime()
-                val response = nativeSession?.timeSyncResponse(
-                    datagram.bytes, datagram.receivedAtNs, t3Ns
-                )
-                if (response == null) {
+                var matchedPeer: HostReceiverPeer? = null
+                var response: ByteArray? = null
+                var newlyPinnedPeer: HostReceiverPeer? = null
+                for (peer in candidates) {
+                    val pinned = peer.udpPeer.get()
+                    if (pinned != null && pinned != datagram.source) {
+                        rejectedUdpPortCount += 1
+                        continue
+                    }
+
+                    val candidateResponse = try {
+                        peer.session.timeSyncResponse(datagram.bytes, datagram.receivedAtNs, t3Ns)
+                    } catch (_: IllegalStateException) {
+                        // The Speaker may have disconnected after the receiver snapshot was taken.
+                        null
+                    } ?: continue
+
+                    if (pinned == null) {
+                        if (peer.udpPeer.compareAndSet(null, datagram.source)) {
+                            newlyPinnedPeer = peer
+                        } else if (peer.udpPeer.get() != datagram.source) {
+                            rejectedUdpPortCount += 1
+                            continue
+                        }
+                    }
+                    matchedPeer = peer
+                    response = candidateResponse
+                    break
+                }
+
+                val target = matchedPeer
+                val encodedResponse = response
+                if (target == null || encodedResponse == null) {
                     rejectedNativePacketCount += 1
                     if (rejectedNativePacketCount == 1 || rejectedNativePacketCount % 10 == 0) {
-                        onStatus("DIAG HOST_UDP_NATIVE_PACKET_REJECTED count=$rejectedNativePacketCount source=${datagram.source} bytes=${datagram.bytes.size} reason=native codec/session rejected packet")
+                        onStatus("DIAG HOST_UDP_NATIVE_PACKET_REJECTED count=$rejectedNativePacketCount source=${datagram.source} bytes=${datagram.bytes.size} reason=no active receiver session accepted packet")
                     }
                     continue
                 }
-                if (admittedUdpPeer == null) {
-                    admittedUdpPeer = datagram.source
-                    onStatus("DIAG HOST_UDP_PEER_PINNED source=${datagram.source} controlPeer=${control.remoteEndpoint} payloadBytes=${datagram.bytes.size}")
+
+                if (newlyPinnedPeer === target) {
+                    onStatus("DIAG HOST_UDP_PEER_PINNED receiverId=${target.receiverId} source=${datagram.source}")
                 }
                 val responseStartedAt = System.nanoTime()
-                server.sendTo(response, datagram.source)
+                server.sendTo(encodedResponse, datagram.source)
                 val sendElapsedUs = (System.nanoTime() - responseStartedAt) / 1_000L
 
                 responseCount += 1
                 if (responseCount == 1 || responseCount % 20 == 0) {
-                    onStatus("DIAG HOST_UDP_RESPONSE_SENT count=$responseCount destination=${datagram.source} bytes=${response.size} sendElapsedUs=$sendElapsedUs")
-                    onStatus("UDP time sync active · $responseCount validated requests answered.")
+                    onStatus("DIAG HOST_UDP_RESPONSE_SENT count=$responseCount receiverId=${target.receiverId} destination=${datagram.source} bytes=${encodedResponse.size} sendElapsedUs=$sendElapsedUs")
+                    onStatus("UDP time sync active · $responseCount validated requests answered across ${receivers.size} speaker(s).")
                 }
-            }
-        } finally {
-            controlReader.interrupt()
-        }
-    }
-
-    private fun readControlFrames(control: TcpFrameConnection) {
-        try {
-            while (!closed.get()) {
-                val frame = control.readFrame() ?: break
-                when (frame.messageType) {
-                    0x04 -> {
-                        check(frame.flags == 0) { "READY frame flags must be zero" }
-                        val result = nativeSession?.onReadyFrame(frame.toEncodedBytes())
-                        when (result) {
-                            ReceiverSessionResult.Accepted ->
-                                onStatus("Receiver READY · native state ${nativeSession?.state()}.")
-                            ReceiverSessionResult.BufferInsufficient ->
-                                onStatus("Clock sync is stable. Master is holding READY until an audio buffer exists.")
-                            ReceiverSessionResult.ClockNotStable ->
-                                onStatus("Receiver requested READY before the clock estimator was stable.")
-                            ReceiverSessionResult.ClockResidualTooHigh ->
-                                onStatus("Receiver READY rejected: clock residual exceeded the configured gate.")
-                            else ->
-                                onStatus("Receiver READY rejected: ${result ?: "session unavailable"}.")
-                        }
-                    }
-                    0x0A -> {
-                        onStatus("Receiver sent LEAVE.")
-                        close()
-                        return
-                    }
-                    else -> onStatus("Ignoring unsupported control message 0x${frame.messageType.toString(16)}.")
-                }
-            }
-            if (!closed.get()) {
-                onStatus("Receiver control connection closed.")
-                close()
             }
         } catch (error: Exception) {
             if (!closed.get()) {
-                onStatus("Receiver control channel failed: ${error.message ?: error.javaClass.simpleName}")
+                onStatus("UDP time-sync server failed: ${error.message ?: error.javaClass.simpleName}")
                 close()
             }
         }
@@ -417,22 +537,24 @@ class MasterSessionHost(context: Context, private val onStatus: (String) -> Unit
     }
 
     private fun closeResources() {
-        closeQuietly(controlConnection)
-        closeQuietly(audioConnection)
+        val activePeers = receivers.values.toList()
+        receivers.clear()
+        activePeers.forEach { it.close() }
+
         audioSenderThread?.interrupt()
         audioSenderThread = null
+        timeSyncThread?.interrupt()
+        timeSyncThread = null
+
         closeQuietly(controlServer)
         closeQuietly(audioServer)
         closeQuietly(timeSyncServer)
         closeQuietly(advertiser)
-        nativeSession?.close()
-        controlConnection = null
-        audioConnection = null
         controlServer = null
         audioServer = null
         timeSyncServer = null
         advertiser = null
-        nativeSession = null
+        nativeSessionConfig?.token?.fill(0)
         nativeSessionConfig = null
     }
 
