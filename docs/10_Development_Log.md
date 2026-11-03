@@ -711,3 +711,19 @@ No physical-device synchronization results are recorded in this initial log. Add
 5. Record loopback or external microphone output from both phones and measure acoustic skew. This is a separate measurement from the software anchor timestamps.
 
 **Next action:** Pass CI, review the PR, then perform two- and three-phone hotspot acceptance tests before publishing a new preview.
+
+
+## 2026-11-04 — Android brand identity and UI polish
+
+**Type:** Android UI / presentation  
+**Status:** Implemented on `feature/coordinated-group-playback`; Android build validation pending
+
+**Summary:**
+- Added the existing official Sync In It PNG logo to Android drawable resources; reused the same asset in the main screen brand header and Android launcher/round icon metadata.
+- Reworked the single-screen native UI into four clear cards: Host, Nearby Sessions, Connection Status and Network Diagnostics.
+- Added a dark navy/cyan visual system, clearer heading hierarchy, rounded cards and buttons, compact preview/network chips, improved session rows and better spacing.
+- Matched Android status/navigation bars to the dark preview theme.
+- Updated product copy to describe the current scheduled group-start behavior and explicitly retain the acoustic-alignment caveat.
+- Preserved all existing Host, discovery, join, disconnect, diagnostics and smoke-test actions.
+
+**Validation:** Android Gradle/JNI build and APK resource packaging must pass. No physical-device visual review has been performed yet.
