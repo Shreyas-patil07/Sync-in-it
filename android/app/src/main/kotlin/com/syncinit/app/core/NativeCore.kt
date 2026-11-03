@@ -13,7 +13,7 @@ object NativeCore {
     external fun nativePcmBufferStats(handle: Long): LongArray?
     external fun nativeReadPcmBuffer(handle: Long, output: ShortArray): Long
     external fun nativeClosePcmBuffer(handle: Long)
-    external fun nativeResetPcmBuffer(handle: Long, firstSampleIndex: Long)
+    external fun nativeSeekPcmBuffer(handle: Long, firstSampleIndex: Long)
 
     external fun nativeEncodePcmChunkFrame(
         sessionId: Long,
