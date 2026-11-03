@@ -153,6 +153,18 @@ void PcmJitterBuffer::seek(SampleIndex first_sample_index) {
         throw std::invalid_argument("jitter buffer seek cannot move behind the read cursor");
     }
 
+    std::size_t contiguous = 0U;
+    while (contiguous < capacity_frames_) {
+        const auto index = next_sample_index_ + static_cast<SampleIndex>(contiguous);
+        const auto slot = slot_for(index);
+        if (!slots_[slot].occupied || slots_[slot].sample_index != index) break;
+        ++contiguous;
+    }
+    const auto distance = static_cast<std::uint64_t>(first_sample_index - next_sample_index_);
+    if (distance >= static_cast<std::uint64_t>(contiguous)) {
+        throw std::invalid_argument("jitter buffer seek target must be inside contiguous buffered audio");
+    }
+
     for (auto& slot : slots_) {
         if (slot.occupied && slot.sample_index < first_sample_index) {
             slot.occupied = false;
