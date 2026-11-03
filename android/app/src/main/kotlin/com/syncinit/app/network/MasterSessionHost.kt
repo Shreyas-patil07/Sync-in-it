@@ -478,9 +478,12 @@ class MasterSessionHost(context: Context, private val onStatus: (String) -> Unit
                         continue
                     }
 
-                    val candidateResponse = peer.session.timeSyncResponse(
-                        datagram.bytes, datagram.receivedAtNs, t3Ns
-                    ) ?: continue
+                    val candidateResponse = try {
+                        peer.session.timeSyncResponse(datagram.bytes, datagram.receivedAtNs, t3Ns)
+                    } catch (_: IllegalStateException) {
+                        // The Speaker may have disconnected after the receiver snapshot was taken.
+                        null
+                    } ?: continue
 
                     if (pinned == null) {
                         if (peer.udpPeer.compareAndSet(null, datagram.source)) {
