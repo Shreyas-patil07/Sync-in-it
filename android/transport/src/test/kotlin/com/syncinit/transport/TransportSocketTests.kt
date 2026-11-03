@@ -8,11 +8,41 @@ import java.net.InetAddress
 import java.net.Socket
 import java.net.ServerSocket
 import java.io.IOException
+import javax.net.SocketFactory
 import java.util.concurrent.ArrayBlockingQueue
 import java.util.concurrent.TimeUnit
 
 private fun expect(value: Boolean, message: String) {
     check(value) { message }
+}
+
+private class RecordingSocketFactory : SocketFactory() {
+    private val delegate = SocketFactory.getDefault()
+    var unconnectedSocketCreations = 0
+        private set
+
+    override fun createSocket(): Socket {
+        unconnectedSocketCreations += 1
+        return delegate.createSocket()
+    }
+
+    override fun createSocket(host: String, port: Int): Socket = delegate.createSocket(host, port)
+
+    override fun createSocket(
+        host: String,
+        port: Int,
+        localHost: InetAddress,
+        localPort: Int
+    ): Socket = delegate.createSocket(host, port, localHost, localPort)
+
+    override fun createSocket(host: InetAddress, port: Int): Socket = delegate.createSocket(host, port)
+
+    override fun createSocket(
+        address: InetAddress,
+        port: Int,
+        localAddress: InetAddress,
+        localPort: Int
+    ): Socket = delegate.createSocket(address, port, localAddress, localPort)
 }
 
 private fun frameWire(type: Int, flags: Int, payload: ByteArray): ByteArray {
@@ -56,7 +86,15 @@ private fun tcpRoundTrip() {
             } catch (t: Throwable) { failure.offer(t) }
         }
         worker.start()
-        TcpFrameConnection.connect("127.0.0.1", server.localPort, connectTimeoutMs = 3_000, readTimeoutMs = 3_000).use { client ->
+        val selectedNetworkFactory = RecordingSocketFactory()
+        TcpFrameConnection.connect(
+            "127.0.0.1",
+            server.localPort,
+            connectTimeoutMs = 3_000,
+            readTimeoutMs = 3_000,
+            socketFactory = selectedNetworkFactory
+        ).use { client ->
+            expect(selectedNetworkFactory.unconnectedSocketCreations == 1, "TCP uses the caller-selected network socket factory")
             expect(client.isConnected, "connected TCP socket exposes connected state")
             expect(client.remoteAddress.hostAddress == "127.0.0.1", "TCP diagnostics expose remote address")
             expect(client.remotePort == server.localPort, "TCP diagnostics expose remote port")
@@ -204,7 +242,13 @@ private fun udpTimeSyncLoopback() {
             } catch (t: Throwable) { failure.offer(t) }
         }
         worker.start()
-        UdpTimeSyncClient(loopback, server.localPort, receiveTimeoutMs = 3_000).use { client ->
+        val selectedNetworkDatagram = DatagramSocket(null)
+        UdpTimeSyncClient(
+            loopback,
+            server.localPort,
+            receiveTimeoutMs = 3_000,
+            datagramSocket = selectedNetworkDatagram
+        ).use { client ->
             expect(client.isConnected, "connected UDP socket exposes connected state")
             expect(client.localAddress == "127.0.0.1", "UDP diagnostics expose selected local address")
             expect(client.localPort in 1..65_535, "UDP diagnostics expose ephemeral local port")
