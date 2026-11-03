@@ -69,7 +69,7 @@ internal object NetworkDiagnostics {
                 root.message.orEmpty().contains("refused", ignoreCase = true) -> "CONNECTION_REFUSED"
                 else -> "CONNECTION_FAILED"
             }
-            is java.net.SocketTimeoutException -> "CONNECT_TIMEOUT_OR_FILTERED"
+            is java.net.SocketTimeoutException -> "SOCKET_TIMEOUT"
             is java.net.UnknownHostException -> "HOST_RESOLUTION_FAILED"
             is java.net.BindException -> "LOCAL_BIND_FAILED"
             is SecurityException -> "PERMISSION_OR_POLICY_BLOCK"

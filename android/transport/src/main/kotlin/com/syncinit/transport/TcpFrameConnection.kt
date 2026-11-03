@@ -67,6 +67,13 @@ class TcpFrameConnection internal constructor(
 
     val isClosed: Boolean get() = closed.get() || socket.isClosed
     val isConnected: Boolean get() = socket.isConnected && !socket.isClosed
+
+    /** Updates the blocking read timeout; zero means wait until data or socket closure. */
+    fun setReadTimeoutMs(readTimeoutMs: Int) {
+        require(readTimeoutMs >= 0) { "readTimeoutMs must be zero (infinite) or positive" }
+        check(!isClosed) { "TCP connection is closed" }
+        socket.soTimeout = readTimeoutMs
+    }
     val remoteAddress: java.net.InetAddress get() = socket.inetAddress
     val remotePort: Int get() = socket.port
     val localAddress: String get() = socket.localAddress?.hostAddress ?: "unknown"

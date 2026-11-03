@@ -83,6 +83,12 @@ class ReceiverSessionClient(
                         "receiverId=${welcome.receiverId} audioPort=${welcome.audioPort} timePort=${welcome.timePort}"
                 )
 
+                // The 10-second timeout protects only the WELCOME handshake. The control
+                // channel is otherwise intentionally idle until the master sends an ANCHOR.
+                diagnosticStage(attemptId, "CONTROL_IDLE_TIMEOUT_DISABLE") {
+                    control.setReadTimeoutMs(0)
+                }
+
                 onStatus("Master accepted HELLO. Opening audio channel…")
                 val audio = connectTcp(attemptId, "AUDIO", host, welcome.audioPort, 0, peerRoute.network)
                 audioConnection = audio
