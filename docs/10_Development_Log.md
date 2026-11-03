@@ -694,7 +694,7 @@ No physical-device synchronization results are recorded in this initial log. Add
 - Added a 6-second group admission window beginning when the first Speaker is admitted. After the window closes and all current Speakers are READY, the Host arms every receiver, selects a shared sample index approximately 2 seconds behind the producer head, and sends one ANCHOR with a common future Host monotonic timestamp.
 - Each receiver maps the Host timestamp to its own monotonic clock using the latest offset estimate, seeks to the shared sample index, primes AudioTrack with two 20 ms chunks, and calls `AudioTrack.play()` at the scheduled local target.
 - Serialized new Speaker admission against group arming so a receiver cannot be admitted after the coordinator snapshots the cohort.
-- Increased the receiver PCM jitter buffer to 20 seconds to cover the existing 10-second clock-stability sample span plus the 6-second group admission window. The PCM and ring-slot arrays use approximately 19 MiB per receiver at 48 kHz stereo, excluding runtime overhead.
+- Increased the receiver PCM jitter buffer to 20 seconds to cover the existing 10-second clock-stability sample span plus the 6-second group admission window. The PCM and ring-slot arrays use approximately 18.3 MiB per receiver at 48 kHz stereo, excluding runtime overhead.
 
 **Important limitations:**
 - This milestone schedules calls to Android `AudioTrack.play()` against a common monotonic-clock target. It does not schedule the hardware DAC against a presentation timestamp and does not guarantee acoustic alignment across different phone models.
