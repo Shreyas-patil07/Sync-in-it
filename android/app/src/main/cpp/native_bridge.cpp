@@ -702,7 +702,7 @@ Java_com_syncinit_app_core_NativeCore_nativeCloseSession(JNIEnv*, jobject, jlong
 extern "C" JNIEXPORT jlong JNICALL
 Java_com_syncinit_app_core_NativeCore_nativeCreatePcmBuffer(
     JNIEnv* env, jobject, jlong capacity_frames, jint channels, jlong session_id) {
-    if (capacity_frames <= 0 || capacity_frames > 480'000 ||
+    if (capacity_frames <= 0 || capacity_frames > 960'000 ||
         channels < 1 || channels > 2 ||
         session_id < 0 || static_cast<std::uint64_t>(session_id) > UINT32_MAX) {
         throw_illegal_argument(env, "PCM jitter buffer configuration is outside the supported range");
