@@ -110,6 +110,52 @@ void test_successful_handshake_and_playback_lifecycle() {
     expect(!session.welcome_message().has_value(), "closed session does not expose WELCOME");
 }
 
+void test_multiple_receivers_share_session_but_keep_independent_state() {
+    auto first_config = make_config();
+    auto second_config = first_config;
+    second_config.receiver_id = static_cast<std::uint16_t>(first_config.receiver_id + 1U);
+
+    syit::ReceiverSession first(first_config);
+    syit::ReceiverSession second(second_config);
+
+    expect(first_config.session_id == second_config.session_id,
+           "receivers share one host session ID");
+    expect(first_config.receiver_id != second_config.receiver_id,
+           "each receiver receives a unique receiver ID");
+    join_to_sync(first, first_config);
+    join_to_sync(second, second_config);
+
+    const auto first_welcome = first.welcome_message();
+    const auto second_welcome = second.welcome_message();
+    expect(first_welcome.has_value() && second_welcome.has_value(),
+           "both admitted receivers receive WELCOME");
+    if (first_welcome.has_value() && second_welcome.has_value()) {
+        expect(first_welcome->session_id == second_welcome->session_id,
+               "WELCOME frames identify the same shared host session");
+        expect(first_welcome->receiver_id != second_welcome->receiver_id,
+               "WELCOME frames carry distinct receiver identities");
+    }
+
+    expect(first.on_ready(ready_message()) == syit::ReceiverSessionResult::Accepted,
+           "first receiver can become READY independently");
+    expect(first.state() == syit::ReceiverSessionState::Ready,
+           "first receiver advances to READY");
+    expect(second.state() == syit::ReceiverSessionState::Synchronizing,
+           "first receiver READY does not advance the second receiver");
+
+    expect(second.on_ready(ready_message()) == syit::ReceiverSessionResult::Accepted,
+           "second receiver can become READY independently");
+    expect(second.state() == syit::ReceiverSessionState::Ready,
+           "second receiver advances to READY");
+
+    expect(first.on_leave() == syit::ReceiverSessionResult::Accepted,
+           "first receiver can leave independently");
+    expect(first.state() == syit::ReceiverSessionState::Closed,
+           "first receiver is closed after LEAVE");
+    expect(second.state() == syit::ReceiverSessionState::Ready,
+           "first receiver leaving does not close the second receiver");
+}
+
 void test_authentication_failures_close_session() {
     {
         const auto config = make_config();
@@ -271,6 +317,7 @@ void test_degradation_and_close_are_state_bounded() {
 
 int main() {
     test_successful_handshake_and_playback_lifecycle();
+    test_multiple_receivers_share_session_but_keep_independent_state();
     test_authentication_failures_close_session();
     test_identity_binding_and_order();
     test_readiness_gates_and_recovery();
