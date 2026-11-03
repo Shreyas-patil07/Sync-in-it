@@ -4,6 +4,7 @@ package com.syncinit.app.audio
 import android.media.AudioAttributes
 import android.media.AudioFormat
 import android.media.AudioTrack
+import android.os.Build
 import com.syncinit.app.core.ClockSyncMeasurement
 import com.syncinit.app.core.NativeCore
 import com.syncinit.app.core.NativeProtocol
@@ -118,7 +119,6 @@ private class AndroidPcmAudioOutput(
 ) : Closeable {
     companion object {
         private const val CHUNK_FRAMES = 960
-        private const val PREROLL_CHUNKS = 2
     }
 
     private val closed = AtomicBoolean(false)
@@ -145,6 +145,7 @@ private class AndroidPcmAudioOutput(
         check(minimumBytes > 0) { "AudioTrack does not support the negotiated PCM format" }
 
         val chunkBytes = CHUNK_FRAMES * buffer.channels * 2
+        val trackBufferBytes = maxOf(minimumBytes * 2, chunkBytes * 4)
         val audioTrack = AudioTrack.Builder()
             .setAudioAttributes(
                 AudioAttributes.Builder()
@@ -159,7 +160,7 @@ private class AndroidPcmAudioOutput(
                     .setChannelMask(channelMask)
                     .build()
             )
-            .setBufferSizeInBytes(maxOf(minimumBytes * 2, chunkBytes * 4))
+            .setBufferSizeInBytes(trackBufferBytes)
             .setTransferMode(AudioTrack.MODE_STREAM)
             .build()
 
@@ -178,33 +179,46 @@ private class AndroidPcmAudioOutput(
     }
 
     private fun writeLoop(audioTrack: AudioTrack, startAtNs: Long) {
-        val samples = ShortArray(CHUNK_FRAMES * buffer.channels)
+        val playbackSamples = ShortArray(CHUNK_FRAMES * buffer.channels)
         try {
-            var primedFrames = 0
-            val requiredPrerollFrames = CHUNK_FRAMES * PREROLL_CHUNKS
+            val requiredPrerollFrames = if (Build.VERSION.SDK_INT >= Build.VERSION_CODES.S) {
+                audioTrack.startThresholdInFrames
+            } else {
+                audioTrack.bufferCapacityInFrames
+            }
+            check(requiredPrerollFrames > 0) { "AudioTrack reported an invalid start threshold" }
 
-            // Queue a small, common sample-indexed pre-roll while AudioTrack is stopped.
-            // The already-buffered jitter range remains available because seek preserves
-            // all samples at and after the group's ANCHOR sample index.
+            var primedFrames = 0
+            // MODE_STREAM can be primed before play(). Fill the device-specific start threshold
+            // so play() does not wait for additional frames after the shared T0.
             while (!closed.get() && primedFrames < requiredPrerollFrames) {
-                if (buffer.bufferedMillis() < CHUNK_FRAMES * 1_000L / buffer.sampleRateHz) {
+                val framesToWrite = minOf(CHUNK_FRAMES, requiredPrerollFrames - primedFrames)
+                val bufferedMs = buffer.bufferedMillis()
+                val requiredBufferedMs =
+                    framesToWrite.toLong() * 1_000L / buffer.sampleRateHz.toLong()
+                if (bufferedMs < requiredBufferedMs) {
                     Thread.sleep(1)
                     continue
                 }
-                buffer.readNext(samples)
-                writeFully(audioTrack, samples, AudioTrack.WRITE_NON_BLOCKING)
-                primedFrames += samples.size / buffer.channels
+
+                val prerollSamples = ShortArray(framesToWrite * buffer.channels)
+                buffer.readNext(prerollSamples)
+                writeFully(audioTrack, prerollSamples, AudioTrack.WRITE_NON_BLOCKING)
+                primedFrames += framesToWrite
             }
 
             if (closed.get()) return
             waitUntil(startAtNs)
             if (closed.get()) return
             audioTrack.play()
-            onStatus("Group playback started at the scheduled local clock target.")
+            onStatus(
+                "Group playback started at the scheduled local clock target · " +
+                    "$primedFrames PCM frames preloaded."
+            )
 
             while (!closed.get()) {
-                buffer.readNext(samples)
-                writeFully(audioTrack, samples, AudioTrack.WRITE_BLOCKING)
+                buffer.readNext(playbackSamples)
+                writeFully(audioTrack, playbackSamples, AudioTrack.WRITE_BLOCKING)
             }
         } catch (error: InterruptedException) {
             if (!closed.get()) Thread.currentThread().interrupt()
@@ -224,6 +238,9 @@ private class AndroidPcmAudioOutput(
             )
             if (written < 0) throw IOException("AudioTrack write failed with code $written")
             if (written == 0) {
+                if (mode == AudioTrack.WRITE_NON_BLOCKING) {
+                    throw IOException("AudioTrack reached its pre-start buffer limit before the start threshold was filled")
+                }
                 Thread.sleep(1)
             } else {
                 offset += written
@@ -267,7 +284,6 @@ class PcmAudioReceiver(
 ) : Closeable {
     companion object {
         private const val MIN_READY_BUFFER_MS = 3_000L
-        private const val PREFILL_BUFFER_MS = 3_500L
     }
 
     private val closed = AtomicBoolean(false)
