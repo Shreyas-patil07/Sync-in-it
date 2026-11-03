@@ -320,7 +320,10 @@ class PcmAudioReceiver(
                     PcmChunkInsertResult.Duplicate,
                     PcmChunkInsertResult.TooLate -> Unit
                     PcmChunkInsertResult.OutOfWindow ->
-                        onStatus("Audio buffer rejected a chunk outside its bounded sample window.")
+                        throw IOException(
+                            "PCM buffer reached its 20-second admission limit before group start; " +
+                                "reconnect the Speaker and retry the session"
+                        )
                     PcmChunkInsertResult.InvalidChunk ->
                         throw IOException("received an invalid PCM16 audio chunk")
                 }
