@@ -116,13 +116,21 @@ private class AndroidPcmAudioOutput(
     private val buffer: NativePcmJitterBuffer,
     private val onStatus: (String) -> Unit
 ) : Closeable {
+    companion object {
+        private const val CHUNK_FRAMES = 960
+        private const val PREROLL_CHUNKS = 2
+    }
+
     private val closed = AtomicBoolean(false)
     @Volatile private var track: AudioTrack? = null
     @Volatile private var writer: Thread? = null
 
-    fun start() {
+    fun startAt(masterAlignedLocalTimeNs: Long) {
         check(!closed.get()) { "audio output is closed" }
         check(writer == null) { "audio output has already started" }
+        check(masterAlignedLocalTimeNs > System.nanoTime()) {
+            "scheduled group-start time has already passed"
+        }
 
         val channelMask = if (buffer.channels == 1) {
             AudioFormat.CHANNEL_OUT_MONO
@@ -136,7 +144,7 @@ private class AndroidPcmAudioOutput(
         )
         check(minimumBytes > 0) { "AudioTrack does not support the negotiated PCM format" }
 
-        val chunkBytes = 960 * buffer.channels * 2
+        val chunkBytes = CHUNK_FRAMES * buffer.channels * 2
         val audioTrack = AudioTrack.Builder()
             .setAudioAttributes(
                 AudioAttributes.Builder()
@@ -160,40 +168,78 @@ private class AndroidPcmAudioOutput(
             "AudioTrack initialization failed"
         }
         track = audioTrack
-        audioTrack.play()
 
-        val thread = Thread({ writeLoop(audioTrack) }, "syncinit-audiotrack-writer").apply {
-            isDaemon = true
-        }
+        val thread = Thread(
+            { writeLoop(audioTrack, masterAlignedLocalTimeNs) },
+            "syncinit-audiotrack-writer"
+        ).apply { isDaemon = true }
         writer = thread
         thread.start()
     }
 
-    private fun writeLoop(audioTrack: AudioTrack) {
-        val samples = ShortArray(960 * buffer.channels)
+    private fun writeLoop(audioTrack: AudioTrack, startAtNs: Long) {
+        val samples = ShortArray(CHUNK_FRAMES * buffer.channels)
         try {
+            var primedFrames = 0
+            val requiredPrerollFrames = CHUNK_FRAMES * PREROLL_CHUNKS
+
+            // Queue a small, common sample-indexed pre-roll while AudioTrack is stopped.
+            // The already-buffered jitter range remains available because seek preserves
+            // all samples at and after the group's ANCHOR sample index.
+            while (!closed.get() && primedFrames < requiredPrerollFrames) {
+                if (buffer.bufferedMillis() < CHUNK_FRAMES * 1_000L / buffer.sampleRateHz) {
+                    Thread.sleep(1)
+                    continue
+                }
+                buffer.readNext(samples)
+                writeFully(audioTrack, samples, AudioTrack.WRITE_NON_BLOCKING)
+                primedFrames += samples.size / buffer.channels
+            }
+
+            if (closed.get()) return
+            waitUntil(startAtNs)
+            if (closed.get()) return
+            audioTrack.play()
+            onStatus("Group playback started at the scheduled local clock target.")
+
             while (!closed.get()) {
                 buffer.readNext(samples)
-                var offset = 0
-                while (offset < samples.size && !closed.get()) {
-                    val written = audioTrack.write(
-                        samples,
-                        offset,
-                        samples.size - offset,
-                        AudioTrack.WRITE_BLOCKING
-                    )
-                    if (written < 0) throw IOException("AudioTrack write failed with code $written")
-                    if (written == 0) {
-                        Thread.sleep(1)
-                    } else {
-                        offset += written
-                    }
-                }
+                writeFully(audioTrack, samples, AudioTrack.WRITE_BLOCKING)
             }
         } catch (error: InterruptedException) {
             if (!closed.get()) Thread.currentThread().interrupt()
         } catch (error: Exception) {
             if (!closed.get()) onStatus("Audio output stopped: ${error.message ?: error.javaClass.simpleName}")
+        }
+    }
+
+    private fun writeFully(audioTrack: AudioTrack, samples: ShortArray, mode: Int) {
+        var offset = 0
+        while (offset < samples.size && !closed.get()) {
+            val written = audioTrack.write(
+                samples,
+                offset,
+                samples.size - offset,
+                mode
+            )
+            if (written < 0) throw IOException("AudioTrack write failed with code $written")
+            if (written == 0) {
+                Thread.sleep(1)
+            } else {
+                offset += written
+            }
+        }
+    }
+
+    private fun waitUntil(targetNs: Long) {
+        while (!closed.get()) {
+            val remainingNs = targetNs - System.nanoTime()
+            if (remainingNs <= 0L) return
+            if (remainingNs > 3_000_000L) {
+                Thread.sleep((remainingNs - 1_000_000L) / 1_000_000L)
+            } else {
+                Thread.yield()
+            }
         }
     }
 
@@ -225,7 +271,7 @@ class PcmAudioReceiver(
     }
 
     private val closed = AtomicBoolean(false)
-    private val playbackStarted = AtomicBoolean(false)
+    private val anchorReceived = AtomicBoolean(false)
     private val readySent = AtomicBoolean(false)
     private val latestClock = AtomicReference<ClockSyncMeasurement?>(null)
     private val buffer: NativePcmJitterBuffer
@@ -258,7 +304,6 @@ class PcmAudioReceiver(
     fun updateClockMeasurement(measurement: ClockSyncMeasurement) {
         if (closed.get()) return
         latestClock.set(measurement)
-        tryStartPlayback()
         trySendReady()
     }
 
@@ -279,7 +324,6 @@ class PcmAudioReceiver(
                     PcmChunkInsertResult.InvalidChunk ->
                         throw IOException("received an invalid PCM16 audio chunk")
                 }
-                tryStartPlayback()
                 trySendReady()
             }
         } catch (error: Exception) {
@@ -287,21 +331,8 @@ class PcmAudioReceiver(
         }
     }
 
-    private fun tryStartPlayback() {
-        if (closed.get() || playbackStarted.get()) return
-        if (buffer.bufferedMillis() < PREFILL_BUFFER_MS) return
-        if (!playbackStarted.compareAndSet(false, true)) return
-        try {
-            output.start()
-            onStatus("PCM16 audio is playing through AudioTrack · 48 kHz stereo · 3.5 s prebuffer.")
-        } catch (error: Exception) {
-            playbackStarted.set(false)
-            throw error
-        }
-    }
-
     private fun trySendReady() {
-        if (closed.get() || readySent.get() || !playbackStarted.get()) return
+        if (closed.get() || readySent.get()) return
         val measurement = latestClock.get() ?: return
         if (!measurement.acquisitionStable) return
 
@@ -322,10 +353,47 @@ class PcmAudioReceiver(
             )
             onStatus(
                 "Clock acquisition stable · ${bufferedMs} ms buffered · READY sent. " +
-                    "Playback is active, but scheduled group start is not implemented yet."
+                    "Waiting for the master's coordinated playback anchor."
             )
         } catch (error: Exception) {
             readySent.set(false)
+            throw error
+        }
+    }
+
+    fun onPlaybackAnchor(anchor: com.syncinit.app.core.PlaybackAnchor) {
+        if (closed.get()) return
+        require(anchor.kind == 0 && anchor.playing) {
+            "only a start ANCHOR is supported by this Android preview"
+        }
+        check(readySent.get()) { "master sent a start ANCHOR before this receiver was READY" }
+        val measurement = latestClock.get()
+            ?: throw IOException("clock estimate is unavailable for the start ANCHOR")
+        check(measurement.acquisitionStable) {
+            "clock estimate is no longer stable enough for scheduled playback"
+        }
+
+        val localStartNsDouble = anchor.masterTimeNs.toDouble() - measurement.offsetNs
+        check(localStartNsDouble.isFinite() &&
+            localStartNsDouble >= 0.0 &&
+            localStartNsDouble <= Long.MAX_VALUE.toDouble()) {
+            "start ANCHOR cannot be mapped into the receiver's monotonic clock"
+        }
+        val localStartNs = localStartNsDouble.toLong()
+        check(localStartNs - System.nanoTime() >= 100_000_000L) {
+            "start ANCHOR arrived too close to or after its scheduled start"
+        }
+        if (!anchorReceived.compareAndSet(false, true)) return
+
+        try {
+            buffer.seekToSampleIndex(anchor.sampleIndex)
+            output.startAt(localStartNs)
+            onStatus(
+                "Group start armed · sample ${anchor.sampleIndex} · " +
+                    "${(localStartNs - System.nanoTime()) / 1_000_000L} ms until target."
+            )
+        } catch (error: Exception) {
+            anchorReceived.set(false)
             throw error
         }
     }
