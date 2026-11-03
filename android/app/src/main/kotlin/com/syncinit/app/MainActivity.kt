@@ -256,6 +256,14 @@ class MainActivity : Activity() {
             status.text = message
             appendDiagnostic("STATUS", message)
 
+            if (::hostDetails.isInitialized && masterHost != null &&
+                (message.startsWith("Speaker connected") ||
+                    message.startsWith("Speaker disconnected") ||
+                    message.startsWith("Host is full"))
+            ) {
+                hostDetails.text = "${hostServiceName ?: "Hosting"}\\n$message"
+            }
+
             val hostEnded = message.startsWith("Receiver sent LEAVE.") ||
                 message.startsWith("Receiver control connection closed.") ||
                 message.startsWith("Admitted receiver disconnected:")
