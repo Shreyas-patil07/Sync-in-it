@@ -51,6 +51,7 @@ class MasterSessionHost(context: Context, private val onStatus: (String) -> Unit
         private const val CHUNK_FRAMES = 960
         private const val CHUNK_PERIOD_NS = 20_000_000L
         private const val GROUP_START_LEAD_NS = 1_000_000_000L
+        private const val GROUP_ADMISSION_WINDOW_NS = 6_000_000_000L
         private const val GROUP_START_BUFFER_MS = 2_000L
     }
 
@@ -61,7 +62,9 @@ class MasterSessionHost(context: Context, private val onStatus: (String) -> Unit
     private val receivers = ConcurrentHashMap<Int, HostReceiverPeer>()
     private val groupStartLock = Any()
     private val groupStartScheduled = AtomicBoolean(false)
+    private val groupStartCheckQueued = AtomicBoolean(false)
     private val streamCursor = AtomicReference<StreamCursor?>(null)
+    @Volatile private var firstReceiverAdmissionNs = 0L
     private val executor = Executors.newSingleThreadExecutor { task ->
         Thread(task, "syncinit-master-admission").apply { isDaemon = true }
     }
@@ -169,6 +172,14 @@ class MasterSessionHost(context: Context, private val onStatus: (String) -> Unit
                         closeQuietly(rejected)
                         continue
                     }
+                    val admissionStartedAt = firstReceiverAdmissionNs
+                    if (admissionStartedAt != 0L &&
+                        System.nanoTime() - admissionStartedAt >= GROUP_ADMISSION_WINDOW_NS) {
+                        val rejected = listeningControl.accept()
+                        onStatus("Group admission window closed · restart hosting to add another speaker.")
+                        closeQuietly(rejected)
+                        continue
+                    }
                     if (receivers.size >= MAX_RECEIVERS) {
                         val rejected = listeningControl.accept()
                         onStatus("Host is full · rejected another connection (limit $MAX_RECEIVERS).")
@@ -227,6 +238,11 @@ class MasterSessionHost(context: Context, private val onStatus: (String) -> Unit
                     check(!groupStartScheduled.get()) {
                         "group playback started while this Speaker was joining"
                     }
+                    val admissionWindowStartedAt = firstReceiverAdmissionNs
+                    check(admissionWindowStartedAt == 0L ||
+                        System.nanoTime() - admissionWindowStartedAt < GROUP_ADMISSION_WINDOW_NS) {
+                        "group admission window closed while this Speaker was joining"
+                    }
                     val peer = HostReceiverPeer(receiverId, receiverSession, acceptedControl, acceptedAudio)
                     check(receivers.putIfAbsent(receiverId, peer) == null) {
                         "receiver ID $receiverId is already active"
@@ -238,6 +254,10 @@ class MasterSessionHost(context: Context, private val onStatus: (String) -> Unit
 
                     peer.startAudioWriter()
                     startControlReader(peer)
+                    if (receivers.size == 1) {
+                        firstReceiverAdmissionNs = System.nanoTime()
+                        onStatus("Group admission window open · add up to $MAX_RECEIVERS speakers within 6 seconds.")
+                    }
                     onStatus(
                         "Speaker connected · receiverId=$receiverId · native state ${peer.session.state()} · " +
                             "${receivers.size}/$MAX_RECEIVERS connected."
@@ -365,6 +385,9 @@ class MasterSessionHost(context: Context, private val onStatus: (String) -> Unit
     private fun removeReceiver(peer: HostReceiverPeer, reason: String) {
         if (!receivers.remove(peer.receiverId, peer)) return
         peer.close()
+        if (receivers.isEmpty() && !groupStartScheduled.get()) {
+            firstReceiverAdmissionNs = 0L
+        }
         if (!closed.get()) {
             onStatus("Speaker disconnected · receiverId=${peer.receiverId} · $reason · ${receivers.size}/$MAX_RECEIVERS connected.")
         }
@@ -385,6 +408,35 @@ class MasterSessionHost(context: Context, private val onStatus: (String) -> Unit
                     .getOrDefault(false)
             }
             if (!allReady) return
+
+            val admissionStartedAt = firstReceiverAdmissionNs
+            if (admissionStartedAt == 0L) return
+            val admissionDeadlineNs = admissionStartedAt + GROUP_ADMISSION_WINDOW_NS
+            if (nowNs < admissionDeadlineNs) {
+                if (groupStartCheckQueued.compareAndSet(false, true)) {
+                    Thread({
+                        try {
+                            val remainingNs = admissionDeadlineNs - System.nanoTime()
+                            if (remainingNs > 0L) {
+                                Thread.sleep(
+                                    remainingNs / 1_000_000L,
+                                    (remainingNs % 1_000_000L).toInt()
+                                )
+                            }
+                        } catch (_: InterruptedException) {
+                            Thread.currentThread().interrupt()
+                        } finally {
+                            groupStartCheckQueued.set(false)
+                        }
+                        tryScheduleGroupStart()
+                    }, "syncinit-group-start-window").apply {
+                        isDaemon = true
+                        start()
+                    }
+                }
+                onStatus("Group playback will arm when the speaker admission window closes and all admitted speakers are READY.")
+                return
+            }
 
             val cursor = streamCursor.get()
             if (cursor == null) {
