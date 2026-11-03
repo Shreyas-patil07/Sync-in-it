@@ -111,7 +111,7 @@ class MainActivity : Activity() {
         content.addView(debugLog)
 
         content.addView(TextView(this).apply {
-            text = "Nearby discovery and audio use the local network only. Use a trusted phone hotspot or private Wi-Fi network; internet is not required. The host sends a generated 1 kHz timing-click test stream; receivers prebuffer PCM16 and play it through AudioTrack. User-selected audio and scheduled group playback are not implemented yet."
+            text = "Nearby discovery and audio use the local network only. Use a trusted phone hotspot or private Wi-Fi network; internet is not required. The host sends one shared generated 1 kHz timing-click test stream to up to 8 receivers; each prebuffers PCM16 and plays it through AudioTrack. User-selected audio and scheduled group playback are not implemented yet."
             textSize = 12f
             setPadding(0, 24, 0, 0)
         })
@@ -148,7 +148,7 @@ class MainActivity : Activity() {
                     } else {
                         hostServiceName = invitation.serviceName
                         hostDetails.text =
-                            "Visible as ${invitation.serviceName}\nWaiting for one receiver. A 1 kHz timing-click test stream will start after it joins."
+                            "Visible as ${invitation.serviceName}\nWaiting for up to 8 speakers. One shared 1 kHz timing-click stream will be sent to every connected speaker."
                         postStatus("Session created. Nearby phones can see this device and tap to join.")
                         renderNearbySessions()
                     }
