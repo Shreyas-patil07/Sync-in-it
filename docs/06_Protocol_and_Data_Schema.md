@@ -105,6 +105,18 @@ The `platform` field in HELLO is an enum: `1 = Android`, `2 = iOS`. Implementati
 
 Unknown anchor kinds must be rejected or ignored safely according to protocol compatibility rules; they must not be treated as start.
 
+### 5.1.1 Android preview start coordination
+
+The current Android preview uses ANCHOR kind `0` (start) as a one-shot group-start command:
+
+1. The Host admits Speakers for a fixed 6-second window after the first Speaker completes admission.
+2. Every admitted Speaker must report READY after the clock estimator is stable and at least 3 seconds of contiguous PCM is buffered.
+3. After the admission window closes and every admitted Speaker is READY, the Host selects one shared sample index already inside the buffered PCM range and one future Host monotonic timestamp.
+4. The Host arms each admitted native receiver session, applies the same start anchor to each session, and sends the encoded ANCHOR over each Speaker's control TCP connection.
+5. Each Speaker maps the Host timestamp into its local monotonic clock using the latest four-timestamp offset estimate, seeks its jitter-buffer cursor to the shared sample index, primes AudioTrack, and calls `AudioTrack.play()` at the scheduled local target.
+
+The Android preview uses a 20-second PCM ring buffer to retain the first Speaker's stream while later Speakers complete the 10-second clock-estimator stability window. The initial admission policy intentionally prevents late additions after the cohort has started; restart hosting to form another group. This is a software scheduling milestone, not a claim of sample-accurate DAC or acoustic alignment. Hardware output timestamp mapping, output-latency compensation, drift control and acoustic measurements are outside this milestone.
+
 ### 5.2 Receiver join and playback state
 
 The master enforces the following per-control-connection states:
