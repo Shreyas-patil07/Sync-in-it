@@ -227,6 +227,12 @@ class LanSessionBrowser(
             }
             val resolvedAddress = requireNotNull(address) { "validated NSD record has no IPv4 address" }
             val resolvedToken = requireNotNull(token) { "validated NSD record has no session token" }
+            if (PeerNetworkSelector.isLocalInterfaceAddress(appContext, resolvedAddress)) {
+                onStatus(
+                    "DIAG NSD_SELF_SESSION_IGNORED name=${serviceInfo.serviceName} address=$resolvedAddress"
+                )
+                return
+            }
             onStatus("DIAG NSD_PEER_ROUTE ${NetworkDiagnostics.networkSnapshot(appContext, resolvedAddress)}")
 
             synchronized(this@LanSessionBrowser) {
