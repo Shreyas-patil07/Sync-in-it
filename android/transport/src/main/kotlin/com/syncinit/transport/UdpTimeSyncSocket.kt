@@ -18,15 +18,19 @@ class UdpTimeSyncClient(
     masterAddress: InetAddress,
     masterPort: Int,
     localPort: Int = 0,
-    receiveTimeoutMs: Int = 1_000
+    receiveTimeoutMs: Int = 1_000,
+    datagramSocket: DatagramSocket? = null
 ) : Closeable {
-    private val socket = DatagramSocket(null)
+    private val socket = datagramSocket ?: DatagramSocket(null)
     private val closed = AtomicBoolean(false)
 
     init {
         require(masterPort in 1..65_535) { "masterPort must be between 1 and 65535" }
         require(localPort in 0..65_535) { "localPort must be between 0 and 65535" }
         require(receiveTimeoutMs > 0) { "receiveTimeoutMs must be positive" }
+        require(!socket.isBound && !socket.isConnected) {
+            "injected UDP socket must be unbound and unconnected"
+        }
         socket.bind(InetSocketAddress(localPort))
         socket.soTimeout = receiveTimeoutMs
         // Connected UDP filters datagrams to the configured master IP and port.
