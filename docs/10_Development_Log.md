@@ -619,3 +619,31 @@ No physical-device synchronization results are recorded in this initial log. Add
 **Interpretation:** NO_ROUTE_TO_HOST means the OS rejected the route/neighbor path before TCP admission; CONNECTION_REFUSED means the peer IP was reachable but no listener accepted the target port; a 5-second timeout suggests silently dropped/filtered connection traffic; failure at WELCOME or AUDIO_HELLO indicates TCP is working and the investigation has moved into protocol/admission. Subnet equality alone does not prove peer-to-peer reachability or rule out AP isolation/firewall policy.
 
 **Validation:** GitHub Actions passed the Android debug APK/NDK build, Kotlin transport integration tests, APK signature verification, and Python 3.11/3.12/3.13 plus C++17 simulator/core matrix on commit `95bae222277230c9ef9538553577a2cb3abd8ffd`. The updateable debug APK was uploaded as workflow artifact `sync-in-it-android-preview-e13a473ea69a3e88305bea56384c64ee4932c0ab` (run `41518255946`). The new debugger has not yet been run on the three physical phones. No root cause for the Redmi-to-Redmi pair is claimed until both devices' exported logs are compared.
+
+## 2026-11-03 — Mobile-hotspot route selection and self-discovery filtering
+
+**Type:** Android networking / hotspot reliability  
+**Status:** Implemented on branch; CI and physical-hotspot validation pending  
+**Branch:** `feature/hotspot-network-binding`
+
+**Summary:**
+- Added `PeerNetworkSelector` to select the connected Wi-Fi `Network` whose route table best matches the discovered IPv4 host. Selection does not require `NET_CAPABILITY_INTERNET` or `NET_CAPABILITY_VALIDATED`, so a phone hotspot with no upstream internet is eligible.
+- Bound receiver control and audio TCP sockets to the selected network's `SocketFactory`.
+- Bound the receiver UDP clock-sync socket to the same selected Android `Network`. All three receiver transports now use one consistent network instead of independently relying on Android's process-default route.
+- Added an actionable failure when no Wi-Fi route to the discovered host exists, plus diagnostics for the selected network, interface, matched route, internet and validation capabilities.
+- Added local-interface address filtering so a phone does not offer its own mDNS-advertised session as a join target.
+- Updated UI guidance to say that all devices may use the same phone hotspot or local Wi-Fi and that internet is not required.
+- Added JVM transport tests proving TCP socket-factory injection and UDP datagram-socket injection.
+
+**Design note:** The host continues to bind TCP/UDP listeners to wildcard addresses so incoming clients can reach it through the phone's hotspot interface. No app-managed hotspot creation has been added in this change; the user enables the Android phone hotspot through system settings.
+
+**Physical validation required:**
+1. Turn off access to any external router. Enable a phone hotspot on the Host and connect a Speaker to it.
+2. Verify discovery and inspect `PEER_NETWORK_SELECTED`; the selected transport must be Wi-Fi even when `internet=false` and `validated=false`.
+3. Confirm control TCP, audio TCP and UDP time sync reach READY.
+4. Confirm the Host does not list its own session.
+5. Test hotspot implementations from more than one Android manufacturer. Some hotspots may filter multicast discovery or client-to-client traffic; QR/manual pairing is a planned fallback if mDNS is blocked.
+
+**Limitations:** This change does not add multi-receiver admission or scheduled common-T0 playback. The current host still admits one receiver. No physical hotspot result is claimed until tested on devices.
+
+**Next action:** Pass Android/JNI and Kotlin transport CI, install the updateable preview on both phones, and run the router-free hotspot acceptance test before expanding to multi-receiver session management.
