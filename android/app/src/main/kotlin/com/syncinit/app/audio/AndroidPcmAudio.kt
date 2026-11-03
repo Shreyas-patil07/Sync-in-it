@@ -115,7 +115,8 @@ class NativePcmJitterBuffer(
 
 private class AndroidPcmAudioOutput(
     private val buffer: NativePcmJitterBuffer,
-    private val onStatus: (String) -> Unit
+    private val onStatus: (String) -> Unit,
+    private val onFailure: (Exception) -> Unit
 ) : Closeable {
     companion object {
         private const val CHUNK_FRAMES = 960
@@ -223,7 +224,10 @@ private class AndroidPcmAudioOutput(
         } catch (error: InterruptedException) {
             if (!closed.get()) Thread.currentThread().interrupt()
         } catch (error: Exception) {
-            if (!closed.get()) onStatus("Audio output stopped: ${error.message ?: error.javaClass.simpleName}")
+            if (!closed.get()) {
+                onStatus("Audio output stopped: ${error.message ?: error.javaClass.simpleName}")
+                onFailure(error)
+            }
         }
     }
 
@@ -304,7 +308,7 @@ class PcmAudioReceiver(
             sampleRateHz = welcome.sampleRateHz,
             channels = welcome.channels
         )
-        output = AndroidPcmAudioOutput(buffer, onStatus)
+        output = AndroidPcmAudioOutput(buffer, onStatus, onFailure)
     }
 
     fun start() {
