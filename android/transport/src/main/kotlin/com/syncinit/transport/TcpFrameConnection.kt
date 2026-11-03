@@ -9,6 +9,7 @@ import java.net.ServerSocket
 import java.net.Socket
 import java.net.SocketTimeoutException
 import java.util.concurrent.atomic.AtomicBoolean
+import javax.net.SocketFactory
 
 /** One length-prefixed TCP byte stream. Reads are blocking and must run off the audio callback. */
 data class WireFrame(val messageType: Int, val flags: Int = 0, val payload: ByteArray = byteArrayOf()) {
@@ -162,12 +163,13 @@ class TcpFrameConnection internal constructor(
             port: Int,
             connectTimeoutMs: Int = 5_000,
             readTimeoutMs: Int = 0,
-            maxFrameSize: Int = DEFAULT_MAX_FRAME_SIZE
+            maxFrameSize: Int = DEFAULT_MAX_FRAME_SIZE,
+            socketFactory: SocketFactory = SocketFactory.getDefault()
         ): TcpFrameConnection {
             require(host.isNotBlank()) { "host must not be blank" }
             require(port in 1..65_535) { "port must be between 1 and 65535" }
             validateSocketOptions(connectTimeoutMs, readTimeoutMs, maxFrameSize)
-            val socket = Socket()
+            val socket = socketFactory.createSocket()
             val startedAtNs = System.nanoTime()
             try {
                 socket.tcpNoDelay = true

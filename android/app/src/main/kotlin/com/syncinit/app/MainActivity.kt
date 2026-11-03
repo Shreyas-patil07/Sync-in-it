@@ -57,7 +57,7 @@ class MainActivity : Activity() {
 
         content.addView(sectionTitle("Host a session"))
         content.addView(TextView(this).apply {
-            text = "Make this phone visible to other Sync In It devices on the same Wi-Fi network."
+            text = "Make this phone visible to devices connected to this phone's hotspot or the same local Wi-Fi network. Internet is not required."
             textSize = 14f
         })
         content.addView(actionButton("Start hosting") { startHosting() })
@@ -87,7 +87,7 @@ class MainActivity : Activity() {
 
         content.addView(sectionTitle("Connection status"))
         status = TextView(this).apply {
-            text = "Idle · connect both phones to the same private Wi-Fi network."
+            text = "Idle · connect all phones to the same phone hotspot or local Wi-Fi network. Internet is not required."
             textSize = 14f
             setPadding(0, 8, 0, 16)
         }
@@ -111,7 +111,7 @@ class MainActivity : Activity() {
         content.addView(debugLog)
 
         content.addView(TextView(this).apply {
-            text = "Nearby discovery uses your local Wi-Fi only. Use a trusted private network. The host sends a generated 1 kHz timing-click test stream; receivers prebuffer PCM16 and play it through AudioTrack. User-selected audio and scheduled group playback are not implemented yet."
+            text = "Nearby discovery and audio use the local network only. Use a trusted phone hotspot or private Wi-Fi network; internet is not required. The host sends a generated 1 kHz timing-click test stream; receivers prebuffer PCM16 and play it through AudioTrack. User-selected audio and scheduled group playback are not implemented yet."
             textSize = 12f
             setPadding(0, 24, 0, 0)
         })
@@ -221,7 +221,7 @@ class MainActivity : Activity() {
         nearbySessionsContainer.removeAllViews()
         val sessions = nearbySessions.values.sortedBy { it.serviceName }
         if (sessions.isEmpty()) {
-            discoveryStatus.text = "No hosts found yet. Keep this screen open and check that the host is on the same Wi-Fi."
+            discoveryStatus.text = "No hosts found yet. Keep this screen open and check that all phones are on the same hotspot or local Wi-Fi network."
             return
         }
         discoveryStatus.text = "${sessions.size} nearby session(s) found. Tap one to join."
