@@ -462,6 +462,7 @@ class MasterSessionHost(context: Context, private val onStatus: (String) -> Unit
                 val t3Ns = System.nanoTime()
                 var matchedPeer: HostReceiverPeer? = null
                 var response: ByteArray? = null
+                var newlyPinnedPeer: HostReceiverPeer? = null
                 for (peer in candidates) {
                     val pinned = peer.udpPeer.get()
                     if (pinned != null && pinned != datagram.source) {
@@ -473,11 +474,13 @@ class MasterSessionHost(context: Context, private val onStatus: (String) -> Unit
                         datagram.bytes, datagram.receivedAtNs, t3Ns
                     ) ?: continue
 
-                    if (pinned == null && !peer.udpPeer.compareAndSet(null, datagram.source) &&
-                        peer.udpPeer.get() != datagram.source
-                    ) {
-                        rejectedUdpPortCount += 1
-                        continue
+                    if (pinned == null) {
+                        if (peer.udpPeer.compareAndSet(null, datagram.source)) {
+                            newlyPinnedPeer = peer
+                        } else if (peer.udpPeer.get() != datagram.source) {
+                            rejectedUdpPortCount += 1
+                            continue
+                        }
                     }
                     matchedPeer = peer
                     response = candidateResponse
@@ -494,7 +497,7 @@ class MasterSessionHost(context: Context, private val onStatus: (String) -> Unit
                     continue
                 }
 
-                if (target.udpPeer.get() == datagram.source && responseCount == 0) {
+                if (newlyPinnedPeer === target) {
                     onStatus("DIAG HOST_UDP_PEER_PINNED receiverId=${target.receiverId} source=${datagram.source}")
                 }
                 val responseStartedAt = System.nanoTime()
