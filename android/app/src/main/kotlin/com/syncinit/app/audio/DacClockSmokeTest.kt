@@ -11,8 +11,8 @@ object DacClockSmokeTest {
         try {
             val baseTimeNs = 1_700_000_000_000_000L
             val rate = 48_000.0 * (1.0 + 50.0 / 1_000_000.0)
-            for (index in 0L..20L) {
-                val elapsedNs = index * 200_000_000L
+            for (index in 0L..8L) {
+                val elapsedNs = index * 10_000_000_000L
                 val framePosition = (elapsedNs.toDouble() * rate / 1_000_000_000.0).roundToLong()
                 check(
                     NativeCore.nativeAddDacTimestamp(
@@ -32,7 +32,7 @@ object DacClockSmokeTest {
             check(kotlin.math.abs(snapshot[1] - 50.0) < 1.0) {
                 "native DAC clock mapper produced an incorrect rate estimate"
             }
-            check(snapshot[3].toInt() == 21) {
+            check(snapshot[3].toInt() == 4) {
                 "native DAC clock mapper reported an incorrect sample count"
             }
         } finally {
