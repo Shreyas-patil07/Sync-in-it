@@ -11,17 +11,23 @@ import java.util.concurrent.atomic.AtomicBoolean
 /**
  * Samples AudioTrack's presented-frame timestamps away from the output writer.
  *
- * AudioTimestamp.nanoTime uses the monotonic clock domain. The portable native mapper
- * fits frame position to that clock; this is digital output telemetry, not microphone
- * measurement of acoustic sound arrival.
+ * AudioTimestamp.nanoTime uses the System.nanoTime monotonic timebase. Android exposes
+ * AudioTrack framePosition in wrapping 32-bit units, so this poller unwraps it before
+ * passing samples to the portable native regression. The mapping is digital output
+ * telemetry, not microphone measurement of acoustic sound arrival.
  */
 internal class DacClockTimestampPoller(
     private val sampleRateHz: Int,
     private val onStatus: (String) -> Unit
 ) : Closeable {
     companion object {
-        private const val POLL_INTERVAL_MS = 200L
-        private const val REPORT_INTERVAL_NS = 5_000_000_000L
+        private const val WARMUP_POLL_INTERVAL_MS = 1_000L
+        private const val STEADY_POLL_INTERVAL_MS = 10_000L
+        private const val REPORT_INTERVAL_NS = 10_000_000_000L
+        private const val REQUIRED_ADVANCING_SAMPLES = 3
+        private const val UNAVAILABLE_BEFORE_SLOW_POLL = 10
+        private const val FRAME_POSITION_MASK = 0xffff_ffffL
+        private const val HALF_FRAME_POSITION_RANGE = 0x7fff_ffffL
     }
 
     private val closed = AtomicBoolean(false)
@@ -46,28 +52,89 @@ internal class DacClockTimestampPoller(
 
     private fun poll(audioTrack: AudioTrack) {
         val timestamp = AudioTimestamp()
-        var unavailableTimestamps = 0L
+        var previousRawFramePosition: Long? = null
+        var previousTimestampNs: Long? = null
+        var unwrappedFramePosition = 0L
+        var advancingSamples = 0
+        var unavailableInARow = 0
+        var unavailableTotal = 0L
+        var steadyCadence = false
         var lastReportNs = System.nanoTime()
 
         while (!closed.get()) {
             try {
                 if (audioTrack.getTimestamp(timestamp)) {
-                    NativeCore.nativeAddDacTimestamp(
-                        handle,
-                        timestamp.framePosition,
-                        timestamp.nanoTime
-                    )
+                    unavailableInARow = 0
+                    val rawFramePosition = timestamp.framePosition and FRAME_POSITION_MASK
+                    val previousRaw = previousRawFramePosition
+                    val previousTime = previousTimestampNs
+
+                    if (previousRaw == null || previousTime == null) {
+                        unwrappedFramePosition = rawFramePosition
+                        previousRawFramePosition = rawFramePosition
+                        previousTimestampNs = timestamp.nanoTime
+                        if (NativeCore.nativeAddDacTimestamp(
+                                handle,
+                                unwrappedFramePosition,
+                                timestamp.nanoTime
+                            )
+                        ) {
+                            advancingSamples = 1
+                        }
+                    } else {
+                        val frameDelta = (rawFramePosition - previousRaw) and FRAME_POSITION_MASK
+                        val clockMovedBackwards = timestamp.nanoTime <= previousTime
+                        val frameCounterReset = frameDelta > HALF_FRAME_POSITION_RANGE
+
+                        if (clockMovedBackwards || frameCounterReset) {
+                            NativeCore.nativeResetDacClock(handle)
+                            unwrappedFramePosition = rawFramePosition
+                            previousRawFramePosition = rawFramePosition
+                            previousTimestampNs = timestamp.nanoTime
+                            advancingSamples = if (NativeCore.nativeAddDacTimestamp(
+                                    handle,
+                                    unwrappedFramePosition,
+                                    timestamp.nanoTime
+                                )
+                            ) 1 else 0
+                            steadyCadence = false
+                        } else {
+                            if (frameDelta > 0L) {
+                                unwrappedFramePosition += frameDelta
+                                if (NativeCore.nativeAddDacTimestamp(
+                                        handle,
+                                        unwrappedFramePosition,
+                                        timestamp.nanoTime
+                                    )
+                                ) {
+                                    advancingSamples += 1
+                                }
+                                previousRawFramePosition = rawFramePosition
+                            }
+                            previousTimestampNs = timestamp.nanoTime
+                        }
+                    }
+
+                    if (advancingSamples >= REQUIRED_ADVANCING_SAMPLES) {
+                        steadyCadence = true
+                    }
                 } else {
-                    unavailableTimestamps += 1L
+                    unavailableTotal += 1L
+                    unavailableInARow += 1
+                    if (unavailableInARow >= UNAVAILABLE_BEFORE_SLOW_POLL) {
+                        steadyCadence = true
+                    }
                 }
 
                 val nowNs = System.nanoTime()
                 if (nowNs - lastReportNs >= REPORT_INTERVAL_NS) {
-                    report(unavailableTimestamps)
+                    report(unavailableTotal)
                     lastReportNs = nowNs
                 }
 
-                Thread.sleep(POLL_INTERVAL_MS)
+                Thread.sleep(
+                    if (steadyCadence) STEADY_POLL_INTERVAL_MS else WARMUP_POLL_INTERVAL_MS
+                )
             } catch (_: InterruptedException) {
                 if (!closed.get()) Thread.currentThread().interrupt()
                 break
@@ -89,7 +156,7 @@ internal class DacClockTimestampPoller(
             return
         }
 
-        val rejectedTotal = values[8].toLong()
+        val rejected = values[8].toLong()
         if (values[0] == 1.0) {
             val rateHz = sampleRateHz * (1.0 + values[1] / 1_000_000.0)
             onStatus(
@@ -102,7 +169,7 @@ internal class DacClockTimestampPoller(
                     values[2],
                     values[3].toInt(),
                     values[4] / 1_000_000_000.0,
-                    rejectedTotal,
+                    rejected,
                     unavailable
                 )
             )
@@ -114,7 +181,7 @@ internal class DacClockTimestampPoller(
                         "rejected %d · unavailable %d · waiting for a stable fit",
                     values[3].toInt(),
                     values[4] / 1_000_000_000.0,
-                    rejectedTotal,
+                    rejected,
                     unavailable
                 )
             )
