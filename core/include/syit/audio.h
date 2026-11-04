@@ -91,6 +91,7 @@ private:
     std::vector<std::int16_t> samples_;
     SampleIndex next_sample_index_{0};
     std::uint64_t missing_frames_total_{0};
+    std::uint64_t window_advance_count_{0};
     bool initialized_{false};
 };
 
