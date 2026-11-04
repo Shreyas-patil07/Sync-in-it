@@ -21,13 +21,15 @@ enum class PcmChunkInsertResult(val code: Int) {
     Duplicate(2),
     TooLate(3),
     OutOfWindow(4),
-    InvalidChunk(5)
+    InvalidChunk(5),
+    WindowAdvanced(6)
 }
 
 data class PcmBufferSnapshot(
     val contiguousBufferedFrames: Long,
     val nextSampleIndex: Long,
-    val missingFrames: Long
+    val missingFrames: Long,
+    val windowAdvanceCount: Long
 )
 
 class NativePcmJitterBuffer(
@@ -67,8 +69,8 @@ class NativePcmJitterBuffer(
         val values = checkNotNull(NativeCore.nativePcmBufferStats(checkOpen())) {
             "native PCM buffer statistics are unavailable"
         }
-        check(values.size == 3) { "native PCM buffer returned invalid statistics" }
-        return PcmBufferSnapshot(values[0], values[1], values[2])
+        check(values.size == 4) { "native PCM buffer returned invalid statistics" }
+        return PcmBufferSnapshot(values[0], values[1], values[2], values[3])
     }
 
     fun bufferedMillis(): Long =
@@ -337,6 +339,7 @@ class PcmAudioReceiver(
     }
 
     private fun readAudioFrames() {
+        var lastReportedWindowAdvance = 0L
         try {
             while (!closed.get()) {
                 val frame = audioConnection.readFrame() ?: throw IOException("master closed the audio channel")
@@ -348,6 +351,18 @@ class PcmAudioReceiver(
                     PcmChunkInsertResult.PartialLate,
                     PcmChunkInsertResult.Duplicate,
                     PcmChunkInsertResult.TooLate -> Unit
+                    PcmChunkInsertResult.WindowAdvanced -> {
+                        val snapshot = buffer.snapshot()
+                        val advances = snapshot.windowAdvanceCount
+                        if (lastReportedWindowAdvance == 0L || advances - lastReportedWindowAdvance >= 250L) {
+                            lastReportedWindowAdvance = advances
+                            onStatus(
+                                "PCM pre-roll rolling window active · advances=$advances · " +
+                                    "cursor=${snapshot.nextSampleIndex} · " +
+                                    "buffered=${snapshot.contiguousBufferedFrames * 1_000L / welcome.sampleRateHz} ms."
+                            )
+                        }
+                    }
                     PcmChunkInsertResult.OutOfWindow ->
                         throw IOException(
                             "PCM buffer reached its 20-second admission limit before group start; " +
@@ -418,10 +433,12 @@ class PcmAudioReceiver(
         if (!anchorReceived.compareAndSet(false, true)) return
 
         try {
+            val beforeAnchor = buffer.snapshot()
             buffer.seekToSampleIndex(anchor.sampleIndex)
             output.startAt(localStartNs)
             onStatus(
                 "Group start armed · sample ${anchor.sampleIndex} · " +
+                    "pre-roll advances=${beforeAnchor.windowAdvanceCount} · " +
                     "${(localStartNs - System.nanoTime()) / 1_000_000L} ms until target."
             )
         } catch (error: Exception) {
