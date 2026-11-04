@@ -727,3 +727,32 @@ No physical-device synchronization results are recorded in this initial log. Add
 - Preserved all existing Host, discovery, join, disconnect, diagnostics and smoke-test actions.
 
 **Validation:** Android Gradle/JNI build and APK resource packaging must pass. No physical-device visual review has been performed yet.
+
+
+## 2026-11-04 — M3a Android output clock measurement
+
+**Type:** Android audio output timing / portable DAC clock regression  
+**Status:** Implemented on feature/m3-dac-timestamp-mapping; CI and physical-device validation pending
+
+**Summary:**
+- Added a portable C++ DacClockMapper that fits AudioTrack frame positions to monotonic presentation timestamps over a rolling 30-second window.
+- The initial fit gate requires at least four timestamp pairs spanning at least 20 seconds. The mapper reports output-rate error in ppm and regression RMS residual, and can map frame position to local monotonic time and back.
+- Added rejection of non-increasing frame/time pairs and implausible interval discontinuities; rejected samples are counted. Rolling samples outside the fit window are pruned.
+- Exposed mapper create/add/snapshot/reset/close operations through JNI and included timing.cpp in the Android native build.
+- Added an Android AudioTrack timestamp poller on a dedicated helper thread. It warms up at 1-second intervals, then polls at 10-second intervals once the frame clock advances.
+- Unwrapped AudioTrack's low-order 32-bit frame-position counter and reset the fit after a backwards timestamp or frame-counter reset.
+- Added C++ regression/window/discontinuity tests and an Android startup JNI smoke test.
+
+**Semantics and limitations:**
+- Android documents AudioTimestamp.nanoTime for AudioTrack as a best-effort monotonic presentation/commit timestamp. A frame may already have been presented or be committed for presentation; delays unknown to the implementation are not included.
+- This is digital output-pipeline timing telemetry, not acoustic arrival measurement. It does not yet feed a drift controller, alter the playout cursor, apply manual offsets or publish a callback-safe snapshot.
+- Routes that do not provide timestamps remain observable as unavailable; no fallback to an estimated playback-head clock is treated as equivalent evidence.
+- Physical-device timestamp stability and acoustic output skew still need to be measured.
+
+**Validation required:**
+1. Pass C++ core tests, Android/JNI build and startup smoke test in CI.
+2. On both Xiaomi test phones, run the same click stream and capture DAC timestamp acquisition / DAC output clock mapped diagnostics for at least 60 seconds.
+3. Record sample span, fitted rate error, residual, rejected count and unavailable count on each phone.
+4. Repeat after changing audio route or stopping/restarting playback; confirm the mapper resets and reacquires rather than carrying stale frame mapping.
+
+**Next action:** pass CI and collect real AudioTrack mapping logs from both phones before adding manual per-device offset control or connecting the estimate to drift correction.
