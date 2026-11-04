@@ -109,13 +109,14 @@ These values are tuning parameters, not proven properties of every Wi-Fi chipset
 
 ## 5. Audio output clock mapping
 
-- Read output frame-position/time pairs from the native audio API.
-- Poll timestamps on a helper thread, initially every 200 ms.
-- Keep a 30-second regression window.
-- Fit local presentation time as a function of audio frame position.
-- Publish a consistent mapping snapshot to the audio callback.
-- Reject timestamp discontinuities and count them.
-- The callback must not run the regression itself.
+- Read output frame-position/time pairs from the platform audio API.
+- Poll on a helper thread. For Android AudioTrack, poll about once per second while timestamps warm up and frame position begins advancing; after a stable advancing clock is observed, poll at the platform-recommended 10-second cadence (or slower).
+- Keep a 30-second rolling regression window. The initial fit gate requires at least four samples spanning at least 20 seconds.
+- Fit local monotonic presentation time as a function of audio frame position and report rate error plus regression residual.
+- Unwrap Android AudioTrack's low-order 32-bit frame counter before fitting. Reset the fit after backward clock movement or a frame-counter reset; reject non-increasing and implausible timestamp pairs.
+- The current M3a implementation reports the fitted mapping as diagnostics only. Publishing a consistent snapshot to the audio callback and using it for compensation/control remain later M3 work.
+- The callback must not poll timestamps or run the regression itself.
+- A platform timestamp is only as good as the implementation's estimate of its presentation/commit point. It is not acoustic sound-arrival time and may omit downstream delays unknown to the platform. Measure acoustics independently.
 
 The implementation must establish what each platform timestamp actually means (queued, presented, or hardware frame position). Never treat an API timestamp as acoustic sound-arrival time without measurement.
 
