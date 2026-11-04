@@ -106,6 +106,177 @@ Nanoseconds DacClockModel::local_time_at(std::int64_t frame_position) const {
     return checked_add(time_origin_ns_, rounded_ns);
 }
 
+std::optional<Nanoseconds> DacClockEstimate::local_time_ns_at_frame(
+    std::int64_t frame_position) const {
+    if (!std::isfinite(nanoseconds_per_frame) || nanoseconds_per_frame <= 0.0) {
+        return std::nullopt;
+    }
+    const long double delta_frames =
+        static_cast<long double>(frame_position) - static_cast<long double>(frame_origin);
+    const long double mapped =
+        static_cast<long double>(time_origin_ns) +
+        delta_frames * static_cast<long double>(nanoseconds_per_frame);
+    if (!std::isfinite(mapped) ||
+        mapped < static_cast<long double>(std::numeric_limits<Nanoseconds>::min()) ||
+        mapped > static_cast<long double>(std::numeric_limits<Nanoseconds>::max())) {
+        return std::nullopt;
+    }
+    return static_cast<Nanoseconds>(std::llround(mapped));
+}
+
+std::optional<std::int64_t> DacClockEstimate::frame_position_at_local_time_ns(
+    Nanoseconds local_time_ns) const {
+    if (!std::isfinite(nanoseconds_per_frame) || nanoseconds_per_frame <= 0.0) {
+        return std::nullopt;
+    }
+    const long double delta_ns =
+        static_cast<long double>(local_time_ns) - static_cast<long double>(time_origin_ns);
+    const long double mapped =
+        static_cast<long double>(frame_origin) +
+        delta_ns / static_cast<long double>(nanoseconds_per_frame);
+    if (!std::isfinite(mapped) ||
+        mapped < static_cast<long double>(std::numeric_limits<std::int64_t>::min()) ||
+        mapped > static_cast<long double>(std::numeric_limits<std::int64_t>::max())) {
+        return std::nullopt;
+    }
+    return static_cast<std::int64_t>(std::llround(mapped));
+}
+
+DacClockMapper::DacClockMapper(
+    std::int64_t sample_rate_hz,
+    Nanoseconds window_ns,
+    std::size_t maximum_samples,
+    std::size_t minimum_samples,
+    Nanoseconds minimum_span_ns,
+    double maximum_rate_error_ppm)
+    : sample_rate_hz_(sample_rate_hz),
+      window_ns_(window_ns),
+      maximum_samples_(maximum_samples),
+      minimum_samples_(minimum_samples),
+      minimum_span_ns_(minimum_span_ns),
+      maximum_rate_error_ppm_(maximum_rate_error_ppm) {
+    if (sample_rate_hz_ <= 0 || window_ns_ <= 0 ||
+        minimum_samples_ < 2U || maximum_samples_ < minimum_samples_ ||
+        minimum_span_ns_ <= 0 || minimum_span_ns_ > window_ns_ ||
+        !std::isfinite(maximum_rate_error_ppm_) || maximum_rate_error_ppm_ <= 0.0) {
+        throw std::invalid_argument("invalid DAC clock mapper configuration");
+    }
+    samples_.reserve(maximum_samples_);
+}
+
+bool DacClockMapper::add_sample(
+    std::int64_t frame_position,
+    Nanoseconds timestamp_ns) {
+    if (frame_position < 0 || timestamp_ns <= 0) {
+        ++rejected_samples_;
+        return false;
+    }
+    if (!samples_.empty()) {
+        const auto& previous = samples_.back();
+        if (frame_position <= previous.frame_position ||
+            timestamp_ns <= previous.timestamp_ns) {
+            ++rejected_samples_;
+            return false;
+        }
+    }
+
+    samples_.push_back({frame_position, timestamp_ns});
+    while (!samples_.empty() &&
+           static_cast<long double>(timestamp_ns) -
+               static_cast<long double>(samples_.front().timestamp_ns) >
+                   static_cast<long double>(window_ns_)) {
+        samples_.erase(samples_.begin());
+    }
+    while (samples_.size() > maximum_samples_) {
+        samples_.erase(samples_.begin());
+    }
+    return true;
+}
+
+std::optional<DacClockEstimate> DacClockMapper::estimate() const {
+    if (samples_.size() < minimum_samples_) return std::nullopt;
+
+    const auto& first = samples_.front();
+    const auto& last = samples_.back();
+    const Nanoseconds span_ns = last.timestamp_ns - first.timestamp_ns;
+    if (span_ns < minimum_span_ns_) return std::nullopt;
+
+    const long double count = static_cast<long double>(samples_.size());
+    long double sum_x = 0.0L;
+    long double sum_y = 0.0L;
+    long double sum_xx = 0.0L;
+    long double sum_xy = 0.0L;
+
+    for (const auto& sample : samples_) {
+        const long double x =
+            static_cast<long double>(sample.frame_position) -
+            static_cast<long double>(first.frame_position);
+        const long double y =
+            static_cast<long double>(sample.timestamp_ns) -
+            static_cast<long double>(first.timestamp_ns);
+        sum_x += x;
+        sum_y += y;
+        sum_xx += x * x;
+        sum_xy += x * y;
+    }
+
+    const long double denominator = count * sum_xx - sum_x * sum_x;
+    if (!std::isfinite(denominator) || denominator <= 0.0L) return std::nullopt;
+
+    const long double slope_ns_per_frame =
+        (count * sum_xy - sum_x * sum_y) / denominator;
+    if (!std::isfinite(slope_ns_per_frame) || slope_ns_per_frame <= 0.0L) {
+        return std::nullopt;
+    }
+
+    const long double intercept_ns = (sum_y - slope_ns_per_frame * sum_x) / count;
+    const long double actual_rate_hz = 1'000'000'000.0L / slope_ns_per_frame;
+    const long double rate_error_ppm =
+        (actual_rate_hz / static_cast<long double>(sample_rate_hz_) - 1.0L) * 1'000'000.0L;
+    if (!std::isfinite(rate_error_ppm) ||
+        std::abs(rate_error_ppm) > static_cast<long double>(maximum_rate_error_ppm_)) {
+        return std::nullopt;
+    }
+
+    long double residual_sum_squares = 0.0L;
+    for (const auto& sample : samples_) {
+        const long double x =
+            static_cast<long double>(sample.frame_position) -
+            static_cast<long double>(first.frame_position);
+        const long double y =
+            static_cast<long double>(sample.timestamp_ns) -
+            static_cast<long double>(first.timestamp_ns);
+        const long double residual = y - (intercept_ns + slope_ns_per_frame * x);
+        residual_sum_squares += residual * residual;
+    }
+    const long double residual_rms_ns =
+        std::sqrt(residual_sum_squares / count);
+    const long double time_origin =
+        static_cast<long double>(first.timestamp_ns) + intercept_ns;
+    if (!std::isfinite(time_origin) ||
+        time_origin < static_cast<long double>(std::numeric_limits<Nanoseconds>::min()) ||
+        time_origin > static_cast<long double>(std::numeric_limits<Nanoseconds>::max())) {
+        return std::nullopt;
+    }
+
+    return DacClockEstimate{
+        static_cast<double>(slope_ns_per_frame),
+        static_cast<double>(rate_error_ppm),
+        static_cast<double>(residual_rms_ns),
+        samples_.size(),
+        span_ns,
+        first.frame_position,
+        static_cast<Nanoseconds>(std::llround(time_origin))};
+}
+
+void DacClockMapper::reset() {
+    samples_.clear();
+}
+
+std::uint64_t DacClockMapper::rejected_samples() const noexcept {
+    return rejected_samples_;
+}
+
 DriftController::DriftController(std::int64_t dead_band_frames, std::int64_t hard_resync_frames)
     : dead_band_frames_(dead_band_frames), hard_resync_frames_(hard_resync_frames) {
     if (dead_band_frames_ < 0 || hard_resync_frames_ <= dead_band_frames_) {
