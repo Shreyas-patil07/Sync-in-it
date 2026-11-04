@@ -230,9 +230,9 @@ void test_jitter_buffer_rolls_pre_anchor_window_only() {
            "rolling window advance is counted for diagnostics");
 
     buffer.seek(108LL);
-    expect(buffer.insert(pcm_chunk(1U, 3U, 116LL, 4U)) == syit::JitterInsertResult::Inserted,
+    expect(buffer.insert(pcm_chunk(1U, 3U, 112LL, 4U)) == syit::JitterInsertResult::Inserted,
            "normal in-window streaming continues after the playback anchor");
-    expect(buffer.insert(pcm_chunk(1U, 4U, 124LL, 4U)) == syit::JitterInsertResult::OutOfWindow,
+    expect(buffer.insert(pcm_chunk(1U, 4U, 120LL, 4U)) == syit::JitterInsertResult::OutOfWindow,
            "post-anchor playback never silently advances its cursor to hide underruns");
 }
 
