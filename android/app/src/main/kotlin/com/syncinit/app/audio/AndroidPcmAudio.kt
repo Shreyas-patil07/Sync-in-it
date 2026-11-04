@@ -13,6 +13,7 @@ import com.syncinit.transport.TcpFrameConnection
 import java.io.Closeable
 import java.io.IOException
 import java.util.concurrent.atomic.AtomicBoolean
+import java.util.concurrent.atomic.AtomicLong
 import java.util.concurrent.atomic.AtomicReference
 
 enum class PcmChunkInsertResult(val code: Int) {
@@ -299,11 +300,13 @@ class PcmAudioReceiver(
 ) : Closeable {
     companion object {
         private const val MIN_READY_BUFFER_MS = 3_000L
+        private const val READY_RETRY_INTERVAL_NS = 1_000_000_000L
     }
 
     private val closed = AtomicBoolean(false)
     private val anchorReceived = AtomicBoolean(false)
     private val readySent = AtomicBoolean(false)
+    private val lastReadySentAtNs = AtomicLong(0L)
     private val latestClock = AtomicReference<ClockSyncMeasurement?>(null)
     private val buffer: NativePcmJitterBuffer
     private val output: AndroidPcmAudioOutput
@@ -363,11 +366,16 @@ class PcmAudioReceiver(
                             )
                         }
                     }
-                    PcmChunkInsertResult.OutOfWindow ->
+                    PcmChunkInsertResult.OutOfWindow -> {
+                        val snapshot = buffer.snapshot()
+                        val phase = if (anchorReceived.get()) "during playback" else "before the group ANCHOR"
                         throw IOException(
-                            "PCM buffer reached its 20-second admission limit before group start; " +
-                                "reconnect the Speaker and retry the session"
+                            "PCM jitter buffer overrun $phase; cursor=${snapshot.nextSampleIndex}, " +
+                                "buffered=${snapshot.contiguousBufferedFrames * 1_000L / welcome.sampleRateHz} ms, " +
+                                "windowAdvances=${snapshot.windowAdvanceCount}. " +
+                                "The stream exceeded the bounded 20-second receive window."
                         )
+                    }
                     PcmChunkInsertResult.InvalidChunk ->
                         throw IOException("received an invalid PCM16 audio chunk")
                 }
@@ -379,13 +387,20 @@ class PcmAudioReceiver(
     }
 
     private fun trySendReady() {
-        if (closed.get() || readySent.get()) return
+        if (closed.get() || anchorReceived.get()) return
         val measurement = latestClock.get() ?: return
         if (!measurement.acquisitionStable) return
 
         val bufferedMs = buffer.bufferedMillis()
         if (bufferedMs < MIN_READY_BUFFER_MS) return
-        if (!readySent.compareAndSet(false, true)) return
+
+        // There is no READY acknowledgement in the current wire protocol.
+        // Retry periodically until ANCHOR arrives; the Host state machine accepts
+        // duplicate READY frames idempotently and can recover from a transient gate.
+        val nowNs = System.nanoTime()
+        val previousSentAtNs = lastReadySentAtNs.get()
+        if (previousSentAtNs != 0L && nowNs - previousSentAtNs < READY_RETRY_INTERVAL_NS) return
+        if (!lastReadySentAtNs.compareAndSet(previousSentAtNs, nowNs)) return
 
         try {
             val residualUs = (measurement.residualRmsMs * 1_000.0)
@@ -398,12 +413,17 @@ class PcmAudioReceiver(
                     residualStdUs = residualUs
                 )
             )
+            val firstReady = readySent.compareAndSet(false, true)
             onStatus(
-                "Clock acquisition stable · ${bufferedMs} ms buffered · READY sent. " +
-                    "Waiting for the master's coordinated playback anchor."
+                "Clock acquisition stable · ${bufferedMs} ms buffered · " +
+                    if (firstReady) {
+                        "READY sent; retrying every 1 second until the group ANCHOR."
+                    } else {
+                        "READY refreshed; waiting for the master's coordinated playback anchor."
+                    }
             )
         } catch (error: Exception) {
-            readySent.set(false)
+            lastReadySentAtNs.compareAndSet(nowNs, previousSentAtNs)
             throw error
         }
     }
