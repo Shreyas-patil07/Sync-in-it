@@ -80,8 +80,8 @@ jobs:
         run: |
           mkdir -p release-assets
           cp android/app/build/outputs/apk/debug/app-debug.apk \
-            release-assets/SyncInIt-Android-preview-v0.5.5.apk
-          sha256sum release-assets/SyncInIt-Android-preview-v0.5.5.apk \
+            release-assets/SyncInIt-Android-preview-v0.5.6.apk
+          sha256sum release-assets/SyncInIt-Android-preview-v0.5.6.apk \
             | awk '{print $1}' > release-assets/SHA256SUMS.txt
 
       - name: Create GitHub pre-release and upload APK
@@ -89,9 +89,9 @@ jobs:
           GH_TOKEN: ${{ secrets.GITHUB_TOKEN }}
         run: |
           cat > release-notes.md <<'EOF'
-          ## Sync In It Android Preview v0.5.5
+          ## Sync In It Android Preview v0.5.6
 
-          This preview fixes an idle control-channel timeout that could disconnect a Speaker while it waited for the Host's coordinated playback anchor.
+          This preview adds the first M3 DAC output-clock measurement slice on top of the coordinated multi-Speaker playback path.
 
           ### Included
           - LAN session discovery and TCP control/audio channels, with UDP four-timestamp clock acquisition.
@@ -99,32 +99,37 @@ jobs:
           - A six-second admission window. Once the admitted Speakers are clock-stable and have sufficient contiguous PCM buffered, the Host arms the cohort and sends a common future start anchor and sample index.
           - Receiver-side anchor handling that maps the Host monotonic target through the clock estimate, seeks to the shared buffered sample index, primes AudioTrack and schedules playback.
           - Native PCM jitter-buffer seek regression coverage and Kotlin/JNI transport checks.
-          - The receiver now disables the 10-second WELCOME handshake read timeout after the handshake, keeping the long-lived control channel open while waiting for the playback ANCHOR.
-          - Added a TCP transport regression test for delayed control frames and improved timeout diagnostics so socket read timeouts are not mislabeled as connection failures.
-          - Official Sync In It logo in the app header and launcher, plus refreshed Host, Nearby Sessions, Connection Status and Network Diagnostics panels.
+          - The receiver keeps the long-lived control channel open after WELCOME while waiting for the coordinated playback ANCHOR, with regression coverage for delayed control frames.
+          - M3a DAC output timestamp polling through Android AudioTrack on a dedicated helper thread, separate from the PCM writer.
+          - Native 30-second rolling regression mapping output frame position to Android monotonic presentation time, with rate-error, fit-residual, sample-span and rejected-sample diagnostics.
+          - Timestamp counter wrap handling, reset detection, native regression tests and an Android JNI smoke test.
+          - Official Sync In It logo and refreshed Host, Nearby Sessions, Connection Status and Network Diagnostics panels.
           - Persistent preview signing and a monotonically generated Android versionCode for update installs.
 
           ### Setup and test
           - Enable the Host phone's Android mobile hotspot and connect all Speaker phones to it. Internet access is not required, but hotspot client-to-client traffic and multicast discovery must be allowed.
           - Start hosting on the Host. On each Speaker, keep the app open, refresh nearby sessions and join the Host within the admission window.
-          - Check that each admitted Speaker reaches READY and that all devices begin the generated test stream from the shared scheduled anchor.
-          - Test disconnect and reconnect behavior across two or more physical phones. Physical hotspot validation is not performed by CI.
+          - Check that each admitted Speaker reaches READY and that the devices begin the generated test stream from the shared scheduled anchor.
+          - Keep playback running for at least 30 seconds so the DAC timestamp mapper can collect enough samples for a valid fit. Capture the "DAC timestamp acquisition" and "DAC output clock mapped" diagnostics from each device.
+          - Test stop/restart and reconnect behavior on two or more physical phones. Physical device and hotspot validation is not performed by CI.
 
           ### Important limitations
           - The audio source is still a generated 1 kHz timing-click test signal, not user-selected music or system audio.
-          - This schedules AudioTrack playback against mapped Android monotonic clocks. It does not map output frames to DAC presentation timestamps, compensate measured hardware latency, correct long-term drift or prove acoustic alignment at the speakers.
-          - Bluetooth routing, device-specific AudioTrack/HAL latency and real multi-phone timing accuracy remain uncalibrated.
+          - DAC mapping is diagnostics only in this preview. Its estimate is not yet published to the playback callback, used to change playback scheduling, or used for drift correction or manual per-device output offsets.
+          - Android output timestamps are best-effort and may be unavailable on some device/audio routes. The mapping does not measure acoustic sound arrival at the speaker and does not include hardware delays unknown to Android.
+          - A valid regression fit requires at least four timestamp samples spanning 20 seconds. Fit residuals describe the timestamp model, not acoustic synchronization accuracy.
+          - Bluetooth routing, device-specific AudioTrack/HAL latency, microphone-based calibration and real multi-phone acoustic timing remain uncalibrated.
           - The Host cohort is fixed after the six-second admission window. A late Speaker requires a new Host group.
           - This is an engineering preview, not a claim of verified synchronized-speaker performance.
 
           Install as an update over an existing Sync In It preview signed with the same persistent preview key. Do not uninstall the previous preview first.
           EOF
 
-          gh release create "v0.5.5-preview.1" \
-            "release-assets/SyncInIt-Android-preview-v0.5.5.apk#SyncInIt-Android-preview-v0.5.5.apk" \
+          gh release create "v0.5.6-preview.1" \
+            "release-assets/SyncInIt-Android-preview-v0.5.6.apk#SyncInIt-Android-preview-v0.5.6.apk" \
             "release-assets/SHA256SUMS.txt#SHA256SUMS.txt" \
             --repo "$GITHUB_REPOSITORY" \
             --target "$GITHUB_SHA" \
-            --title "Sync In It Android Preview v0.5.5" \
+            --title "Sync In It Android Preview v0.5.6" \
             --notes-file release-notes.md \
             --prerelease
