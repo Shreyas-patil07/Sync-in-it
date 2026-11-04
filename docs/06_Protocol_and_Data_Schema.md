@@ -109,8 +109,8 @@ Unknown anchor kinds must be rejected or ignored safely according to protocol co
 
 The current Android preview uses ANCHOR kind `0` (start) as a one-shot group-start command:
 
-1. The Host admits Speakers for a fixed 6-second window after the first Speaker completes admission.
-2. Every admitted Speaker must report READY after the clock estimator is stable and at least 3 seconds of contiguous PCM is buffered.
+1. The Host admits Speakers for a 15-second window after the first Speaker completes admission.
+2. Every admitted Speaker reports READY after the clock estimator is stable and at least 3 seconds of contiguous PCM is buffered. The Speaker retries READY every second until it receives ANCHOR; duplicate READY is idempotently accepted while the receiver is READY.
 3. After the admission window closes and every admitted Speaker is READY, the Host selects one shared sample index already inside the buffered PCM range and one future Host monotonic timestamp.
 4. The Host arms each admitted native receiver session, applies the same start anchor to each session, and sends the encoded ANCHOR over each Speaker's control TCP connection.
 5. Each Speaker maps the Host timestamp into its local monotonic clock using the latest four-timestamp offset estimate, seeks its jitter-buffer cursor to the shared sample index, primes AudioTrack, and calls `AudioTrack.play()` at the scheduled local target.
