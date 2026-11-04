@@ -71,6 +71,8 @@ public:
 
     bool add_sample(std::int64_t frame_position, Nanoseconds timestamp_ns);
     std::optional<DacClockEstimate> estimate() const;
+    std::size_t samples_seen() const noexcept;
+    Nanoseconds sample_span_ns() const noexcept;
     void reset();
     std::uint64_t rejected_samples() const noexcept;
 
