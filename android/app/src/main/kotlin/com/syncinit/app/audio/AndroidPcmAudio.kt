@@ -402,6 +402,7 @@ class PcmAudioReceiver(
         if (previousSentAtNs != 0L && nowNs - previousSentAtNs < READY_RETRY_INTERVAL_NS) return
         if (!lastReadySentAtNs.compareAndSet(previousSentAtNs, nowNs)) return
 
+        val firstReady = readySent.compareAndSet(false, true)
         try {
             val residualUs = (measurement.residualRmsMs * 1_000.0)
                 .toLong()
@@ -413,7 +414,6 @@ class PcmAudioReceiver(
                     residualStdUs = residualUs
                 )
             )
-            val firstReady = readySent.compareAndSet(false, true)
             onStatus(
                 "Clock acquisition stable · ${bufferedMs} ms buffered · " +
                     if (firstReady) {
@@ -423,6 +423,7 @@ class PcmAudioReceiver(
                     }
             )
         } catch (error: Exception) {
+            if (firstReady) readySent.compareAndSet(true, false)
             lastReadySentAtNs.compareAndSet(nowNs, previousSentAtNs)
             throw error
         }
