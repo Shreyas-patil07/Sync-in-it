@@ -44,6 +44,7 @@ struct NativePcmBuffer {
     const std::uint8_t channels;
     std::mutex initialization_mutex;
     bool initialized{false};
+    bool playback_started{false};
     syit::PcmJitterBuffer buffer;
 };
 
@@ -762,14 +763,15 @@ Java_com_syncinit_app_core_NativeCore_nativeInsertPcmFrame(
             return static_cast<jint>(syit::JitterInsertResult::InvalidChunk);
         }
 
-        {
-            std::lock_guard<std::mutex> lock(native_buffer->initialization_mutex);
-            if (!native_buffer->initialized) {
-                native_buffer->buffer.reset(chunk.sample_index);
-                native_buffer->initialized = true;
-            }
+        std::lock_guard<std::mutex> lock(native_buffer->initialization_mutex);
+        if (!native_buffer->initialized) {
+            native_buffer->buffer.reset(chunk.sample_index);
+            native_buffer->initialized = true;
         }
-        return static_cast<jint>(native_buffer->buffer.insert(chunk));
+        // Before the first playback ANCHOR, retain a rolling bounded pre-roll
+        // window. Once seek() applies the ANCHOR, inserts become strict again.
+        return static_cast<jint>(
+            native_buffer->buffer.insert(chunk, !native_buffer->playback_started));
     } catch (const std::exception&) {
         return static_cast<jint>(syit::JitterInsertResult::InvalidChunk);
     }
@@ -784,16 +786,18 @@ Java_com_syncinit_app_core_NativeCore_nativePcmBufferStats(
     jlong contiguous = 0;
     jlong next_sample_index = 0;
     jlong missing_frames = 0;
+    jlong window_advances = 0;
     {
         std::lock_guard<std::mutex> lock(native_buffer->initialization_mutex);
         if (native_buffer->initialized) {
             contiguous = static_cast<jlong>(native_buffer->buffer.contiguous_buffered_frames());
             next_sample_index = static_cast<jlong>(native_buffer->buffer.next_sample_index());
             missing_frames = static_cast<jlong>(native_buffer->buffer.missing_frames_total());
+            window_advances = static_cast<jlong>(native_buffer->buffer.window_advance_count());
         }
     }
 
-    const std::array<jlong, 3> values{{contiguous, next_sample_index, missing_frames}};
+    const std::array<jlong, 4> values{{contiguous, next_sample_index, missing_frames, window_advances}};
     jlongArray output = env->NewLongArray(static_cast<jsize>(values.size()));
     if (output == nullptr) return nullptr;
     env->SetLongArrayRegion(output, 0, static_cast<jsize>(values.size()), values.data());
@@ -997,6 +1001,7 @@ Java_com_syncinit_app_core_NativeCore_nativeSeekPcmBuffer(
         std::lock_guard<std::mutex> lock(native_buffer->initialization_mutex);
         native_buffer->buffer.seek(static_cast<syit::SampleIndex>(first_sample_index));
         native_buffer->initialized = true;
+        native_buffer->playback_started = true;
     } catch (const std::exception& error) {
         throw_illegal_argument(env, error.what());
     }
