@@ -118,7 +118,7 @@ internal class DacClockTimestampPoller(
                         "rejected %d · unavailable %d · waiting for a stable fit",
                     values[3].toInt(),
                     values[4] / 1_000_000_000.0,
-                    rejectedTotal + rejected,
+                    rejectedTotal,
                     unavailable
                 )
             )
