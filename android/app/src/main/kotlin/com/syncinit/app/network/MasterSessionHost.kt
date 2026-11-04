@@ -45,13 +45,14 @@ class MasterSessionHost(context: Context, private val onStatus: (String) -> Unit
         const val MAX_RECEIVERS = 8
         private const val AUDIO_READ_TIMEOUT_MS = 0
         private const val AUDIO_ACCEPT_TIMEOUT_MS = 15_000
-        private const val AUDIO_QUEUE_CHUNKS = 8
+        private const val AUDIO_QUEUE_CHUNKS = 25
         private const val SAMPLE_RATE_HZ = 48_000
         private const val CHANNELS = 2
         private const val CHUNK_FRAMES = 960
         private const val CHUNK_PERIOD_NS = 20_000_000L
         private const val GROUP_START_LEAD_NS = 1_000_000_000L
-        private const val GROUP_ADMISSION_WINDOW_NS = 6_000_000_000L
+        private const val GROUP_ADMISSION_WINDOW_NS = 15_000_000_000L
+        private const val GROUP_READINESS_TIMEOUT_NS = 45_000_000_000L
         private const val GROUP_START_BUFFER_MS = 2_000L
     }
 
@@ -250,7 +251,8 @@ class MasterSessionHost(context: Context, private val onStatus: (String) -> Unit
                         }
                         if (receivers.size == 1) {
                             firstReceiverAdmissionNs = System.nanoTime()
-                            onStatus("Group admission window open · add up to $MAX_RECEIVERS speakers within 6 seconds.")
+                            onStatus("Group admission window open · add up to $MAX_RECEIVERS speakers within 15 seconds.")
+                            scheduleGroupReadinessTimeout(firstReceiverAdmissionNs)
                         }
                         ownershipTransferred = true
                     }
@@ -317,6 +319,7 @@ class MasterSessionHost(context: Context, private val onStatus: (String) -> Unit
                     if (!peerClosed.get() && !closed.get()) Thread.currentThread().interrupt()
                 } catch (error: Exception) {
                     if (!peerClosed.get() && !closed.get()) {
+                        onStatus("DIAG HOST_AUDIO_WRITER_FAILED receiverId=$receiverId ${NetworkDiagnostics.exceptionDetails(error)}")
                         removeReceiver(this, "audio channel failed: ${error.message ?: error.javaClass.simpleName}")
                     }
                 }
@@ -414,6 +417,48 @@ class MasterSessionHost(context: Context, private val onStatus: (String) -> Unit
      * Each receiver has at least 3 seconds of contiguous PCM before READY; selecting a point
      * 2 seconds behind the producer cursor keeps that sample inside every READY receiver's buffer.
      */
+    private fun scheduleGroupReadinessTimeout(admissionStartedAtNs: Long) {
+        Thread({
+            val deadlineNs = admissionStartedAtNs + GROUP_READINESS_TIMEOUT_NS
+            val remainingNs = deadlineNs - System.nanoTime()
+            if (remainingNs > 0L) {
+                try {
+                    Thread.sleep(
+                        remainingNs / 1_000_000L,
+                        (remainingNs % 1_000_000L).toInt()
+                    )
+                } catch (_: InterruptedException) {
+                    Thread.currentThread().interrupt()
+                    return@Thread
+                }
+            }
+
+            synchronized(groupStartLock) {
+                if (closed.get() || groupStartScheduled.get() ||
+                    firstReceiverAdmissionNs != admissionStartedAtNs) return@synchronized
+
+                val notReady = receivers.values.filter { peer ->
+                    runCatching {
+                        peer.session.state() != com.syncinit.app.core.ReceiverSessionState.Ready
+                    }.getOrDefault(true)
+                }
+                if (notReady.isNotEmpty()) {
+                    onStatus(
+                        "GROUP_START_READINESS_TIMEOUT elapsedMs=${GROUP_READINESS_TIMEOUT_NS / 1_000_000L} " +
+                            "excludingReceivers=${notReady.joinToString(",") { it.receiverId.toString() }}"
+                    )
+                    notReady.forEach { peer ->
+                        removeReceiver(peer, "did not reach READY before the group startup deadline")
+                    }
+                }
+                if (receivers.isNotEmpty()) tryScheduleGroupStart()
+            }
+        }, "syncinit-group-readiness-timeout").apply {
+            isDaemon = true
+            start()
+        }
+    }
+
     private fun tryScheduleGroupStart() {
         synchronized(groupStartLock) {
             if (closed.get() || groupStartScheduled.get()) return
@@ -572,7 +617,8 @@ class MasterSessionHost(context: Context, private val onStatus: (String) -> Unit
                     )
                     peers.forEach { peer ->
                         if (!peer.offerAudio(encoded)) {
-                            removeReceiver(peer, "audio send queue exceeded $AUDIO_QUEUE_CHUNKS chunks")
+                            onStatus("DIAG HOST_AUDIO_QUEUE_OVERFLOW receiverId=${peer.receiverId} limitChunks=$AUDIO_QUEUE_CHUNKS limitMs=${AUDIO_QUEUE_CHUNKS * CHUNK_PERIOD_NS / 1_000_000L}")
+                            removeReceiver(peer, "audio send queue exceeded ${AUDIO_QUEUE_CHUNKS * CHUNK_PERIOD_NS / 1_000_000L} ms of backlog")
                         }
                     }
 
