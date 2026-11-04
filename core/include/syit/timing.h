@@ -65,8 +65,8 @@ public:
         std::int64_t sample_rate_hz = kSampleRateHz,
         Nanoseconds window_ns = 30'000'000'000LL,
         std::size_t maximum_samples = 256U,
-        std::size_t minimum_samples = 8U,
-        Nanoseconds minimum_span_ns = 2'000'000'000LL,
+        std::size_t minimum_samples = 4U,
+        Nanoseconds minimum_span_ns = 20'000'000'000LL,
         double maximum_rate_error_ppm = 5'000.0);
 
     bool add_sample(std::int64_t frame_position, Nanoseconds timestamp_ns);
