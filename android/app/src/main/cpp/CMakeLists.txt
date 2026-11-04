@@ -16,6 +16,7 @@ add_library(syncinit_jni SHARED
     "${CORE_ROOT}/src/messages.cpp"
     "${CORE_ROOT}/src/session.cpp"
     "${CORE_ROOT}/src/transport.cpp"
+    "${CORE_ROOT}/src/timing.cpp"
 )
 
 target_include_directories(syncinit_jni PRIVATE "${CORE_ROOT}/include")

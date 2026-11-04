@@ -13,6 +13,12 @@ object NativeCore {
     external fun nativePcmBufferStats(handle: Long): LongArray?
     external fun nativeReadPcmBuffer(handle: Long, output: ShortArray): Long
     external fun nativeClosePcmBuffer(handle: Long)
+
+    external fun nativeCreateDacClock(sampleRateHz: Int): Long
+    external fun nativeAddDacTimestamp(handle: Long, framePosition: Long, timestampNs: Long): Boolean
+    external fun nativeDacClockSnapshot(handle: Long): DoubleArray?
+    external fun nativeResetDacClock(handle: Long)
+    external fun nativeCloseDacClock(handle: Long)
     external fun nativeSeekPcmBuffer(handle: Long, firstSampleIndex: Long)
 
     external fun nativeEncodePcmChunkFrame(

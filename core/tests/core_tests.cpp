@@ -69,6 +69,80 @@ void test_dac_clock_vectors() {
     }
 }
 
+void test_dac_clock_mapper_regression() {
+    constexpr std::int64_t sample_rate_hz = 48'000;
+    constexpr long double rate_error_ppm = 65.0L;
+    constexpr syit::Nanoseconds base_time_ns = 1'700'000'000'000'000LL;
+    syit::DacClockMapper mapper(sample_rate_hz);
+
+    for (std::int64_t index = 0; index <= 120; ++index) {
+        const auto elapsed_ns = index * 200'000'000LL;
+        const long double ideal_frames =
+            static_cast<long double>(elapsed_ns) *
+            static_cast<long double>(sample_rate_hz) *
+            (1.0L + rate_error_ppm / 1'000'000.0L) / 1'000'000'000.0L;
+        const auto frame_position = static_cast<std::int64_t>(std::llround(ideal_frames));
+        const std::int64_t noise_ns = (index % 5 - 2) * 10'000LL;
+        expect(
+            mapper.add_sample(frame_position, base_time_ns + elapsed_ns + noise_ns),
+            "DAC mapper accepts increasing timestamp pairs");
+    }
+
+    const auto estimate = mapper.estimate();
+    expect(estimate.has_value(), "DAC mapper becomes valid after sufficient samples and span");
+    if (estimate.has_value()) {
+        expect(close(estimate->rate_error_ppm, 65.0, 2.0), "DAC mapper estimates positive hardware rate error");
+        expect(estimate->samples_used == 121U, "DAC mapper reports retained sample count");
+        expect(estimate->sample_span_ns >= 20'000'000'000LL, "DAC mapper reports observation span");
+        expect(estimate->residual_rms_ns < 25'000.0, "DAC mapper reports low residual for a clean clock");
+        const auto frame_at_half =
+            static_cast<std::int64_t>(std::llround(
+                12.5L * static_cast<long double>(sample_rate_hz) *
+                (1.0L + rate_error_ppm / 1'000'000.0L)));
+        const auto mapped_time = estimate->local_time_ns_at_frame(frame_at_half);
+        expect(mapped_time.has_value(), "DAC mapper maps frame positions to local monotonic time");
+        if (mapped_time.has_value()) {
+            expect(std::abs(*mapped_time - (base_time_ns + 12'500'000'000LL)) < 100'000LL,
+                   "DAC frame-to-time map remains accurate at an interior point");
+            const auto round_trip = estimate->frame_position_at_local_time_ns(*mapped_time);
+            expect(round_trip.has_value(), "DAC mapper maps local time back to frame position");
+            if (round_trip.has_value()) {
+                expect(std::abs(*round_trip - frame_at_half) <= 1,
+                       "DAC time-to-frame map reverses frame-to-time mapping");
+            }
+        }
+    }
+
+    const auto last_frame = static_cast<std::int64_t>(std::llround(
+        24.0L * static_cast<long double>(sample_rate_hz) *
+        (1.0L + rate_error_ppm / 1'000'000.0L)));
+    expect(!mapper.add_sample(last_frame, base_time_ns + 24'200'000'000LL),
+           "DAC mapper rejects a non-increasing frame position");
+    expect(
+        !mapper.add_sample(last_frame + sample_rate_hz * 10, base_time_ns + 24'200'000'000LL),
+        "DAC mapper rejects a large forward timestamp discontinuity");
+    expect(mapper.rejected_samples() == 2U, "DAC mapper counts rejected timestamp discontinuities");
+
+    mapper.reset();
+    expect(!mapper.estimate().has_value(), "DAC mapper reset invalidates the previous fit");
+}
+
+void test_dac_clock_mapper_sliding_window() {
+    syit::DacClockMapper mapper(48'000, 5'000'000'000LL, 64U, 4U, 1'000'000'000LL);
+    for (std::int64_t index = 0; index <= 100; ++index) {
+        const auto time_ns = 1'000'000'000LL + index * 200'000'000LL;
+        const auto frame_position = index * 9'600LL;
+        expect(mapper.add_sample(frame_position, time_ns), "sliding DAC mapper accepts monotonic samples");
+    }
+    const auto estimate = mapper.estimate();
+    expect(estimate.has_value(), "sliding DAC mapper retains a valid recent window");
+    if (estimate.has_value()) {
+        expect(estimate->sample_span_ns <= 5'000'000'000LL, "DAC regression does not exceed its configured time window");
+        expect(estimate->samples_used <= 26U, "DAC regression prunes samples outside its time window");
+        expect(close(estimate->rate_error_ppm, 0.0, 0.01), "sliding DAC regression preserves nominal sample rate");
+    }
+}
+
 void test_invalid_inputs() {
     bool threw = false;
     try {
@@ -131,6 +205,8 @@ int main() {
     test_estimator_vectors();
     test_timeline_vectors();
     test_dac_clock_vectors();
+    test_dac_clock_mapper_regression();
+    test_dac_clock_mapper_sliding_window();
     test_drift_controller_vectors();
     test_invalid_inputs();
     if (failures != 0) {

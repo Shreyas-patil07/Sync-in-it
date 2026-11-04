@@ -19,6 +19,7 @@ import com.syncinit.app.core.NativeCore
 import com.syncinit.app.core.NativeSessionSmokeTest
 import com.syncinit.app.core.NetworkHandshakeSmokeTest
 import com.syncinit.app.audio.PcmAudioSmokeTest
+import com.syncinit.app.audio.DacClockSmokeTest
 import com.syncinit.app.network.LanSessionBrowser
 import com.syncinit.app.network.NetworkDiagnostics
 import com.syncinit.app.network.MasterSessionHost
@@ -551,7 +552,7 @@ class MainActivity : Activity() {
     }
 
     private fun nativeStatus(): String = try {
-        "Native C++ core API ${NativeCore.nativeCoreVersion()} · ${NativeSessionSmokeTest.run()} · ${NetworkHandshakeSmokeTest.run()} · ${PcmAudioSmokeTest.run()}"
+        "Native C++ core API ${NativeCore.nativeCoreVersion()} · ${NativeSessionSmokeTest.run()} · ${NetworkHandshakeSmokeTest.run()} · ${PcmAudioSmokeTest.run()} · ${DacClockSmokeTest.run()}"
     } catch (error: LinkageError) {
         "Native C++ core failed to load: ${error.message ?: "unknown linker error"}"
     } catch (error: Exception) {
