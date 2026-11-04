@@ -210,6 +210,32 @@ void test_jitter_buffer_duplicate_late_and_window_rules() {
     expect(result.missing_frames == 0U, "accepted chunk remains intact after rejected arrivals");
 }
 
+
+void test_jitter_buffer_rolls_pre_anchor_window_only() {
+    syit::PcmJitterBuffer buffer(8U, 2U);
+    buffer.reset(100LL);
+    expect(buffer.insert(pcm_chunk(1U, 1U, 100LL, 8U)) == syit::JitterInsertResult::Inserted,
+           "initial pre-roll fills the bounded jitter buffer");
+
+    expect(buffer.insert(pcm_chunk(1U, 2U, 108LL, 4U)) == syit::JitterInsertResult::OutOfWindow,
+           "ordinary insertion still rejects a window overflow");
+
+    expect(buffer.insert(pcm_chunk(1U, 2U, 108LL, 4U), true) == syit::JitterInsertResult::WindowAdvanced,
+           "pre-anchor insertion advances the rolling window instead of dropping the receiver");
+    expect(buffer.next_sample_index() == 104LL,
+           "rolling window advances only the stale pre-roll cursor");
+    expect(buffer.contiguous_buffered_frames() == 8U,
+           "rolling window preserves the newest contiguous samples");
+    expect(buffer.window_advance_count() == 1U,
+           "rolling window advance is counted for diagnostics");
+
+    buffer.seek(108LL);
+    expect(buffer.insert(pcm_chunk(1U, 3U, 116LL, 4U)) == syit::JitterInsertResult::Inserted,
+           "normal in-window streaming continues after the playback anchor");
+    expect(buffer.insert(pcm_chunk(1U, 4U, 124LL, 4U)) == syit::JitterInsertResult::OutOfWindow,
+           "post-anchor playback never silently advances its cursor to hide underruns");
+}
+
 void test_jitter_buffer_partial_late_and_underrun_silence() {
     syit::PcmJitterBuffer buffer(8U, 2U);
     buffer.reset(2LL);
@@ -251,6 +277,7 @@ int main() {
     test_jitter_buffer_orders_chunks_by_sample_index();
     test_jitter_buffer_seek_preserves_future_audio();
     test_jitter_buffer_duplicate_late_and_window_rules();
+    test_jitter_buffer_rolls_pre_anchor_window_only();
     test_jitter_buffer_partial_late_and_underrun_silence();
     if (failures != 0) {
         std::cerr << failures << " audio assertion(s) failed\n";
