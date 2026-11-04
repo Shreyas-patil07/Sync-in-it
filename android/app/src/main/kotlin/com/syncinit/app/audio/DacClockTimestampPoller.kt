@@ -52,20 +52,18 @@ internal class DacClockTimestampPoller(
         while (!closed.get()) {
             try {
                 if (audioTrack.getTimestamp(timestamp)) {
-                    if (!NativeCore.nativeAddDacTimestamp(
-                            handle,
-                            timestamp.framePosition,
-                            timestamp.nanoTime
-                        )
-                    ) {
-                    }
+                    NativeCore.nativeAddDacTimestamp(
+                        handle,
+                        timestamp.framePosition,
+                        timestamp.nanoTime
+                    )
                 } else {
                     unavailableTimestamps += 1L
                 }
 
                 val nowNs = System.nanoTime()
                 if (nowNs - lastReportNs >= REPORT_INTERVAL_NS) {
-                    report(unavailableTimestamps, rejectedTimestamps)
+                    report(unavailableTimestamps)
                     lastReportNs = nowNs
                 }
 
@@ -84,7 +82,7 @@ internal class DacClockTimestampPoller(
         }
     }
 
-    private fun report(unavailable: Long, rejected: Long) {
+    private fun report(unavailable: Long) {
         val values = NativeCore.nativeDacClockSnapshot(handle) ?: return
         if (values.size != 9) {
             onStatus("DAC clock diagnostics unavailable · invalid native snapshot.")
