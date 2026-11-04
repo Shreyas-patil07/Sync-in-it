@@ -47,7 +47,6 @@ internal class DacClockTimestampPoller(
     private fun poll(audioTrack: AudioTrack) {
         val timestamp = AudioTimestamp()
         var unavailableTimestamps = 0L
-        var rejectedTimestamps = 0L
         var lastReportNs = System.nanoTime()
 
         while (!closed.get()) {
@@ -59,7 +58,6 @@ internal class DacClockTimestampPoller(
                             timestamp.nanoTime
                         )
                     ) {
-                        rejectedTimestamps += 1L
                     }
                 } else {
                     unavailableTimestamps += 1L
