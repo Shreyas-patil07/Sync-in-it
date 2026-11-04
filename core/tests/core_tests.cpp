@@ -118,7 +118,10 @@ void test_dac_clock_mapper_regression() {
         (1.0L + rate_error_ppm / 1'000'000.0L)));
     expect(!mapper.add_sample(last_frame, base_time_ns + 24'200'000'000LL),
            "DAC mapper rejects a non-increasing frame position");
-    expect(mapper.rejected_samples() == 1U, "DAC mapper counts rejected timestamp discontinuities");
+    expect(
+        !mapper.add_sample(last_frame + sample_rate_hz * 10, base_time_ns + 24'200'000'000LL),
+        "DAC mapper rejects a large forward timestamp discontinuity");
+    expect(mapper.rejected_samples() == 2U, "DAC mapper counts rejected timestamp discontinuities");
 
     mapper.reset();
     expect(!mapper.estimate().has_value(), "DAC mapper reset invalidates the previous fit");
