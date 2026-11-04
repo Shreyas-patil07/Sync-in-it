@@ -248,6 +248,10 @@ void test_readiness_gates_and_recovery() {
 
     expect(session.on_ready(ready_message()) == syit::ReceiverSessionResult::Accepted,
            "receiver becomes READY after all gates pass");
+    expect(session.on_ready(ready_message()) == syit::ReceiverSessionResult::Accepted,
+           "duplicate READY is idempotently accepted while waiting for the group anchor");
+    expect(session.state() == syit::ReceiverSessionState::Ready,
+           "duplicate READY keeps receiver in READY");
     expect(session.mark_degraded() == syit::ReceiverSessionResult::Accepted,
            "ready receiver can become DEGRADED");
     expect(session.begin_resynchronization() == syit::ReceiverSessionResult::Accepted,
