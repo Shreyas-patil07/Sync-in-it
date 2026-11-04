@@ -269,6 +269,15 @@ std::optional<DacClockEstimate> DacClockMapper::estimate() const {
         static_cast<Nanoseconds>(std::llround(time_origin))};
 }
 
+std::size_t DacClockMapper::samples_seen() const noexcept {
+    return samples_.size();
+}
+
+Nanoseconds DacClockMapper::sample_span_ns() const noexcept {
+    if (samples_.size() < 2U) return 0;
+    return samples_.back().timestamp_ns - samples_.front().timestamp_ns;
+}
+
 void DacClockMapper::reset() {
     samples_.clear();
 }
