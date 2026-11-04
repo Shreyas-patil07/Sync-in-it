@@ -901,6 +901,8 @@ Java_com_syncinit_app_core_NativeCore_nativeDacClockSnapshot(
                 static_cast<jdouble>(fit->time_origin_ns),
                 static_cast<jdouble>(clock->mapper.rejected_samples())}};
         } else {
+            values[3] = static_cast<jdouble>(clock->mapper.samples_seen());
+            values[4] = static_cast<jdouble>(clock->mapper.sample_span_ns());
             values[8] = static_cast<jdouble>(clock->mapper.rejected_samples());
         }
     }
