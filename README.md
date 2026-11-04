@@ -33,8 +33,8 @@ The Python reference simulator, portable C++17 timing core and shared Python/C++
 | M2a | PCM16 audio codec and bounded sample-indexed jitter-buffer core | Complete |
 | M2b | Android PCM16 TCP transport and AudioTrack test playback | Complete |
 | M2c | Multi-Speaker admission, independent receiver state and shared PCM fan-out (up to 8) | Implemented; physical validation pending |
-| M2d | Shared future-T0 playback anchor and sample-indexed group start | Implemented on branch; CI and physical validation pending |
-| M3 | Output-timestamp mapping and manual offsets | Planned |
+| M2d | Shared future-T0 playback anchor and sample-indexed group start | Implemented; CI passed; physical validation pending |
+| M3 | Output-timestamp mapping and manual offsets | In progress: AudioTrack timestamp polling and rolling clock regression; manual offsets and physical validation pending |
 | M4 | Drift controller and 30-minute endurance run | Planned |
 | M5 | Hotspot resilience, receiver reconnect and measured 4+ Speaker testing | Planned |
 | M6 | Opus codec and user-selected/system audio source | Planned |
