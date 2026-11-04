@@ -7,6 +7,7 @@
 #include "syit/protocol.h"
 #include "syit/session.h"
 #include "syit/transport.h"
+#include "syit/timing.h"
 
 #include <algorithm>
 #include <array>
@@ -46,6 +47,14 @@ struct NativePcmBuffer {
     syit::PcmJitterBuffer buffer;
 };
 
+struct NativeDacClock {
+    explicit NativeDacClock(std::int64_t sample_rate_hz)
+        : mapper(sample_rate_hz) {}
+
+    std::mutex mutex;
+    syit::DacClockMapper mapper;
+};
+
 struct NativeTimeSyncClient {
     NativeTimeSyncClient(std::uint32_t session_id, std::uint16_t receiver_id)
         : client(session_id, receiver_id) {}
@@ -65,12 +74,22 @@ std::atomic<jlong> g_next_clock_client_handle{1};
 std::mutex g_pcm_buffers_mutex;
 std::unordered_map<jlong, std::shared_ptr<NativePcmBuffer>> g_pcm_buffers;
 std::atomic<jlong> g_next_pcm_buffer_handle{1};
+std::mutex g_dac_clocks_mutex;
+std::unordered_map<jlong, std::shared_ptr<NativeDacClock>> g_dac_clocks;
+std::atomic<jlong> g_next_dac_clock_handle{1};
 
 std::shared_ptr<NativePcmBuffer> find_pcm_buffer(jlong handle) {
     if (handle <= 0) return {};
     std::lock_guard<std::mutex> lock(g_pcm_buffers_mutex);
     const auto found = g_pcm_buffers.find(handle);
     return found == g_pcm_buffers.end() ? std::shared_ptr<NativePcmBuffer>{} : found->second;
+}
+
+std::shared_ptr<NativeDacClock> find_dac_clock(jlong handle) {
+    if (handle <= 0) return {};
+    std::lock_guard<std::mutex> lock(g_dac_clocks_mutex);
+    const auto found = g_dac_clocks.find(handle);
+    return found == g_dac_clocks.end() ? std::shared_ptr<NativeDacClock>{} : found->second;
 }
 
 void throw_illegal_argument(JNIEnv* env, const char* message) {
@@ -827,6 +846,85 @@ Java_com_syncinit_app_core_NativeCore_nativeClosePcmBuffer(
     JNIEnv*, jobject, jlong handle) {
     std::lock_guard<std::mutex> lock(g_pcm_buffers_mutex);
     g_pcm_buffers.erase(handle);
+}
+
+extern "C" JNIEXPORT jlong JNICALL
+Java_com_syncinit_app_core_NativeCore_nativeCreateDacClock(
+    JNIEnv* env, jobject, jint sample_rate_hz) {
+    if (sample_rate_hz < 8'000 || sample_rate_hz > 192'000) {
+        throw_illegal_argument(env, "DAC sample rate is outside the supported range");
+        return 0;
+    }
+    try {
+        auto clock = std::make_shared<NativeDacClock>(sample_rate_hz);
+        const jlong handle = g_next_dac_clock_handle.fetch_add(1);
+        if (handle <= 0) throw std::overflow_error("DAC clock handle space exhausted");
+        std::lock_guard<std::mutex> lock(g_dac_clocks_mutex);
+        g_dac_clocks.emplace(handle, std::move(clock));
+        return handle;
+    } catch (const std::exception& error) {
+        throw_illegal_argument(env, error.what());
+        return 0;
+    }
+}
+
+extern "C" JNIEXPORT jboolean JNICALL
+Java_com_syncinit_app_core_NativeCore_nativeAddDacTimestamp(
+    JNIEnv*, jobject, jlong handle, jlong frame_position, jlong timestamp_ns) {
+    const auto clock = find_dac_clock(handle);
+    if (!clock) return JNI_FALSE;
+    std::lock_guard<std::mutex> lock(clock->mutex);
+    return clock->mapper.add_sample(
+        static_cast<std::int64_t>(frame_position),
+        static_cast<syit::Nanoseconds>(timestamp_ns)) ? JNI_TRUE : JNI_FALSE;
+}
+
+extern "C" JNIEXPORT jdoubleArray JNICALL
+Java_com_syncinit_app_core_NativeCore_nativeDacClockSnapshot(
+    JNIEnv* env, jobject, jlong handle) {
+    const auto clock = find_dac_clock(handle);
+    if (!clock) return nullptr;
+
+    std::array<jdouble, 9> values{};
+    {
+        std::lock_guard<std::mutex> lock(clock->mutex);
+        const auto fit = clock->mapper.estimate();
+        if (fit.has_value()) {
+            values = {{
+                1.0,
+                fit->rate_error_ppm,
+                fit->residual_rms_ns / 1'000.0,
+                static_cast<jdouble>(fit->samples_used),
+                static_cast<jdouble>(fit->sample_span_ns),
+                fit->nanoseconds_per_frame,
+                static_cast<jdouble>(fit->frame_origin),
+                static_cast<jdouble>(fit->time_origin_ns),
+                static_cast<jdouble>(clock->mapper.rejected_samples())}};
+        } else {
+            values[8] = static_cast<jdouble>(clock->mapper.rejected_samples());
+        }
+    }
+
+    jdoubleArray output = env->NewDoubleArray(static_cast<jsize>(values.size()));
+    if (output == nullptr) return nullptr;
+    env->SetDoubleArrayRegion(output, 0, static_cast<jsize>(values.size()), values.data());
+    return output;
+}
+
+extern "C" JNIEXPORT void JNICALL
+Java_com_syncinit_app_core_NativeCore_nativeResetDacClock(
+    JNIEnv*, jobject, jlong handle) {
+    const auto clock = find_dac_clock(handle);
+    if (!clock) return;
+    std::lock_guard<std::mutex> lock(clock->mutex);
+    clock->mapper.reset();
+}
+
+extern "C" JNIEXPORT void JNICALL
+Java_com_syncinit_app_core_NativeCore_nativeCloseDacClock(
+    JNIEnv*, jobject, jlong handle) {
+    std::lock_guard<std::mutex> lock(g_dac_clocks_mutex);
+    g_dac_clocks.erase(handle);
 }
 
 extern "C" JNIEXPORT jbyteArray JNICALL
