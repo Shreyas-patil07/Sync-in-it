@@ -178,6 +178,21 @@ bool DacClockMapper::add_sample(
             ++rejected_samples_;
             return false;
         }
+        const long double frame_delta =
+            static_cast<long double>(frame_position) -
+            static_cast<long double>(previous.frame_position);
+        const long double time_delta =
+            static_cast<long double>(timestamp_ns) -
+            static_cast<long double>(previous.timestamp_ns);
+        const long double observed_rate_hz = frame_delta * 1'000'000'000.0L / time_delta;
+        const long double observed_error_ppm =
+            (observed_rate_hz / static_cast<long double>(sample_rate_hz_) - 1.0L) * 1'000'000.0L;
+        constexpr long double kMaximumIntervalDiscontinuityPpm = 25'000.0L;
+        if (!std::isfinite(observed_error_ppm) ||
+            std::abs(observed_error_ppm) > kMaximumIntervalDiscontinuityPpm) {
+            ++rejected_samples_;
+            return false;
+        }
     }
 
     samples_.push_back({frame_position, timestamp_ns});
