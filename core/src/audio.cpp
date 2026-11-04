@@ -140,6 +140,7 @@ void PcmJitterBuffer::reset(SampleIndex first_sample_index) {
     std::fill(samples_.begin(), samples_.end(), 0);
     next_sample_index_ = first_sample_index;
     missing_frames_total_ = 0U;
+    window_advance_count_ = 0U;
     initialized_ = true;
 }
 
@@ -188,7 +189,7 @@ std::int16_t PcmJitterBuffer::decode_pcm16(const std::uint8_t* bytes) noexcept {
     return static_cast<std::int16_t>(signed_value);
 }
 
-JitterInsertResult PcmJitterBuffer::insert(const AudioChunk& chunk) {
+JitterInsertResult PcmJitterBuffer::insert(const AudioChunk& chunk, bool allow_window_advance) {
     try { validate_chunk(chunk); } catch (const std::invalid_argument&) {
         return JitterInsertResult::InvalidChunk;
     }
@@ -200,9 +201,22 @@ JitterInsertResult PcmJitterBuffer::insert(const AudioChunk& chunk) {
         const auto end = chunk.sample_index + static_cast<SampleIndex>(chunk.frames);
         if (end <= next_sample_index_) return JitterInsertResult::TooLate;
     }
-    const auto end_index = chunk.sample_index + static_cast<SampleIndex>(chunk.frames);
-    if (end_index - next_sample_index_ > static_cast<SampleIndex>(capacity_frames_)) {
+    if (static_cast<std::size_t>(chunk.frames) > capacity_frames_) {
         return JitterInsertResult::OutOfWindow;
+    }
+    const auto end_index = chunk.sample_index + static_cast<SampleIndex>(chunk.frames);
+    bool advanced_window = false;
+    if (end_index - next_sample_index_ > static_cast<SampleIndex>(capacity_frames_)) {
+        if (!allow_window_advance) return JitterInsertResult::OutOfWindow;
+
+        // While waiting for the shared start ANCHOR, keep a rolling window of
+        // the newest samples. The Host chooses an anchor behind the producer
+        // head, so recent contiguous PCM is more useful than stale pre-roll.
+        const auto new_cursor = end_index - static_cast<SampleIndex>(capacity_frames_);
+        if (new_cursor <= next_sample_index_) return JitterInsertResult::OutOfWindow;
+        next_sample_index_ = new_cursor;
+        ++window_advance_count_;
+        advanced_window = true;
     }
 
     const auto first_frame = static_cast<std::size_t>(
@@ -233,6 +247,7 @@ JitterInsertResult PcmJitterBuffer::insert(const AudioChunk& chunk) {
         inserted = true;
     }
 
+    if (inserted && advanced_window) return JitterInsertResult::WindowAdvanced;
     if (inserted && chunk.sample_index < next_sample_index_) return JitterInsertResult::PartialLate;
     if (inserted) return JitterInsertResult::Inserted;
     if (duplicate) return JitterInsertResult::Duplicate;
@@ -305,6 +320,11 @@ SampleIndex PcmJitterBuffer::next_sample_index() const {
 std::uint64_t PcmJitterBuffer::missing_frames_total() const {
     std::lock_guard<std::mutex> lock(mutex_);
     return missing_frames_total_;
+}
+
+std::uint64_t PcmJitterBuffer::window_advance_count() const {
+    std::lock_guard<std::mutex> lock(mutex_);
+    return window_advance_count_;
 }
 
 }  // namespace syit
