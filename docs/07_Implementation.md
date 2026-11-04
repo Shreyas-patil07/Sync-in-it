@@ -130,6 +130,8 @@ Deliverables:
 - Manual offset control.
 - Device-specific diagnostics.
 
+**M3a implementation in progress:** the Android AudioTrack adapter now polls best-effort frame-position/presentation-time pairs, unwraps its low-order 32-bit counter, and fits a 30-second rolling regression in the portable C++ core. The current app reports the fitted rate error, residual, sample span and rejected timestamp count. This is diagnostics only; it is not yet used to alter playback or compensate device latency. Callback-safe snapshot publication and manual offsets remain pending.
+
 Exit gate:
 - Output clock mapping remains stable through the test.
 - Manual adjustment moves acoustic output in the expected direction.
