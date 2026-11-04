@@ -128,6 +128,7 @@ private class AndroidPcmAudioOutput(
     private val closed = AtomicBoolean(false)
     @Volatile private var track: AudioTrack? = null
     @Volatile private var writer: Thread? = null
+    @Volatile private var timestampPoller: DacClockTimestampPoller? = null
 
     fun startAt(masterAlignedLocalTimeNs: Long) {
         check(!closed.get()) { "audio output is closed" }
@@ -219,6 +220,9 @@ private class AndroidPcmAudioOutput(
                 "Group playback started at the scheduled local clock target · " +
                     "$primedFrames PCM frames preloaded."
             )
+            timestampPoller = DacClockTimestampPoller(buffer.sampleRateHz, onStatus).also {
+                it.start(audioTrack)
+            }
 
             while (!closed.get()) {
                 buffer.readNext(playbackSamples)
@@ -269,6 +273,8 @@ private class AndroidPcmAudioOutput(
 
     override fun close() {
         if (!closed.compareAndSet(false, true)) return
+        timestampPoller?.close()
+        timestampPoller = null
         writer?.interrupt()
         val current = track
         track = null
