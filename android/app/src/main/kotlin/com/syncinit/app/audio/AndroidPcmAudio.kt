@@ -307,6 +307,7 @@ class PcmAudioReceiver(
     private val anchorReceived = AtomicBoolean(false)
     private val readySent = AtomicBoolean(false)
     private val lastReadySentAtNs = AtomicLong(0L)
+    private val lastReadyGateDiagnosticAtNs = AtomicLong(0L)
     private val latestClock = AtomicReference<ClockSyncMeasurement?>(null)
     private val buffer: NativePcmJitterBuffer
     private val output: AndroidPcmAudioOutput
@@ -388,11 +389,41 @@ class PcmAudioReceiver(
 
     private fun trySendReady() {
         if (closed.get() || anchorReceived.get()) return
-        val measurement = latestClock.get() ?: return
-        if (!measurement.acquisitionStable) return
 
-        val bufferedMs = buffer.bufferedMillis()
-        if (bufferedMs < MIN_READY_BUFFER_MS) return
+        val measurement = latestClock.get()
+        val snapshot = buffer.snapshot()
+        val bufferedMs = snapshot.contiguousBufferedFrames * 1_000L / welcome.sampleRateHz.toLong()
+        val clockStable = measurement?.acquisitionStable == true
+        val bufferReady = bufferedMs >= MIN_READY_BUFFER_MS
+
+        if (!clockStable || !bufferReady) {
+            val nowNs = System.nanoTime()
+            val previousDiagnosticNs = lastReadyGateDiagnosticAtNs.get()
+            if ((previousDiagnosticNs == 0L || nowNs - previousDiagnosticNs >= 1_000_000_000L) &&
+                lastReadyGateDiagnosticAtNs.compareAndSet(previousDiagnosticNs, nowNs)) {
+                val gate = when {
+                    measurement == null -> "CLOCK_ESTIMATE_UNAVAILABLE"
+                    !clockStable && !bufferReady -> "CLOCK_AND_PCM_INSUFFICIENT"
+                    !clockStable -> "CLOCK_UNSTABLE"
+                    else -> "PCM_BUFFER_INSUFFICIENT"
+                }
+                onStatus(
+                    "DIAG READY_GATE_BLOCKED gate=$gate " +
+                        "clockStable=$clockStable " +
+                        "samplesUsed=${measurement?.samplesUsed ?: 0} " +
+                        "samplesSeen=${measurement?.samplesSeen ?: 0} " +
+                        "sampleSpanMs=${measurement?.selectedSampleSpanNs?.div(1_000_000L) ?: 0L} " +
+                        "stableStreak=${measurement?.stableStreak ?: 0} " +
+                        "residualRmsMs=${measurement?.residualRmsMs?.let { "%.4f".format(it) } ?: "unavailable"} " +
+                        "rttMedianMs=${measurement?.rttMedianMs?.let { "%.2f".format(it) } ?: "unavailable"} " +
+                        "bufferedMs=$bufferedMs requiredMs=$MIN_READY_BUFFER_MS " +
+                        "contiguousFrames=${snapshot.contiguousBufferedFrames} " +
+                        "missingFrames=${snapshot.missingFrames} " +
+                        "windowAdvances=${snapshot.windowAdvanceCount}"
+                )
+            }
+            return
+        }
 
         // There is no READY acknowledgement in the current wire protocol.
         // Retry periodically until ANCHOR arrives; the Host state machine accepts
