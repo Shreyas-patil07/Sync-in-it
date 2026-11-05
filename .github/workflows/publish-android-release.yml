@@ -81,7 +81,7 @@ jobs:
           mkdir -p release-assets
           cp android/app/build/outputs/apk/debug/app-debug.apk \
             release-assets/SyncInIt-Android-preview-v0.5.7.apk
-          sha256sum release-assets/SyncInIt-Android-preview-v0.5.6.apk \
+          sha256sum release-assets/SyncInIt-Android-preview-v0.5.7.apk \
             | awk '{print $1}' > release-assets/SHA256SUMS.txt
 
       - name: Create GitHub pre-release and upload APK
@@ -129,7 +129,7 @@ jobs:
           EOF
 
           gh release create "v0.5.7-preview.1" \
-            "release-assets/SyncInIt-Android-preview-v0.5.6.apk#SyncInIt-Android-preview-v0.5.6.apk" \
+            "release-assets/SyncInIt-Android-preview-v0.5.7.apk#SyncInIt-Android-preview-v0.5.7.apk" \
             "release-assets/SHA256SUMS.txt#SHA256SUMS.txt" \
             --repo "$GITHUB_REPOSITORY" \
             --target "$GITHUB_SHA" \
