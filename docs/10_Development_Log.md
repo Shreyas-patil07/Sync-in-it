@@ -756,3 +756,13 @@ No physical-device synchronization results are recorded in this initial log. Add
 4. Repeat after changing audio route or stopping/restarting playback; confirm the mapper resets and reacquires rather than carrying stale frame mapping.
 
 **Next action:** pass CI and collect real AudioTrack mapping logs from both phones before adding manual per-device offset control or connecting the estimate to drift correction.
+
+
+## 2026-11-05 — Multi-Speaker startup and PCM pre-roll hardening
+
+- Changed the receiver's pre-ANCHOR PCM buffering to a rolling sample-indexed window. It advances only the pre-roll cursor when the bounded buffer fills, keeping recent contiguous PCM available while clock acquisition or group admission is delayed.
+- The first playback ANCHOR switches the native buffer to strict mode. Post-anchor inserts cannot advance the playback cursor to conceal underruns or sample loss.
+- Added JNI diagnostics for rolling-window advance count and regression coverage for rolling before ANCHOR and strict behavior after ANCHOR.
+- Increased the Host admission window from 6 to 15 seconds and added a 45-second readiness deadline. Receivers that never reach READY are explicitly excluded instead of causing indefinite buffering and eventual PCM overflow.
+- Increased each Speaker's bounded audio writer queue from 160 ms to 500 ms to tolerate brief local-network scheduling stalls without allowing unbounded memory growth.
+- Added per-network Android route diagnostics and explicit peer-socket-closed classification so cellular/Wi-Fi selection issues and secondary Broken pipe failures can be separated.

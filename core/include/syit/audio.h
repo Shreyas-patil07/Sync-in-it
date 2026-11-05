@@ -43,6 +43,7 @@ enum class JitterInsertResult {
     TooLate,
     OutOfWindow,
     InvalidChunk,
+    WindowAdvanced,
 };
 
 struct JitterReadResult {
@@ -58,7 +59,9 @@ public:
 
     void reset(SampleIndex first_sample_index);
     void seek(SampleIndex first_sample_index);
-    JitterInsertResult insert(const AudioChunk& chunk);
+    // Before the playback anchor, callers may keep the newest bounded window by
+    // advancing the pre-roll cursor. After seek(), callers must disable this.
+    JitterInsertResult insert(const AudioChunk& chunk, bool allow_window_advance = false);
     JitterReadResult read(
         SampleIndex first_sample_index,
         std::size_t frames,
@@ -70,6 +73,7 @@ public:
     std::uint8_t channels() const noexcept { return channels_; }
     SampleIndex next_sample_index() const;
     std::uint64_t missing_frames_total() const;
+    std::uint64_t window_advance_count() const;
 
 private:
     struct Slot {
@@ -87,6 +91,7 @@ private:
     std::vector<std::int16_t> samples_;
     SampleIndex next_sample_index_{0};
     std::uint64_t missing_frames_total_{0};
+    std::uint64_t window_advance_count_{0};
     bool initialized_{false};
 };
 

@@ -43,6 +43,7 @@ internal object NetworkDiagnostics {
             appendLine("network.dns=${properties?.dnsServers?.joinToString(",") { it.hostAddress ?: "?" } ?: "unavailable"}")
             appendLine("network.routes=${properties?.routes?.joinToString(";") { formatRoute(it.toString(), it.isDefaultRoute) } ?: "unavailable"}")
             appendLine("network.proxy=${properties?.httpProxy ?: "none-or-unavailable"}")
+            appendLine("network.available=${availableNetworks(connectivity)}")
             appendLine("network.interfaces=${activeInterfaces()}")
             if (peerAddress != null) {
                 appendLine("peer.address=$peerAddress")
@@ -73,7 +74,14 @@ internal object NetworkDiagnostics {
             is java.net.UnknownHostException -> "HOST_RESOLUTION_FAILED"
             is java.net.BindException -> "LOCAL_BIND_FAILED"
             is SecurityException -> "PERMISSION_OR_POLICY_BLOCK"
-            is java.net.SocketException -> "SOCKET_FAILURE"
+            is java.net.SocketException -> when {
+                root.message.orEmpty().contains("broken pipe", ignoreCase = true) ||
+                    root.message.orEmpty().contains("connection reset", ignoreCase = true) ||
+                    root.message.orEmpty().contains("socket closed", ignoreCase = true) ||
+                    root.message.orEmpty().contains("connection aborted", ignoreCase = true) ->
+                    "PEER_SOCKET_CLOSED"
+                else -> "SOCKET_FAILURE"
+            }
             else -> "UNCLASSIFIED_IO_FAILURE"
         }
         return "category=$category; causeChain=$chain"
@@ -93,6 +101,24 @@ internal object NetworkDiagnostics {
 
     private fun formatRoute(route: String, isDefault: Boolean): String =
         if (isDefault) "$route [DEFAULT]" else route
+
+    private fun availableNetworks(connectivity: ConnectivityManager): String {
+        return try {
+            connectivity.allNetworks.joinToString(";") { network ->
+                val capabilities = connectivity.getNetworkCapabilities(network)
+                val properties = connectivity.getLinkProperties(network)
+                val transportNames = capabilities?.let(::transports) ?: "unavailable"
+                val interfaceName = properties?.interfaceName ?: "unknown"
+                val addresses = properties?.linkAddresses
+                    ?.joinToString(",") { formatAddress(it) } ?: "unavailable"
+                val routes = properties?.routes
+                    ?.joinToString(",") { it.toString() } ?: "unavailable"
+                "$network(transports=$transportNames,interface=$interfaceName,addresses=$addresses,routes=$routes)"
+            }.ifBlank { "none" }
+        } catch (error: Exception) {
+            "unavailable(${error.javaClass.simpleName}:${error.message ?: "no message"})"
+        }
+    }
 
     private fun activeInterfaces(): String {
         return try {

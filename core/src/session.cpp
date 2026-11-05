@@ -76,7 +76,13 @@ ReceiverSessionResult ReceiverSession::on_audio_hello(const AudioHello& hello) {
 
 ReceiverSessionResult ReceiverSession::on_ready(const Ready& ready) {
     if (state_ == ReceiverSessionState::Closed) return ReceiverSessionResult::Closed;
-    if (state_ != ReceiverSessionState::Synchronizing) return ReceiverSessionResult::WrongState;
+    // READY is retried by the Speaker until it receives the coordinated ANCHOR.
+    // Treat repeats as idempotent while READY so a lost/transiently rejected first
+    // readiness report cannot strand the Host waiting forever.
+    if (state_ != ReceiverSessionState::Synchronizing &&
+        state_ != ReceiverSessionState::Ready) {
+        return ReceiverSessionResult::WrongState;
+    }
     if (!ready.sync_stable) return ReceiverSessionResult::ClockNotStable;
     if (ready.buffered_ms < config_.minimum_buffered_ms) {
         return ReceiverSessionResult::BufferInsufficient;

@@ -109,13 +109,13 @@ Unknown anchor kinds must be rejected or ignored safely according to protocol co
 
 The current Android preview uses ANCHOR kind `0` (start) as a one-shot group-start command:
 
-1. The Host admits Speakers for a fixed 6-second window after the first Speaker completes admission.
-2. Every admitted Speaker must report READY after the clock estimator is stable and at least 3 seconds of contiguous PCM is buffered.
+1. The Host admits Speakers for a 15-second window after the first Speaker completes admission.
+2. Every admitted Speaker reports READY after the clock estimator is stable and at least 3 seconds of contiguous PCM is buffered. The Speaker retries READY every second until it receives ANCHOR; duplicate READY is idempotently accepted while the receiver is READY.
 3. After the admission window closes and every admitted Speaker is READY, the Host selects one shared sample index already inside the buffered PCM range and one future Host monotonic timestamp.
 4. The Host arms each admitted native receiver session, applies the same start anchor to each session, and sends the encoded ANCHOR over each Speaker's control TCP connection.
 5. Each Speaker maps the Host timestamp into its local monotonic clock using the latest four-timestamp offset estimate, seeks its jitter-buffer cursor to the shared sample index, primes AudioTrack, and calls `AudioTrack.play()` at the scheduled local target.
 
-The Android preview uses a 20-second PCM ring buffer to retain the first Speaker's stream while later Speakers complete the 10-second clock-estimator stability window. The initial admission policy intentionally prevents late additions after the cohort has started; restart hosting to form another group. This is a software scheduling milestone, not a claim of sample-accurate DAC or acoustic alignment. Hardware output timestamp mapping, output-latency compensation, drift control and acoustic measurements are outside this milestone.
+The Android preview uses a 20-second sample-indexed PCM ring buffer per Speaker. Before the shared start ANCHOR, the buffer rolls its pre-roll cursor forward when necessary so it retains the newest contiguous audio while clock acquisition completes; after the ANCHOR it becomes strict and will not silently skip playback samples. The Host accepts Speakers for 15 seconds from the first successful admission, then waits up to 45 seconds for the admitted cohort to reach READY. A Speaker that misses the readiness deadline is disconnected with an explicit diagnostic; ready peers can still start together. The cohort is fixed after the admission window closes; restart hosting to form another group. This is a software scheduling milestone, not a claim of sample-accurate DAC or acoustic alignment. Hardware output timestamp mapping, output-latency compensation, drift control and acoustic measurements are outside this milestone.
 
 ### 5.2 Receiver join and playback state
 

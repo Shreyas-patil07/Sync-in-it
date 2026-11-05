@@ -13,6 +13,7 @@ import com.syncinit.transport.TcpFrameConnection
 import java.io.Closeable
 import java.io.IOException
 import java.util.concurrent.atomic.AtomicBoolean
+import java.util.concurrent.atomic.AtomicLong
 import java.util.concurrent.atomic.AtomicReference
 
 enum class PcmChunkInsertResult(val code: Int) {
@@ -21,13 +22,15 @@ enum class PcmChunkInsertResult(val code: Int) {
     Duplicate(2),
     TooLate(3),
     OutOfWindow(4),
-    InvalidChunk(5)
+    InvalidChunk(5),
+    WindowAdvanced(6)
 }
 
 data class PcmBufferSnapshot(
     val contiguousBufferedFrames: Long,
     val nextSampleIndex: Long,
-    val missingFrames: Long
+    val missingFrames: Long,
+    val windowAdvanceCount: Long
 )
 
 class NativePcmJitterBuffer(
@@ -67,8 +70,8 @@ class NativePcmJitterBuffer(
         val values = checkNotNull(NativeCore.nativePcmBufferStats(checkOpen())) {
             "native PCM buffer statistics are unavailable"
         }
-        check(values.size == 3) { "native PCM buffer returned invalid statistics" }
-        return PcmBufferSnapshot(values[0], values[1], values[2])
+        check(values.size == 4) { "native PCM buffer returned invalid statistics" }
+        return PcmBufferSnapshot(values[0], values[1], values[2], values[3])
     }
 
     fun bufferedMillis(): Long =
@@ -297,11 +300,13 @@ class PcmAudioReceiver(
 ) : Closeable {
     companion object {
         private const val MIN_READY_BUFFER_MS = 3_000L
+        private const val READY_RETRY_INTERVAL_NS = 1_000_000_000L
     }
 
     private val closed = AtomicBoolean(false)
     private val anchorReceived = AtomicBoolean(false)
     private val readySent = AtomicBoolean(false)
+    private val lastReadySentAtNs = AtomicLong(0L)
     private val latestClock = AtomicReference<ClockSyncMeasurement?>(null)
     private val buffer: NativePcmJitterBuffer
     private val output: AndroidPcmAudioOutput
@@ -337,6 +342,7 @@ class PcmAudioReceiver(
     }
 
     private fun readAudioFrames() {
+        var lastReportedWindowAdvance = 0L
         try {
             while (!closed.get()) {
                 val frame = audioConnection.readFrame() ?: throw IOException("master closed the audio channel")
@@ -348,11 +354,28 @@ class PcmAudioReceiver(
                     PcmChunkInsertResult.PartialLate,
                     PcmChunkInsertResult.Duplicate,
                     PcmChunkInsertResult.TooLate -> Unit
-                    PcmChunkInsertResult.OutOfWindow ->
+                    PcmChunkInsertResult.WindowAdvanced -> {
+                        val snapshot = buffer.snapshot()
+                        val advances = snapshot.windowAdvanceCount
+                        if (lastReportedWindowAdvance == 0L || advances - lastReportedWindowAdvance >= 250L) {
+                            lastReportedWindowAdvance = advances
+                            onStatus(
+                                "PCM pre-roll rolling window active · advances=$advances · " +
+                                    "cursor=${snapshot.nextSampleIndex} · " +
+                                    "buffered=${snapshot.contiguousBufferedFrames * 1_000L / welcome.sampleRateHz} ms."
+                            )
+                        }
+                    }
+                    PcmChunkInsertResult.OutOfWindow -> {
+                        val snapshot = buffer.snapshot()
+                        val phase = if (anchorReceived.get()) "during playback" else "before the group ANCHOR"
                         throw IOException(
-                            "PCM buffer reached its 20-second admission limit before group start; " +
-                                "reconnect the Speaker and retry the session"
+                            "PCM jitter buffer overrun $phase; cursor=${snapshot.nextSampleIndex}, " +
+                                "buffered=${snapshot.contiguousBufferedFrames * 1_000L / welcome.sampleRateHz} ms, " +
+                                "windowAdvances=${snapshot.windowAdvanceCount}. " +
+                                "The stream exceeded the bounded 20-second receive window."
                         )
+                    }
                     PcmChunkInsertResult.InvalidChunk ->
                         throw IOException("received an invalid PCM16 audio chunk")
                 }
@@ -364,14 +387,22 @@ class PcmAudioReceiver(
     }
 
     private fun trySendReady() {
-        if (closed.get() || readySent.get()) return
+        if (closed.get() || anchorReceived.get()) return
         val measurement = latestClock.get() ?: return
         if (!measurement.acquisitionStable) return
 
         val bufferedMs = buffer.bufferedMillis()
         if (bufferedMs < MIN_READY_BUFFER_MS) return
-        if (!readySent.compareAndSet(false, true)) return
 
+        // There is no READY acknowledgement in the current wire protocol.
+        // Retry periodically until ANCHOR arrives; the Host state machine accepts
+        // duplicate READY frames idempotently and can recover from a transient gate.
+        val nowNs = System.nanoTime()
+        val previousSentAtNs = lastReadySentAtNs.get()
+        if (previousSentAtNs != 0L && nowNs - previousSentAtNs < READY_RETRY_INTERVAL_NS) return
+        if (!lastReadySentAtNs.compareAndSet(previousSentAtNs, nowNs)) return
+
+        val firstReady = readySent.compareAndSet(false, true)
         try {
             val residualUs = (measurement.residualRmsMs * 1_000.0)
                 .toLong()
@@ -384,11 +415,16 @@ class PcmAudioReceiver(
                 )
             )
             onStatus(
-                "Clock acquisition stable · ${bufferedMs} ms buffered · READY sent. " +
-                    "Waiting for the master's coordinated playback anchor."
+                "Clock acquisition stable · ${bufferedMs} ms buffered · " +
+                    if (firstReady) {
+                        "READY sent; retrying every 1 second until the group ANCHOR."
+                    } else {
+                        "READY refreshed; waiting for the master's coordinated playback anchor."
+                    }
             )
         } catch (error: Exception) {
-            readySent.set(false)
+            if (firstReady) readySent.compareAndSet(true, false)
+            lastReadySentAtNs.compareAndSet(nowNs, previousSentAtNs)
             throw error
         }
     }
@@ -418,10 +454,12 @@ class PcmAudioReceiver(
         if (!anchorReceived.compareAndSet(false, true)) return
 
         try {
+            val beforeAnchor = buffer.snapshot()
             buffer.seekToSampleIndex(anchor.sampleIndex)
             output.startAt(localStartNs)
             onStatus(
                 "Group start armed · sample ${anchor.sampleIndex} · " +
+                    "pre-roll advances=${beforeAnchor.windowAdvanceCount} · " +
                     "${(localStartNs - System.nanoTime()) / 1_000_000L} ms until target."
             )
         } catch (error: Exception) {
