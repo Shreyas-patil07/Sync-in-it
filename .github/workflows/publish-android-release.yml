@@ -128,11 +128,23 @@ jobs:
           Install as an update over an existing Sync In It preview signed with the same persistent preview key. Do not uninstall the previous preview first.
           EOF
 
-          gh release create "v0.5.7-preview.1" \
-            "release-assets/SyncInIt-Android-preview-v0.5.7.apk#SyncInIt-Android-preview-v0.5.7.apk" \
-            "release-assets/SHA256SUMS.txt#SHA256SUMS.txt" \
-            --repo "$GITHUB_REPOSITORY" \
-            --target "$GITHUB_SHA" \
-            --title "Sync In It Android Preview v0.5.6" \
-            --notes-file release-notes.md \
-            --prerelease
+          if gh release view "v0.5.7-preview.1" --repo "$GITHUB_REPOSITORY" >/dev/null 2>&1; then
+            gh release edit "v0.5.7-preview.1" \
+              --repo "$GITHUB_REPOSITORY" \
+              --title "Sync In It Android Preview v0.5.7" \
+              --notes-file release-notes.md \
+              --prerelease
+            gh release upload "v0.5.7-preview.1" \
+              "release-assets/SyncInIt-Android-preview-v0.5.7.apk" \
+              "release-assets/SHA256SUMS.txt" \
+              --repo "$GITHUB_REPOSITORY" --clobber
+          else
+            gh release create "v0.5.7-preview.1" \
+              "release-assets/SyncInIt-Android-preview-v0.5.7.apk#SyncInIt-Android-preview-v0.5.7.apk" \
+              "release-assets/SHA256SUMS.txt#SHA256SUMS.txt" \
+              --repo "$GITHUB_REPOSITORY" \
+              --target "$GITHUB_SHA" \
+              --title "Sync In It Android Preview v0.5.7" \
+              --notes-file release-notes.md \
+              --prerelease
+          fi
