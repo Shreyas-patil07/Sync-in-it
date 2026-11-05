@@ -80,8 +80,8 @@ jobs:
         run: |
           mkdir -p release-assets
           cp android/app/build/outputs/apk/debug/app-debug.apk \
-            release-assets/SyncInIt-Android-preview-v0.5.6.apk
-          sha256sum release-assets/SyncInIt-Android-preview-v0.5.6.apk \
+            release-assets/SyncInIt-Android-preview-v0.5.7.apk
+          sha256sum release-assets/SyncInIt-Android-preview-v0.5.7.apk \
             | awk '{print $1}' > release-assets/SHA256SUMS.txt
 
       - name: Create GitHub pre-release and upload APK
@@ -89,16 +89,19 @@ jobs:
           GH_TOKEN: ${{ secrets.GITHUB_TOKEN }}
         run: |
           cat > release-notes.md <<'EOF'
-          ## Sync In It Android Preview v0.5.6
+          ## Sync In It Android Preview v0.5.7
 
-          This preview adds the first M3 DAC output-clock measurement slice on top of the coordinated multi-Speaker playback path.
+          This preview hardens coordinated multi-Speaker admission, pre-playback PCM buffering and READY recovery, building on the M3a DAC output-clock diagnostics introduced in v0.5.6.
 
           ### Included
           - LAN session discovery and TCP control/audio channels, with UDP four-timestamp clock acquisition.
           - 48 kHz stereo PCM16 test-stream fan-out from one Host to up to eight Speakers, with independent receiver sessions and bounded per-Speaker writer queues.
-          - A six-second admission window. Once the admitted Speakers are clock-stable and have sufficient contiguous PCM buffered, the Host arms the cohort and sends a common future start anchor and sample index.
+          - A 15-second admission window for up to eight Speakers, followed by a 45-second readiness deadline. Speakers that do not reach READY are excluded explicitly; ready peers can still start together.
+          - READY is retried every second until the common ANCHOR arrives, and repeated READY messages are idempotently handled by the Host.
+          - A bounded 20-second rolling PCM pre-roll window before ANCHOR, retaining the newest contiguous audio while clock acquisition completes. After ANCHOR, the buffer switches to strict sample-index handling and never silently skips playback samples.
+          - Per-Speaker audio writer queues bounded to 500 ms, with explicit queue-overflow and socket-writer failure diagnostics.
           - Receiver-side anchor handling that maps the Host monotonic target through the clock estimate, seeks to the shared buffered sample index, primes AudioTrack and schedules playback.
-          - Native PCM jitter-buffer seek regression coverage and Kotlin/JNI transport checks.
+          - Native PCM rolling-window and strict post-ANCHOR regression coverage, duplicate-READY state-machine tests and Kotlin/JNI smoke checks.
           - The receiver keeps the long-lived control channel open after WELCOME while waiting for the coordinated playback ANCHOR, with regression coverage for delayed control frames.
           - M3a DAC output timestamp polling through Android AudioTrack on a dedicated helper thread, separate from the PCM writer.
           - Native 30-second rolling regression mapping output frame position to Android monotonic presentation time, with rate-error, fit-residual, sample-span and rejected-sample diagnostics.
@@ -108,7 +111,7 @@ jobs:
 
           ### Setup and test
           - Enable the Host phone's Android mobile hotspot and connect all Speaker phones to it. Internet access is not required, but hotspot client-to-client traffic and multicast discovery must be allowed.
-          - Start hosting on the Host. On each Speaker, keep the app open, refresh nearby sessions and join the Host within the admission window.
+          - Start hosting on the Host. On each Speaker, keep the app open, refresh nearby sessions and join within 15 seconds of the first successful Speaker admission.
           - Check that each admitted Speaker reaches READY and that the devices begin the generated test stream from the shared scheduled anchor.
           - Keep playback running for at least 30 seconds so the DAC timestamp mapper can collect enough samples for a valid fit. Capture the "DAC timestamp acquisition" and "DAC output clock mapped" diagnostics from each device.
           - Test stop/restart and reconnect behavior on two or more physical phones. Physical device and hotspot validation is not performed by CI.
@@ -119,14 +122,14 @@ jobs:
           - Android output timestamps are best-effort and may be unavailable on some device/audio routes. The mapping does not measure acoustic sound arrival at the speaker and does not include hardware delays unknown to Android.
           - A valid regression fit requires at least four timestamp samples spanning 20 seconds. Fit residuals describe the timestamp model, not acoustic synchronization accuracy.
           - Bluetooth routing, device-specific AudioTrack/HAL latency, microphone-based calibration and real multi-phone acoustic timing remain uncalibrated.
-          - The Host cohort is fixed after the six-second admission window. A late Speaker requires a new Host group.
+          - The Host cohort is fixed after the 15-second admission window. A late Speaker requires a new Host group. Speakers that do not reach READY within 45 seconds of the first admission are removed; ready peers may proceed together.
           - This is an engineering preview, not a claim of verified synchronized-speaker performance.
 
           Install as an update over an existing Sync In It preview signed with the same persistent preview key. Do not uninstall the previous preview first.
           EOF
 
-          gh release create "v0.5.6-preview.1" \
-            "release-assets/SyncInIt-Android-preview-v0.5.6.apk#SyncInIt-Android-preview-v0.5.6.apk" \
+          gh release create "v0.5.7-preview.1" \
+            "release-assets/SyncInIt-Android-preview-v0.5.7.apk#SyncInIt-Android-preview-v0.5.7.apk" \
             "release-assets/SHA256SUMS.txt#SHA256SUMS.txt" \
             --repo "$GITHUB_REPOSITORY" \
             --target "$GITHUB_SHA" \
