@@ -158,7 +158,11 @@ function ProjectStatus() {
           <span className="status-milestone">M3a</span>
           <div><b>DAC output-clock diagnostics</b><small>IMPLEMENTED · DIAGNOSTIC ONLY</small></div>
         </div>
-        <div className="status-card-foot">Current-main READY/audio counters are merged. Android CI exposed a missing AtomicLong import; the documentation branch includes the import correction and is awaiting a fresh CI result.</div>
+        <div className="status-card-foot">Current-main READY/audio counters are merged. Android CI exposed a missing AtomicLong import; this branch includes the import correction and is awaiting a fresh CI result.</div>
+        <div className="status-card-links">
+          <a className="inline-link" href={ANDROID_CI} target="_blank" rel="noreferrer">Android build status <Arrow diagonal /></a>
+          <a className="inline-link" href={DIAGNOSTICS_PR} target="_blank" rel="noreferrer">Diagnostics changes <Arrow diagonal /></a>
+        </div>
       </div>
     </div>
   </section>;
