@@ -4,6 +4,12 @@
 **Version:** 1.0  
 **Last updated:** 1 November 2026
 
+## Current deployment warning — 6 November 2026
+
+The current Android prototype is intended for a **trusted private LAN only**. The 16-byte session token is advertised in the DNS-SD/mDNS service TXT record to enable one-tap joining, so other devices able to browse that LAN may read it. TCP/UDP control, audio and time-sync traffic do not yet have application-level authenticated encryption. WPA2/WPA3 Wi-Fi does not protect a participant from another device already on the same LAN.
+
+Do not deploy this preview on public, guest or otherwise untrusted Wi-Fi. Client-to-client connectivity and multicast must be enabled for discovery/join. Host admission and token validation are prototype access controls, not a production security boundary. Authenticated key establishment, channel integrity/confidentiality and replay protection remain future security work. See [Current Implementation Status](11_Current_Implementation_Status.md).
+
 ## 1. Security objective
 
 Sync In It is designed for a private local Wi-Fi session without cloud services. The security objective for the prototype is to prevent casual unauthorized joining, limit accidental information exposure and handle untrusted network input safely.
