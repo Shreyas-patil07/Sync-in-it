@@ -2,8 +2,8 @@
 
 **Status date:** 6 November 2026  
 **Main baseline:** PR #55 merged at `6b87eadd018e4d73c4f2d1b40aa6c9692f5d11c0`  
-**Release packaging:** v0.5.9-preview.1 publishing workflow prepared; this release-preparation PR triggers the publisher on merge  
-**Latest published Android preview:** [`v0.5.8-preview.1`](https://github.com/Shreyas-patil07/Sync-in-it/releases/tag/v0.5.8-preview.1)  
+**Release packaging commit:** `e6e89518d00d00b6aa911832b0740b497f43d6f1`  
+**Latest published Android preview:** [`v0.5.9-preview.1`](https://github.com/Shreyas-patil07/Sync-in-it/releases/tag/v0.5.9-preview.1)  
 **Audience:** contributors, testers and anyone assessing what is implemented versus what is still a design target.
 
 This file is the source of truth for present-tense implementation claims. Product targets, architecture proposals and future behavior in the other design documents remain useful, but they must not be read as evidence that those features are already implemented or validated.
@@ -20,15 +20,15 @@ The current focus is **post-PR #55 receive-throughput retesting, clock-gate diag
 
 | Item | Current state | Evidence / interpretation |
 |---|---|---|
-| Latest published preview before this packaging PR | `v0.5.8-preview.1` | Existing public release; it predates PR #55 |
-| Next preview | `v0.5.9-preview.1` | Release workflow is configured to build the merged PR #55 code and publish a new signed APK/checksum on merge |
-| Release scope | Adds cached PCM snapshots, Speaker ingress-rate diagnostics and Host slow-write diagnostics to the v0.5.8 measurement toolchain | See the v0.5.9 release notes after publishing |
+| Published preview | `v0.5.9-preview.1` | Public GitHub pre-release with signed APK and SHA-256 checksum |
+| APK asset | `SyncInIt-Android-preview-v0.5.9.apk` | 5,969,084 bytes; persistent preview signing key used |
+| Release scope | Cached PCM snapshots, Speaker ingress-rate diagnostics and Host slow-write diagnostics added to the v0.5.8 measurement toolchain | See the [v0.5.9 release notes](https://github.com/Shreyas-patil07/Sync-in-it/releases/tag/v0.5.9-preview.1) |
 | Current main | PR #55 merged at `6b87eadd` | Adds PCM snapshot throttling, Speaker ingress metrics, Host slow-write metrics and expanded clock diagnostics |
-| M0 simulator/native CI on merged main | Passed | [Workflow run 42185917316](https://github.com/Shreyas-patil07/Sync-in-it/actions/runs/42185917316) passed the Python 3.11/3.12/3.13 and C++17 matrix, vectors, simulator and queue scenarios |
-| Android/JNI CI on merged main | Passed | [Workflow run 42185917399](https://github.com/Shreyas-patil07/Sync-in-it/actions/runs/42185917399) passed build, Kotlin transport checks, signature verification and artifact upload |
-| Physical validation | Pending after PR #55 | No post-fix device run, successful READY/ANCHOR or real acoustic skew measurement is recorded yet |
+| M0 simulator/native CI on release commit | Passed | [Workflow run 42230554383](https://github.com/Shreyas-patil07/Sync-in-it/actions/runs/42230554383) passed the Python 3.11/3.12/3.13 and C++17 matrix, vectors, simulator and queue scenarios |
+| Android/JNI CI on release commit | Passed | [Workflow run 42230554351](https://github.com/Shreyas-patil07/Sync-in-it/actions/runs/42230554351) passed build, Kotlin transport checks, signature verification and artifact upload |
+| Release publisher | Passed | [Workflow run 42230554362](https://github.com/Shreyas-patil07/Sync-in-it/actions/runs/42230554362) built the updateable APK, passed transport checks, verified its signature and uploaded the APK/checksum |
 
-The current `v0.5.8-preview.1` APK was built before PR #55 and does not contain the PCM snapshot optimization or the new ingress/slow-write metrics. The v0.5.9 release-preparation workflow will build from the PR #55 merged main commit using the persistent preview signing key. The merged-main Android/JNI and M0 workflows passed, but **no post-PR #55 physical run or physical two-phone skew value is recorded yet**; synthetic analyzer tests do not establish real-device synchronization.
+The published `v0.5.9-preview.1` APK is built from release commit `e6e89518d00d00b6aa911832b0740b497f43d6f1` with the persistent preview signing key. Android/JNI build and transport checks, APK signature verification, frontend build, the Python/C++ matrix and the release publisher all passed on the release commit. **No post-PR #55 physical run or physical two-phone skew value is recorded yet**; synthetic analyzer tests and CI do not establish real-device synchronization.
 
 ## Implemented Android path
 
@@ -107,10 +107,10 @@ The Speaker reuses a buffer snapshot for up to 250 ms rather than rescanning the
 
 | Area | Status |
 |---|---|
-| Python simulator and C++ timing core | Passed on merged main | Python 3.11/3.12/3.13 + C++17 matrix and M0 gates passed in run 42185917316 |
-| Shared Python/C++ timing vectors | Passed in merged-main M0 CI |
-| Kotlin/JVM transport tests | Passed in merged-main Android workflow 42185917399 |
-| Android/JNI debug build | Passed in merged-main Android workflow 42185917399; signed preview artifact uploaded |
+| Python simulator and C++ timing core | Passed on release commit | Python 3.11/3.12/3.13 + C++17 matrix and M0 gates passed in run 42230554383 |
+| Shared Python/C++ timing vectors | Passed in release-commit M0 CI |
+| Kotlin/JVM transport tests | Passed in release-commit Android workflow 42230554351 and release publisher 42230554362 |
+| Android/JNI debug build | Passed in release-commit Android workflow 42230554351; updateable signed APK artifact uploaded |
 | Host discovery and TCP join on physical LAN | Observed working in the supplied run |
 | Multi-Speaker UDP response | Observed working in the supplied run |
 | Speaker clock stability / READY | Failed in the pre-PR #55 supplied run because residual RMS stayed above 0.25 ms; post-fix device retest pending |
@@ -133,7 +133,7 @@ A successful desktop CI run verifies deterministic core behavior. A successful A
 
 ## Next engineering sequence
 
-1. Publish and install v0.5.9-preview.1 on one Host and one Speaker using the persistent signing key; keep both apps foregrounded and screens awake on the same trusted Wi-Fi.
+1. Install v0.5.9-preview.1 on one Host and one Speaker using the persistent signing key; keep both apps foregrounded and screens awake on the same trusted Wi-Fi.
 2. Capture both logs from join through READY/ANCHOR or disconnect. Check `DIAG SPEAKER_AUDIO_INGRESS` remains near the 50-chunk/sec producer rate and that Host queued/written counters remain close.
 3. Inspect `DIAG HOST_AUDIO_WRITE_SLOW`. If ingress is still slow but Host writes are fast, investigate receiver parsing/buffer insertion and Android scheduling; if Host writes stall, investigate TCP backpressure/network behavior.
 4. Inspect the clock residual, skew, sample span and stable streak separately. The 0.25 ms threshold must remain unchanged unless measurements justify a different estimator design.
