@@ -803,3 +803,13 @@ Do not infer missing hardware/router metadata. Store raw recordings outside Git 
 - Release build source: `4ad233b00ed4b13cf7710f8b557825d6448a0887`; Android release build, transport checks and APK signature verification passed in [workflow run 42176604387](https://github.com/Shreyas-patil07/Sync-in-it/actions/runs/42176604387).
 - The APK includes the PR #53 receiver-specific acoustic markers and the READY/audio delivery diagnostics. The APK's version metadata is aligned to 0.5.8-preview, with a monotonically generated versionCode.
 - Synthetic skew-analysis tests pass CI. PHONE-SKEW-001 has not been run on physical phones, so no acoustic skew value or synchronized-playback claim is published.
+
+## 2026-11-06 — v0.5.9-preview.1 published
+
+- Published the signed Android preview APK and SHA-256 checksum at [GitHub Releases](https://github.com/Shreyas-patil07/Sync-in-it/releases/tag/v0.5.9-preview.1).
+- Release packaging PR #56 merged at `e6e89518d00d00b6aa911832b0740b497f43d6f1`; release tag `v0.5.9-preview.1` targets this commit.
+- Android asset: `SyncInIt-Android-preview-v0.5.9.apk` (5,969,084 bytes). SHA-256: `bdd3c19ef7033d5445ebaab1d9b6ec96df6ee99aa6c97bc35c2fabe18a47185b`.
+- Release publisher [workflow run 42230554362](https://github.com/Shreyas-patil07/Sync-in-it/actions/runs/42230554362) passed the Android build, transport checks, APK signature verification and release asset upload.
+- Release-commit Android/JNI CI passed in [run 42230554351](https://github.com/Shreyas-patil07/Sync-in-it/actions/runs/42230554351); frontend TypeScript/Vite passed in [run 42230554330](https://github.com/Shreyas-patil07/Sync-in-it/actions/runs/42230554330); Python 3.11/3.12/3.13 and C++17 M0 matrix passed in [run 42230554383](https://github.com/Shreyas-patil07/Sync-in-it/actions/runs/42230554383).
+- The APK includes PR #55's 250 ms PCM snapshot caching, Speaker ingress-rate diagnostics, Host slow TCP-write diagnostics and expanded READY-gate clock details. The READY buffer requirement, 0.25 ms residual threshold, stable-streak requirement and bounded 500 ms Host queue remain unchanged.
+- The last physical failure predates PR #55. A post-release Host/Speaker run is still required to verify receiver ingress rate, Host queue behavior, READY/ANCHOR and eventual acoustic skew. No synchronized-playback claim is made.
