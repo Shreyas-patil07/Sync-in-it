@@ -28,6 +28,11 @@ val requestedVersionCode = providers.gradleProperty("syncinitVersionCode")
     ?.toIntOrNull()
     ?: 1
 
+val requestedVersionName = providers.gradleProperty("syncinitVersionName")
+    .orNull
+    ?.takeIf { it.isNotBlank() }
+    ?: "0.5.8-preview"
+
 require(requestedVersionCode in 1..2_100_000_000) {
     "syncinitVersionCode must be between 1 and 2100000000"
 }
@@ -43,7 +48,7 @@ android {
         minSdk = 26
         targetSdk = 36
         versionCode = requestedVersionCode
-        versionName = "0.5.6-preview"
+        versionName = requestedVersionName
 
         ndk {
             abiFilters += listOf("arm64-v8a", "x86_64")
