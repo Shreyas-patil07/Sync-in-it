@@ -294,6 +294,7 @@ class MasterSessionHost(context: Context, private val onStatus: (String) -> Unit
         private val audioFramesQueued = AtomicLong(0L)
         private val audioFramesWritten = AtomicLong(0L)
         private val audioQueueHighWater = AtomicInteger(0)
+        private val lastSlowAudioWriteDiagnosticAtNs = AtomicLong(0L)
         val udpPeer = AtomicReference<InetSocketAddress?>(null)
         private var audioWriter: Thread? = null
 
@@ -303,7 +304,27 @@ class MasterSessionHost(context: Context, private val onStatus: (String) -> Unit
                 try {
                     while (!peerClosed.get() && !closed.get()) {
                         val frame = audioQueue.poll(500, TimeUnit.MILLISECONDS) ?: continue
-                        audio.writeEncodedFrame(frame)
+                        val writeStartedAtNs = System.nanoTime()
+                        try {
+                            audio.writeEncodedFrame(frame)
+                        } finally {
+                            val writeDurationNs = System.nanoTime() - writeStartedAtNs
+                            if (writeDurationNs >= 20_000_000L) {
+                                val nowNs = System.nanoTime()
+                                val previousReportNs = lastSlowAudioWriteDiagnosticAtNs.get()
+                                if ((previousReportNs == 0L ||
+                                        nowNs - previousReportNs >= 1_000_000_000L) &&
+                                    lastSlowAudioWriteDiagnosticAtNs.compareAndSet(previousReportNs, nowNs)
+                                ) {
+                                    onStatus(
+                                        "DIAG HOST_AUDIO_WRITE_SLOW receiverId=$receiverId " +
+                                            "durationMs=${"%.1f".format(writeDurationNs / 1_000_000.0)} " +
+                                            "queued=${audioFramesQueued.get()} written=${audioFramesWritten.get()} " +
+                                            "queueDepth=${audioQueue.size} queueHighWater=${audioQueueHighWater.get()}"
+                                    )
+                                }
+                            }
+                        }
                         val written = audioFramesWritten.incrementAndGet()
                         if (written == 1L || written % 250L == 0L) {
                             onStatus(
