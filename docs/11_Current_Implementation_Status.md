@@ -27,6 +27,7 @@ The current focus is **post-PR #55 receive-throughput retesting, clock-gate diag
 | M0 simulator/native CI on release commit | Passed | [Workflow run 42230554383](https://github.com/Shreyas-patil07/Sync-in-it/actions/runs/42230554383) passed the Python 3.11/3.12/3.13 and C++17 matrix, vectors, simulator and queue scenarios |
 | Android/JNI CI on release commit | Passed | [Workflow run 42230554351](https://github.com/Shreyas-patil07/Sync-in-it/actions/runs/42230554351) passed build, Kotlin transport checks, signature verification and artifact upload |
 | Release publisher | Passed | [Workflow run 42230554362](https://github.com/Shreyas-patil07/Sync-in-it/actions/runs/42230554362) built the updateable APK, passed transport checks, verified its signature and uploaded the APK/checksum |
+| Physical validation | Pending | No post-PR #55 device run, successful physical READY/ANCHOR or measured acoustic skew is recorded yet |
 
 The published `v0.5.9-preview.1` APK is built from release commit `e6e89518d00d00b6aa911832b0740b497f43d6f1` with the persistent preview signing key. Android/JNI build and transport checks, APK signature verification, frontend build, the Python/C++ matrix and the release publisher all passed on the release commit. **No post-PR #55 physical run or physical two-phone skew value is recorded yet**; synthetic analyzer tests and CI do not establish real-device synchronization.
 
