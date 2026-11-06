@@ -848,3 +848,16 @@ Do not infer missing hardware/router metadata. Store raw recordings outside Git 
 4. Verify the rolling-window counter from a fresh native snapshot.
 5. Repeat one Host + one Speaker through READY and ANCHOR; only then add more Speakers and run the acoustic marker analysis.
 
+
+
+## 2026-11-07 — Audio synchronization reverse-engineering research integrated
+
+**Type:** Research integration / documentation  
+**Status:** Added to repository documentation branch `docs/audio-sync-research`  
+**Source:** User-supplied public-source research bundle dated 7 November 2026.
+
+- Added a dedicated `docs/reverse-engineering/` section for 38 products/systems across multi-phone audio distribution, shared listening sessions, browser rooms, self-hosted multi-room systems, low-latency performance audio, speaker ecosystems and adjacent products.
+- Added the architecture comparison, product catalogue, public source index and research-method caveats.
+- Added Sync In It-specific recommendations and a repeatable benchmark matrix, prioritizing per-probe clock observability, matched Host/Speaker evidence, READY/ANCHOR proof and acoustic measurement.
+- Linked the research index from the root README and current implementation status.
+- The integration is a concise public-surface summary of the supplied bundle. Proprietary internals remain unknown; marketing performance claims are not treated as measurements. No application code, thresholds, protocol or release assets changed.

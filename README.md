@@ -28,7 +28,7 @@ M3a polls Android AudioTrack output timestamps and fits a rolling regression in 
 
 **Build and device evidence:** PR #55 is merged into `main`. The merged-main Android/JNI build, Kotlin transport checks and APK signature verification passed in [Android workflow run 42185917399](https://github.com/Shreyas-patil07/Sync-in-it/actions/runs/42185917399); the M0 simulator/native matrix passed in [run 42185917316](https://github.com/Shreyas-patil07/Sync-in-it/actions/runs/42185917316). Preview v0.5.9 adds the PCM snapshot optimization and ingress/write diagnostics. The 6 November post-fix Speaker log shows near-target PCM ingress and zero missing frames, but clock residuals still block READY. CI and this partial device evidence do not prove synchronized playback; see [Test Results](docs/Test_Results.md).
 
-See [the canonical implementation status](docs/11_Current_Implementation_Status.md) and [measurement tool guide](tools/README.md) for physical evidence, exact limits and the two-phone skew test procedure.
+See [the canonical implementation status](docs/11_Current_Implementation_Status.md), [measurement tool guide](tools/README.md) and [38-product audio synchronization reverse-engineering research](docs/reverse-engineering/README.md) for physical evidence, architecture comparisons, source references and benchmark recommendations.
 
 | Milestone | Description | State |
 |---|---|---|
