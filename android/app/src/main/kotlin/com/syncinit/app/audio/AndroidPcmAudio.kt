@@ -301,11 +301,19 @@ class PcmAudioReceiver(
     private val onStatus: (String) -> Unit,
     private val onFailure: (Exception) -> Unit
 ) : Closeable {
+    companion object {
+        private const val BUFFER_SNAPSHOT_INTERVAL_NS = 250_000_000L
+        private const val AUDIO_INGRESS_DIAGNOSTIC_INTERVAL_NS = 1_000_000_000L
+    }
+
     private val closed = AtomicBoolean(false)
     private val anchorReceived = AtomicBoolean(false)
     private val readySent = AtomicBoolean(false)
     private val lastReadySentAtNs = AtomicLong(0L)
     private val lastReadyGateDiagnosticAtNs = AtomicLong(0L)
+    private val bufferSnapshotLock = Any()
+    private var cachedBufferSnapshot = PcmBufferSnapshot(0L, 0L, 0L, 0L)
+    private var lastBufferSnapshotAtNs = 0L
     private val latestClock = AtomicReference<ClockSyncMeasurement?>(null)
     private val buffer: NativePcmJitterBuffer
     private val output: AndroidPcmAudioOutput
@@ -343,6 +351,9 @@ class PcmAudioReceiver(
 
     private fun readAudioFrames() {
         var lastReportedWindowAdvance = 0L
+        var totalFramesReceived = 0L
+        var framesSinceIngressReport = 0L
+        var ingressReportStartedAtNs = System.nanoTime()
         try {
             while (!closed.get()) {
                 val frame = audioConnection.readFrame() ?: throw IOException("master closed the audio channel")
@@ -355,7 +366,7 @@ class PcmAudioReceiver(
                     PcmChunkInsertResult.Duplicate,
                     PcmChunkInsertResult.TooLate -> Unit
                     PcmChunkInsertResult.WindowAdvanced -> {
-                        val snapshot = buffer.snapshot()
+                        val snapshot = currentBufferSnapshot()
                         val advances = snapshot.windowAdvanceCount
                         if (lastReportedWindowAdvance == 0L || advances - lastReportedWindowAdvance >= 250L) {
                             lastReportedWindowAdvance = advances
@@ -379,6 +390,28 @@ class PcmAudioReceiver(
                     PcmChunkInsertResult.InvalidChunk ->
                         throw IOException("received an invalid PCM16 audio chunk")
                 }
+
+                totalFramesReceived += 1L
+                framesSinceIngressReport += 1L
+                val nowNs = System.nanoTime()
+                val ingressElapsedNs = nowNs - ingressReportStartedAtNs
+                if (ingressElapsedNs >= AUDIO_INGRESS_DIAGNOSTIC_INTERVAL_NS) {
+                    val snapshot = currentBufferSnapshot()
+                    val bufferedMs = snapshot.contiguousBufferedFrames * 1_000L /
+                        welcome.sampleRateHz.toLong()
+                    val rateFps = framesSinceIngressReport * 1_000_000_000.0 /
+                        ingressElapsedNs.toDouble()
+                    onStatus(
+                        "DIAG SPEAKER_AUDIO_INGRESS totalFrames=$totalFramesReceived " +
+                            "intervalFrames=$framesSinceIngressReport " +
+                            "intervalMs=${"%.1f".format(ingressElapsedNs / 1_000_000.0)} " +
+                            "rateFps=${"%.1f".format(rateFps)} bufferedMs=$bufferedMs " +
+                            "windowAdvances=${snapshot.windowAdvanceCount} " +
+                            "missingFrames=${snapshot.missingFrames}"
+                    )
+                    framesSinceIngressReport = 0L
+                    ingressReportStartedAtNs = nowNs
+                }
                 trySendReady()
             }
         } catch (error: Exception) {
@@ -386,11 +419,22 @@ class PcmAudioReceiver(
         }
     }
 
+    private fun currentBufferSnapshot(): PcmBufferSnapshot = synchronized(bufferSnapshotLock) {
+        val nowNs = System.nanoTime()
+        if (lastBufferSnapshotAtNs == 0L ||
+            nowNs - lastBufferSnapshotAtNs >= BUFFER_SNAPSHOT_INTERVAL_NS
+        ) {
+            cachedBufferSnapshot = buffer.snapshot()
+            lastBufferSnapshotAtNs = nowNs
+        }
+        cachedBufferSnapshot
+    }
+
     private fun trySendReady() {
         if (closed.get() || anchorReceived.get()) return
 
         val measurement = latestClock.get()
-        val snapshot = buffer.snapshot()
+        val snapshot = currentBufferSnapshot()
         val bufferedMs = snapshot.contiguousBufferedFrames * 1_000L / welcome.sampleRateHz.toLong()
         val clockStable = measurement?.acquisitionStable == true
         val bufferReady = bufferedMs >= PreviewConfig.MIN_READY_BUFFER_MS
@@ -413,7 +457,9 @@ class PcmAudioReceiver(
                         "samplesSeen=${measurement?.samplesSeen ?: 0} " +
                         "sampleSpanMs=${measurement?.selectedSampleSpanNs?.div(1_000_000L) ?: 0L} " +
                         "stableStreak=${measurement?.stableStreak ?: 0} " +
+                        "receiverSkewPpm=${measurement?.receiverSkewPpm?.let { "%.2f".format(it) } ?: "unavailable"} " +
                         "residualRmsMs=${measurement?.residualRmsMs?.let { "%.4f".format(it) } ?: "unavailable"} " +
+                        "stableCriteria=samples>=8,spanMs>=10000,residualMs<0.25,streak>=3 " +
                         "rttMedianMs=${measurement?.rttMedianMs?.let { "%.2f".format(it) } ?: "unavailable"} " +
                         "bufferedMs=$bufferedMs requiredMs=${PreviewConfig.MIN_READY_BUFFER_MS} " +
                         "contiguousFrames=${snapshot.contiguousBufferedFrames} " +
