@@ -190,6 +190,15 @@ Results are reported as mean, maximum and 95th-percentile error. A literal zero-
 
 ---
 
+## Two-phone acoustic skew measurement
+
+The generated Android test output includes a receiver-specific 20 ms marker every second. This allows two phones to be separated in a mono/stereo laptop recording even when their clicks overlap. Generate reference files, record about two minutes after common group playback actually starts, then analyze the Audacity-exported 48 kHz PCM16 WAV:
+
+    python -m tools.clicktrack.generate --output-dir recordings/reference --receiver-ids 1 2 --duration-seconds 120
+    python -m tools.analyze.analyze --input recordings/two-phone-run.wav --receiver-ids 1 2 --output-dir test-results/two-phone-run
+
+See [tools/README.md](tools/README.md) for setup and interpretation. Synthetic analysis tests pass in CI; no real phone skew result is recorded yet.
+
 ## Android preview quickstart
 
 The current Android preview implements one Host and admission for up to 8 Speakers. It sends a generated 1 kHz timing-click stream and contains a shared ANCHOR/AudioTrack path; physical group start is not currently verified because the latest run did not reach READY. Synchronized user-selected music is not implemented.

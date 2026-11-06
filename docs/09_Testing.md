@@ -16,7 +16,7 @@ The latest supplied three-phone LAN run is a **failure at the READY gate**, not 
 - No `GROUP_START_SCHEDULED` or physical ANCHOR delivery was observed.
 - A UDP source-IP rejection appeared after a peer had been removed; treat it as a possible cleanup/late-packet symptom, not the proven root cause.
 
-The Host log alone cannot distinguish unstable clock acquisition from insufficient contiguous PCM. PR #49 adds `READY_GATE_BLOCKED` on the Speaker and `HOST_AUDIO_DELIVERY` on the Host for that diagnosis. Its first Android CI run failed because of a missing `AtomicLong` import; the current documentation branch includes the import fix and requires a new successful Android build. Native/simulator CI passed. Do not claim an end-to-end sync pass from CI alone.
+The Host log alone cannot distinguish unstable clock acquisition from insufficient contiguous PCM. PR #49 adds READY_GATE_BLOCKED on the Speaker and HOST_AUDIO_DELIVERY on the Host. PR #51 fixed the missing AtomicLong import, and its Android/JNI CI build passed. Those diagnostics are still not in the published v0.5.7 APK. Do not claim an end-to-end sync pass from CI alone.
 
 ## 1. Testing objective
 
@@ -201,6 +201,23 @@ For simultaneous measurements, make each phone's signal distinguishable (for exa
 Use cross-correlation/matched filtering to estimate arrival times. Report measurement sample rate, microphone/recorder latency and analysis resolution. Keep the microphone fixed throughout one comparison run.
 
 Provisional gate: achieve 10 ms or less on the defined two-device setup before scaling, or document the limiting error source.
+
+## 8.1 Two-phone acoustic skew measurement (M2/M3 gate)
+
+The repository contains receiver-specific acoustic marker and WAV analysis tools in [tools/README.md](../tools/README.md). The Android diagnostic output retains the base 1 kHz timing click and overlays a 20 ms Hann-windowed marker every 48,000 sample frames. The Host-assigned receiver ID determines the marker frequency: Speaker 1 uses 1,500 Hz and Speaker 2 uses 2,250 Hz. This separates overlapping arrivals in one microphone recording.
+
+1. Confirm the measurement build is installed and the Host assigns Speaker IDs 1 and 2.
+2. Use the phone speakers, not Bluetooth. Set fixed volumes and place both phones about 10 cm from the laptop microphone at equal distances.
+3. Keep the app visible and screens awake. Record uncompressed PCM16 WAV at 48 kHz in Audacity.
+4. Record approximately 120 seconds only after both receivers reach READY and the common playback ANCHOR starts.
+5. Analyze the WAV with the commands in tools/README.md.
+6. Record phone models/OS, app commit, router/hotspot, volumes, microphone geometry, matched marker count, mean/median signed skew, p95/max absolute skew, drift slope and report files. Repeat without changing geometry or volume.
+
+The sign convention is Speaker B minus Speaker A; positive means B arrived later. The primary decision metric is p95 absolute acoustic skew ≤10 ms. If it passes, proceed to foreground service/wake-lock, manual-offset and drift-control work. If it fails, inspect marker detection, READY/ANCHOR timing, DAC timestamp diagnostics, microphone geometry and acoustic-path differences before deciding whether the AudioTrack backend should change. Do not assume Oboe is a fix without comparative evidence; see ADR-019.
+
+Synthetic tests inject known ±5–8 ms offsets and validate the analyzer only. They are not phone measurements. A successful build, a stable clock residual or a READY event is not an acoustic-skew pass.
+
+**Long-test restriction:** the app currently has no foreground playback service or explicit wake-lock lifecycle. Keep the initial approximately two-minute run foregrounded and the screen awake. Do not run endurance, screen-off, background or train tests until the foreground service/wake-lock work is implemented and validated.
 
 ## 9. Drift and endurance tests (M4)
 

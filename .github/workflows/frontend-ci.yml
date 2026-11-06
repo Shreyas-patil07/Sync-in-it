@@ -1,3 +1,4 @@
+# SPDX-License-Identifier: Apache-2.0
 name: Frontend website
 
 on:
@@ -6,7 +7,7 @@ on:
       - "frontend/**"
       - ".github/workflows/frontend-ci.yml"
   push:
-    branches: [main, "docs/**", "feature/**", "fix/**"]
+    branches: [main, "docs/**", "feature/**", "fix/**", "measurement/**"]
     paths:
       - "frontend/**"
       - ".github/workflows/frontend-ci.yml"
@@ -30,7 +31,7 @@ jobs:
           node-version: "20"
 
       - name: Install dependencies
-        run: npm install --no-audit --no-fund
+        run: npm ci --no-audit --no-fund
 
       - name: Type-check and build website
         run: npm run build

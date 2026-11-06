@@ -145,6 +145,56 @@ A decision is not validated merely because it is recorded. Changes to an accepte
 
 **Evidence and limitation:** The latest supplied physical run completed discovery, TCP admission and UDP request/response, but no Speaker reached READY before the 45-second deadline. The readiness gate must be diagnosed using Speaker clock/PCM metrics and Host audio-delivery counters. Do not weaken clock thresholds or claim synchronized group playback until repeated physical tests reach READY, receive one shared ANCHOR and pass acoustic measurements.
 
+## ADR-019 — AudioTrack preview backend versus planned Oboe/AAudio output
+
+**Status:** Accepted for the measurement prototype only; revisit after acoustic evidence.
+
+**Context:** The architecture baseline selects Oboe/AAudio for Android real-time output. The current preview instead uses AudioTrack.MODE_STREAM, a dedicated writer thread, pre-primes the stream, waits against the receiver's mapped local monotonic start target, and calls AudioTrack.play(). It does not use an Oboe data callback, and the scheduled call is not a hardware presentation-time guarantee.
+
+**Decision:** Keep the existing AudioTrack path for the first controlled two-phone measurement. Do not port the backend before a repeatable skew recording exists. Use p95 absolute acoustic skew ≤10 ms as the next decision point. If the result is worse, correlate marker arrival with READY/ANCHOR timing and DAC timestamp diagnostics before deciding whether backend start/presentation behavior is the limiting factor. An Oboe port is an experiment to measure, not an assumed fix.
+
+**Consequences:** The current source does not satisfy the final Oboe/AAudio target. Do not describe AudioTrack start timing as acoustically precise. A backend change requires a follow-up ADR and comparable recordings on the same phones, router and geometry.
+
+## ADR-020 — LAN-visible session token in DNS-SD metadata
+
+**Status:** Open security blocker; no protocol change in this measurement branch.
+
+**Context:** The Host includes its 16-byte session token in DNS-SD/mDNS TXT metadata. Any device on the same LAN that browses the service may read the token and attempt to join. The token is an admission credential, not transport encryption, peer authentication or protection against an active LAN attacker.
+
+**Decision:** Do not silently change the join flow while building the acoustic measurement tool. Restrict tests to a trusted private Wi-Fi network. Before public/shared-LAN use, choose a reviewed pairing approach: explicit Host approval, a short-lived one-time pairing code, or an out-of-band QR/secret exchange. Authenticated transport and replay protection require a separate protocol/security review.
+
+**Consequences:** The current preview is not safe for public or untrusted Wi-Fi. Record a new ADR before changing the token/pairing design.
+
+## ADR-021 — Preview receiver capacity versus product target
+
+**Status:** Accepted for the current preview; scale goal remains open.
+
+**Decision:** The Android preview cap remains **8 Speakers plus one Host**. The product goal remains **6–10 phones total**, not ten receivers in addition to the Host. Keep the code cap in PreviewConfig.kt; do not raise it to ten until shared-airtime and physical group testing validate the additional load.
+
+**Rationale:** The current Host admits eight Speakers, while target prose refers to 6–10 phones total. These values are not interchangeable.
+
+**Consequences:** The maximum current preview group is nine devices total. The M9 target is not achieved or capacity-validated by this code limit.
+
+## ADR-022 — Foreground playback service and wake-lock gate for long tests
+
+**Status:** Required before endurance/background testing; not implemented in this branch.
+
+**Context:** The app currently owns Host/Speaker networking and AudioTrack playback in an Activity-scoped process. The manifest has no playback foreground-service declaration and the app does not hold an explicit CPU/Wi-Fi wake-lock lifecycle. Screen-off, backgrounding and process reclamation can interrupt a longer run.
+
+**Decision:** Permit only the initial short, foregrounded, screen-on two-minute acoustic test with the device awake and stable power. Block long/endurance, screen-off, background and train trials until a foreground playback service, notification lifecycle, partial CPU wake lock and appropriate Wi-Fi/network lifecycle are implemented and validated.
+
+**Consequences:** The absence of foreground-service/wake-lock handling remains a reliability blocker. Do not report long-run stability from a short screen-on test.
+
+## ADR-023 — Central Android preview configuration
+
+**Status:** Accepted.
+
+**Decision:** Keep Android preview ports, receiver capacity, audio format/chunk sizes, queue and PCM-buffer sizes, readiness thresholds, timing windows, retry cadence and acoustic marker parameters in android/app/src/main/kotlin/com/syncinit/app/PreviewConfig.kt. The Python click-track tool mirrors the acoustic marker parameters and has a CI test checking parity.
+
+**Rationale:** The same numeric limits were repeated across the Host, receiver, audio writer and diagnostics. Central configuration reduces drift.
+
+**Consequences:** Change central values and corresponding tests/docs together. Product goals are not runtime constants and must remain labeled separately.
+
 ## 2. Decision review checklist
 
 When an ADR changes, review:

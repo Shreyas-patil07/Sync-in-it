@@ -42,7 +42,26 @@ class AcousticMeasurementTests(unittest.TestCase):
         self.assertLess(report["mean_signed_skew_ms"], 0)
         self.assertAlmostEqual(report["mean_signed_skew_ms"], -6.0, delta=0.7)
 
-    def test_pcm16_wav_reader_downmixes_stereo(self) -> None:
+    def test_android_marker_constants_match_reference(self) -> None:
+        root = Path(__file__).resolve().parents[2]
+        config_path = root / "android/app/src/main/kotlin/com/syncinit/app/PreviewConfig.kt"
+        config = config_path.read_text(encoding="utf-8")
+        expected = {
+            "SAMPLE_RATE_HZ": SAMPLE_RATE_HZ,
+            "ACOUSTIC_MARKER_DURATION_MS": 20,
+            "ACOUSTIC_MARKER_FRAMES": MARKER_FRAMES,
+            "ACOUSTIC_MARKER_BASE_HZ": 1_500,
+            "ACOUSTIC_MARKER_STEP_HZ": 750,
+            "ACOUSTIC_MARKER_AMPLITUDE": 2_500,
+            "MAX_SPEAKERS": 8,
+        }
+        import re
+        for key, value in expected.items():
+            match = re.search(r"const val " + key + r" = ([0-9_]+)", config)
+            self.assertIsNotNone(match, "Missing PreviewConfig constant " + key)
+            self.assertEqual(int(match.group(1).replace("_", "")), value, key)
+
+    def test_pcm16_wav_reader_downmixes_stereo(self) -> None
         samples = self.make_recording(round(0.005 * SAMPLE_RATE_HZ))
         with tempfile.TemporaryDirectory() as directory:
             path = Path(directory) / "stereo.wav"
