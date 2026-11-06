@@ -6,6 +6,12 @@
 
 ---
 
+## Current Android UI flow — 6 November 2026
+
+The current Android preview is a compact engineering/debug interface, not the full Host/Player/Settings workflow described by the product target. It currently exposes: **Start hosting**, **Nearby sessions / Refresh**, **Connection status**, and **Network debugger / Capture local network state**. The Host can show connected Speaker count, receiver ID/state, admission-window status and diagnostic events. A Speaker can discover and join a Host session.
+
+The implemented operational flow is: Host starts listeners and advertises mDNS; Speaker discovers and joins with HELLO/WELCOME plus AUDIO_HELLO; Speaker starts UDP clock acquisition and receives PCM; it reports READY only after clock and buffer gates pass; after the admission window closes the Host schedules one shared ANCHOR only when all admitted peers are READY. In the latest supplied physical run the last two steps did not occur: the Host timed out and removed the Speakers. The later product screens below remain design targets, not delivered UI. See [Current Implementation Status](11_Current_Implementation_Status.md).
+
 ## 0. Terminology and scope
 
 ### 0.1 User-facing names

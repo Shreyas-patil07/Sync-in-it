@@ -6,6 +6,12 @@
 
 **Terminology:** User-facing roles are **Host** and **Speaker**. Internal state, protocol and core code keep the names **master** and **receiver**, respectively. The authoritative workflow is [04_App_Flow.md](04_App_Flow.md).
 
+## Current UI implementation boundary — 6 November 2026
+
+The live Android app does **not** yet implement the complete screen inventory in this design brief. The current app is an engineering diagnostics surface with Host start/stop, nearby mDNS sessions, join actions, connected Speaker state, admission status and network-debug capture. The richer lobby, QR pairing, source picker, playback controls, per-Speaker health management, calibration screens and settings remain future UI work.
+
+Keep the UI truthful: TCP connected is not READY; READY is not proof of acoustic synchronization; and the current physical run did not reach READY. The website and release notes must not imply that all screens or user-media playback exist. For the exact source/build/physical-test boundary, see [Current Implementation Status](11_Current_Implementation_Status.md).
+
 ## 1. Design objective
 
 The interface should make a technically complex synchronization system understandable without hiding its operational state. The user should quickly know whether a phone is connected, clock-synchronized, buffered, ready, playing or degraded.

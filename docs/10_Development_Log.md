@@ -766,3 +766,14 @@ No physical-device synchronization results are recorded in this initial log. Add
 - Increased the Host admission window from 6 to 15 seconds and added a 45-second readiness deadline. Receivers that never reach READY are explicitly excluded instead of causing indefinite buffering and eventual PCM overflow.
 - Increased each Speaker's bounded audio writer queue from 160 ms to 500 ms to tolerate brief local-network scheduling stalls without allowing unbounded memory growth.
 - Added per-network Android route diagnostics and explicit peer-socket-closed classification so cellular/Wi-Fi selection issues and secondary Broken pipe failures can be separated.
+
+
+## 2026-11-06 — READY-gate diagnostics and current physical validation
+
+- Latest supplied three-phone LAN run: mDNS discovery, control TCP HELLO/WELCOME, separate audio TCP AUDIO_HELLO and repeated Host UDP time-sync responses were observed for multiple Speakers.
+- No Speaker READY event was observed. The 45-second group-readiness deadline removed the admitted receivers; no GROUP_START_SCHEDULED or physical start ANCHOR was observed.
+- A UDP source-IP rejection appeared after a receiver was removed. Treat this as a late-packet/peer-cleanup observation until correlated with Speaker-side timing; it is not the proven root cause.
+- PR #49 merged Speaker-side READY gate diagnostics (`READY_GATE_BLOCKED`) and per-receiver Host audio queue/write counters (`HOST_AUDIO_DELIVERY`). Native/simulator CI passed; Android/JNI CI failed at Kotlin compilation because `AtomicLong` was not imported in `MasterSessionHost.kt`.
+- The documentation/status branch adds the missing import as a build correction; a fresh Android/JNI CI run is required before a new diagnostic APK is considered buildable.
+- The published v0.5.7-preview.1 release predates PR #49 and does not contain the newer READY/audio delivery diagnostic messages.
+- Website and engineering docs are being aligned to distinguish implemented code, published APK contents, CI results and physical-device evidence. No acoustic synchronization claim is made.

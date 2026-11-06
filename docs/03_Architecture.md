@@ -4,6 +4,12 @@
 **Version:** 1.0  
 **Last updated:** 1 November 2026
 
+## Current implementation boundary — 6 November 2026
+
+The current Android architecture has these concrete components: NSD/mDNS Host discovery and advertising; a control TCP listener on port 47800; a separately negotiated audio TCP listener/port; a UDP time-sync listener on port 47802; one Host-side receiver session per admitted Speaker; bounded per-Speaker audio queues; one generated 48 kHz stereo PCM16 producer; a native sample-indexed jitter buffer; Android AudioTrack output; a future group-start ANCHOR; and an AudioTrack timestamp poller feeding a rolling C++ regression.
+
+The admission policy is 8 Speakers maximum, 15 seconds to form a cohort and a 45-second readiness deadline. The current real-device run shows TCP admission and UDP response but fails before READY. DAC mapping is currently diagnostic only. iOS, drift-controller integration, acoustic calibration and demonstrated reconnect are not implemented/validated end-to-end. Treat later platform/component diagrams below as target architecture where they exceed this boundary. See [Current Implementation Status](11_Current_Implementation_Status.md).
+
 ## 1. Architecture overview
 
 Sync In It is a local-network, master-clock-based audio distribution system. It is not a conventional cloud client/server application. The Android master owns the session and timeline; receiver phones connect directly to it over a private Wi-Fi LAN.

@@ -1,8 +1,24 @@
 # Sync In It Frontend
 
-The public website for Sync In It. The homepage introduces the product through a logo-led hero, benefit-focused sections, the current Android preview capabilities, development status and FAQs. The downloads page links to the Android engineering preview v0.4.0-preview.1 and its SHA-256 checksums.
+Public project website and Android preview downloads page. The site is intentionally explicit about the difference between implementation progress, CI verification and physical-device evidence.
 
-Built with React, TypeScript and Vite. The interface uses a lightweight custom CSS system and the original project logo, with no additional component or animation dependency.
+## Current content source
+
+The public site presents the current Android engineering preview, its multi-Speaker implementation path and the latest physical READY-gate failure. Keep release version, supported scope and validation claims aligned with [the canonical implementation status](../docs/11_Current_Implementation_Status.md).
+
+- Latest public pre-release: [v0.5.7-preview.1](https://github.com/Shreyas-patil07/Sync-in-it/releases/tag/v0.5.7-preview.1).
+- Published APK: `SyncInIt-Android-preview-v0.5.7.apk`.
+- The published APK predates the READY/audio diagnostic instrumentation merged in PR #49.
+- The latest supplied physical run reached discovery, TCP admission and UDP response, but no Speaker reached READY. Synchronized multi-phone playback is not a verified result.
+- Android-only; the current Host code admits up to eight Speakers. The source is a generated 1 kHz timing-click stream, not user-selected music or system-audio capture.
+- The current-main diagnostic instrumentation needs a fresh successful Android/JNI build before it can be published as a new APK.
+
+## Stack
+
+- React 18 + TypeScript
+- Vite 6
+- Custom responsive CSS
+- No external UI component or animation framework
 
 ## Local development
 
@@ -21,34 +37,29 @@ npm run build
 npm run preview
 ```
 
-The production output is generated in `frontend/dist/`.
+Build output is generated in `frontend/dist/`.
 
 ## Deployment
 
 Deploy the `frontend/` directory as the project root in Vercel or another static host.
 
+- Install command: `npm install`
 - Build command: `npm run build`
 - Output directory: `dist`
-- Install command: `npm install`
 
-The Vercel rewrite sends client-side routes to the app entry point. Static assets remain served from the public directory.
+The Vercel rewrite supports client-side navigation for `/` and `/downloads`. Keep download URLs pinned to an existing GitHub Release tag and verified asset filename.
 
 ## Pages
 
-- `/` — brand-led landing page, product benefits, intended usage flow, project status and FAQ.
-- `/downloads` — current release state, source repository and GitHub Releases.
-- Unknown routes — branded 404 view.
+- `/` — product overview, implemented capability, milestone status, latest physical test evidence and FAQ.
+- `/downloads` — current Android pre-release, APK/checksum links and limitations.
+- Other paths — branded 404 view.
 
-## Project status
+## Content maintenance rules
 
-M0 simulator/timing work and M1 Android integration remain in progress. The Android v0.4.0-preview.1 engineering release supports nearby Host discovery over mDNS, two-channel TCP session admission and UDP four-timestamp clock acquisition through the shared C++ core.
-
-The preview does not implement audio chunk streaming, PCM buffering/rendering, scheduled playback, a foreground playback service or acoustic synchronization. The receiver remains in Synchronizing while its reported audio buffer is empty. Physical two-phone admission and sustained clock synchronization still require retesting; no measured synchronized-playback result is claimed.
-
-The current M2a PCM16 codec and bounded jitter-buffer work is in open PR #28 and is not part of the main-branch preview. The current Android Host UI admits one receiver; multi-receiver group operation is not validated. iOS networking and playback are not implemented.
-
-The session token is currently visible in the local DNS-SD service record. The preview should be used only on a trusted private Wi-Fi network.
-
-## Brand assets
-
-The website uses the original project logo at `/images/sync_in_it.png`. Preserve the original asset and its aspect ratio.
+1. Update release constants and page copy whenever a new release is published.
+2. Do not claim a milestone is validated merely because its code exists or CI passes.
+3. Keep physical test evidence and CI status separate.
+4. Never describe the current test signal as user music playback.
+5. Keep the local-network token/security limitation visible.
+6. Link engineering status claims to `docs/11_Current_Implementation_Status.md`.

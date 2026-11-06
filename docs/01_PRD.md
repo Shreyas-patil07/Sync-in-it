@@ -5,6 +5,12 @@
 **Last updated:** 1 November 2026  
 **Scope:** Product requirements for the offline multi-phone audio synchronization system
 
+## Implementation status — 6 November 2026
+
+This PRD describes the product target; it is not a statement that every requirement is implemented. The current build is an Android-only engineering preview. Android Host discovery, multi-Speaker TCP admission, UDP clock exchange, generated PCM16 test-stream fan-out, rolling pre-ANCHOR buffering and a coordinated start-ANCHOR path are present in code. The current Android Host cap is eight Speakers, while the product target remains 6–10 phones total.
+
+The latest supplied physical run admitted multiple Speakers and returned UDP time-sync responses, but no Speaker reached READY before the 45-second deadline. A successful physical group start, acoustic skew measurement, long-run stability, user-media playback, iOS support, robust reconnect and acoustic calibration are not demonstrated. See [Current Implementation Status](11_Current_Implementation_Status.md) before treating an acceptance criterion as complete.
+
 ## 1. Purpose
 
 Sync In It is intended to turn a group of ordinary smartphones into a coordinated loudspeaker group. One Android phone acts as the master, audio source and authoritative time reference. Other Android and iOS phones receive the same audio and render it against a shared playback timeline.

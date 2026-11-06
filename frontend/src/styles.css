@@ -502,3 +502,40 @@ a:hover .arrow-symbol { transform: translate(3px,-1px); }
   .downloads-secondary p { min-height: unset; }
   .not-found { padding-top: 160px; padding-bottom: 80px; }
 }
+
+
+/* Current engineering status and evidence */
+.milestones-section { background: rgba(7,10,19,.58); }
+.milestone-grid { display: grid; grid-template-columns: repeat(2,minmax(0,1fr)); gap: 14px; max-width: 980px; margin-inline: auto; }
+.milestone-card {
+  display: flex; align-items: flex-start; gap: 17px; min-height: 150px; padding: 23px;
+  border: 1px solid var(--line); border-radius: 20px; background: linear-gradient(145deg,rgba(18,24,43,.88),rgba(10,14,26,.92));
+}
+.milestone-card > span {
+  display: grid; place-items: center; min-width: 58px; height: 42px; padding-inline: 8px;
+  border: 1px solid rgba(142,57,245,.3); border-radius: 12px; color: #d9c8ff;
+  background: rgba(142,57,245,.12); font: 600 11px 'Geist Mono',monospace;
+}
+.milestone-card h3 { margin: 1px 0 8px; color: #f2f3ff; font-size: 16px; line-height: 22px; }
+.milestone-card b { display: block; margin-bottom: 9px; color: #78e5e7; font: 600 10px 'Geist Mono',monospace; letter-spacing: .035em; text-transform: uppercase; }
+.milestone-card p { margin: 0; color: #a5afc9; font-size: 13px; line-height: 21px; }
+.validation-section { background: linear-gradient(180deg,rgba(10,14,25,.7),rgba(8,10,19,.45)); }
+.evidence-grid { display: grid; grid-template-columns: repeat(2,minmax(0,1fr)); gap: 18px; max-width: 980px; margin-inline: auto; }
+.evidence-card { padding: 24px 25px; border: 1px solid var(--line); border-radius: 20px; background: rgba(15,20,35,.85); }
+.evidence-card > span { display: block; margin-bottom: 17px; font: 600 10px 'Geist Mono',monospace; letter-spacing: .1em; }
+.evidence-pass > span { color: #72e4cf; }
+.evidence-blocked > span { color: #ffbf79; }
+.evidence-card ul { display: grid; gap: 10px; margin: 0; padding-left: 19px; color: #c1c9dd; font-size: 13px; line-height: 20px; }
+.validation-footnote { max-width: 980px; margin: 20px auto 0; color: #8490ad; font-size: 12px; line-height: 20px; }
+.download-warning { margin-top: 27px; padding: 18px 19px; border: 1px solid rgba(255,168,85,.28); border-radius: 15px; background: rgba(255,156,36,.07); }
+.download-warning b { color: #ffca91; font-size: 12px; }
+.download-warning p { margin: 8px 0 0; color: #b8c0d5; font-size: 12px; line-height: 20px; }
+
+@media (max-width: 760px) {
+  .milestone-grid, .evidence-grid { grid-template-columns: 1fr; }
+  .milestone-card { min-height: 0; padding: 19px; }
+  .evidence-card { padding: 20px; }
+}
+
+.status-card-links { display: flex; flex-wrap: wrap; gap: 10px 20px; padding-top: 14px; border-top: 1px solid rgba(255,255,255,.09); }
+.status-card-links .inline-link { margin: 0; color: #c9d5f1; font-size: 11px; }

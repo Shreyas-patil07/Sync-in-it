@@ -135,6 +135,16 @@ A decision is not validated merely because it is recorded. Changes to an accepte
 **Rationale:** Apache-2.0 is permissive, includes a patent grant, and is compatible with the planned dependencies (Oboe, Opus, GoogleTest or Catch2, ZXing). CC BY 4.0 is the usual choice for reusable documentation. Snapcast is GPL-licensed and is used as an architectural reference only, so no GPL code enters the repository.  
 **Consequences:** No GPL or AGPL code may be copied or linked. New dependencies need a license check and a row in `THIRD_PARTY_NOTICES.md` in the same change. Binary releases must display required third-party notices. The copyright line in `NOTICE` should be reviewed by the owner. This record is not legal advice.
 
+## ADR-018 — Android multi-Speaker admission and READY gate
+
+**Status:** Accepted for the current engineering preview; subject to physical validation.
+
+**Decision:** The Android Host admits up to eight Speakers. The cohort admission window is 15 seconds from the first successful Speaker admission. Each Speaker must meet the clock-stability gate and at least 3 seconds of contiguous PCM before READY. READY is retried once per second until the shared ANCHOR arrives; repeated READY messages are idempotently accepted. The Host applies a 45-second readiness deadline and removes Speakers that remain unready. The pre-ANCHOR PCM buffer may roll its cursor to retain a bounded newest contiguous window; after ANCHOR, buffer handling is strict and must not silently skip sample positions.
+
+**Rationale:** Bounded admission and retryable readiness prevent a transient READY rejection from leaving a receiver silently waiting until its prebuffer overflows. A rolling prebuffer retains recent audio while the estimator acquires a stable fit, without weakening sample-index correctness after the common start point.
+
+**Evidence and limitation:** The latest supplied physical run completed discovery, TCP admission and UDP request/response, but no Speaker reached READY before the 45-second deadline. The readiness gate must be diagnosed using Speaker clock/PCM metrics and Host audio-delivery counters. Do not weaken clock thresholds or claim synchronized group playback until repeated physical tests reach READY, receive one shared ANCHOR and pass acoustic measurements.
+
 ## 2. Decision review checklist
 
 When an ADR changes, review:

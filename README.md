@@ -4,7 +4,7 @@
   <img src="docs/images/sync_in_it.png" alt="Sync In It logo" width="260" />
 </p>
 
-> Turn 6-10 phones (Android + iOS) into one synchronized speaker group, fully offline.
+> Project goal: turn 6–10 phones into one synchronized speaker group over a private local network. The current engineering preview is Android-only.
 
 **Project website:** [Sync In It](./frontend) — project overview and pre-release downloads page.
 
@@ -14,33 +14,37 @@
 
 ---
 
-## Status
+## Current implementation status
 
-**Current engineering preview: multi-receiver Android networking and PCM fan-out are implemented; physical validation is pending.**
+**The Android multi-Speaker implementation path is present; successful physical group playback is not yet demonstrated.**
 
-The Android Host advertises sessions over DNS-SD/mDNS. Speaker phones can discover and join over a local Wi-Fi network or phone hotspot; internet access is not required when the hotspot allows client-to-client traffic. The receiver explicitly selects the Wi-Fi network routing to the discovered Host and binds its control TCP, audio TCP and UDP time-sync sockets to that same network.
+The latest public pre-release is [`v0.5.7-preview.1`](https://github.com/Shreyas-patil07/Sync-in-it/releases/tag/v0.5.7-preview.1). It contains the multi-Speaker Host/Speaker networking path, generated PCM16 test-stream fan-out, bounded pre-ANCHOR buffering, a common future playback ANCHOR and M3a DAC timestamp diagnostics. The current product target remains 6–10 phones total; the Android Host implementation currently admits up to **8 Speakers**.
 
-The Host admits up to **8 Speakers** in one session. Each Speaker receives a unique receiver ID and independent native readiness/clock state. Control/leave handling and UDP time-sync validation are per Speaker. Audio is generated once as a 48 kHz stereo PCM16 timing-click stream and fanned out with identical sample indexes through bounded per-Speaker send queues; one slow Speaker cannot block the others.
+The latest supplied three-phone LAN run successfully discovered the Host, completed multiple control/audio TCP handshakes and exchanged UDP time-sync packets. **No Speaker reached READY before the 45-second readiness deadline**, so the Host removed the cohort and no group ANCHOR was scheduled. The pipeline is implemented, but physical multi-Speaker playback and acoustic synchronization are not verified. The immediate engineering focus is identifying whether the READY gate is blocked by clock acquisition, PCM delivery or both.
 
-The current Android audio source is a generated 1 kHz timing-click test signal, not user-selected music or system audio. The Host opens a 15-second Speaker admission window; once every admitted Speaker has a stable clock estimate and at least 3 seconds buffered, it sends one shared future ANCHOR timestamp and sample index. READY is retried every second until ANCHOR and duplicate READY reports are idempotent at the Host. Each receiver's 20-second PCM buffer rolls its pre-anchor cursor to retain the newest contiguous audio, then switches to strict sample-index handling after ANCHOR. The Host expires receivers that do not reach READY within 45 seconds while allowing ready peers to proceed. This is software-level common-time scheduling only: Android AudioTrack/DAC output timestamps, device output-latency compensation, drift correction and measured acoustic alignment remain pending. CI validates builds and protocol/state-machine behavior, but physical hotspot, multi-phone and acoustic tests are still required.
+The Host opens a 15-second admission window after the first admitted Speaker. A Speaker needs a stable clock estimate and at least 3 seconds of contiguous PCM before READY. READY is retried every second until ANCHOR; repeated READY is idempotent. Each Speaker has a 20-second sample-indexed PCM ring buffer that rolls before ANCHOR and becomes strict after ANCHOR. The Host applies a 45-second readiness deadline and bounds each per-Speaker audio writer queue to approximately 500 ms. The source is a generated 1 kHz timing-click signal—not local music or system-audio capture.
 
-The Python reference simulator, portable C++17 timing core and shared Python/C++ golden vectors remain available. The Kotlin/JVM TCP/UDP transport is a separate Gradle module. The current product target is 6–10 phones in total; the Android preview's initial admission cap is 8 Speakers.
+M3a polls Android AudioTrack output timestamps and fits a rolling regression in the C++ core. It currently reports diagnostics only; it does not drive drift correction or output-latency compensation. DAC/acoustic alignment, microphone calibration, endurance measurements, robust reconnect and iOS support remain future work.
+
+**Current-main build note:** PR #49 adds Speaker READY-gate and Host audio-delivery diagnostics. Its first Android/JNI CI run failed because `AtomicLong` was not imported in `MasterSessionHost.kt`. The current documentation branch includes that missing import; a fresh Android CI run is required before calling the diagnostic build green. The v0.5.7 release APK predates PR #49 and does not contain those newer diagnostic messages.
+
+See [the canonical implementation status](docs/11_Current_Implementation_Status.md) for evidence, exact limits and the next test sequence.
 
 | Milestone | Description | State |
 |---|---|---|
-| M0 | Python simulator for time sync, drift and shared Wi-Fi airtime | In progress |
-| M1 | Android LAN discovery, TCP admission and UDP clock acquisition | In progress; physical-device validation pending |
-| M2a | PCM16 audio codec and bounded sample-indexed jitter-buffer core | Complete |
-| M2b | Android PCM16 TCP transport and AudioTrack test playback | Complete |
-| M2c | Multi-Speaker admission, independent receiver state and shared PCM fan-out (up to 8) | Implemented; physical validation pending |
-| M2d | Shared future-T0 playback anchor and sample-indexed group start | Implemented; CI passed; physical validation pending |
-| M3 | Output-timestamp mapping and manual offsets | In progress: AudioTrack timestamp polling and rolling clock regression; manual offsets and physical validation pending |
-| M4 | Drift controller and 30-minute endurance run | Planned |
-| M5 | Hotspot resilience, receiver reconnect and measured 4+ Speaker testing | Planned |
-| M6 | Opus codec and user-selected/system audio source | Planned |
-| M7 | iOS receiver | Planned |
+| M0 | Python simulator, portable C++ timing core and shared vectors | Simulator/native CI passing; physical timing not implied |
+| M1 | Android LAN discovery, TCP admission and UDP clock acquisition | Implemented; latest physical run did not reach READY |
+| M2a | PCM16 codec and bounded sample-indexed jitter buffer | Implemented with native regression coverage |
+| M2b | Android PCM16 TCP receive and AudioTrack test output | Implemented; physical playback still needs validation |
+| M2c | Multi-Speaker admission and shared PCM fan-out (up to 8) | Implemented; latest physical READY gate failed |
+| M2d | Shared future ANCHOR and sample-indexed group start | Implemented in code; no successful physical group start yet |
+| M3a | AudioTrack timestamp polling and rolling output-clock regression | Implemented as diagnostics only |
+| M3b/M4 | Callback-safe DAC mapping, drift correction and endurance | Not complete |
+| M5 | Robust reconnect and 4+ Speaker resilience | Not validated / incomplete |
+| M6 | User-selected/system audio source and Opus | Planned |
+| M7 | iOS Speaker | Planned |
 | M8 | Acoustic calibration | Planned |
-| M9 | 6–10 Speaker scaling and train trial | Planned |
+| M9 | 6–10 phone scale and train trial | Planned |
 
 ### Run the M0 simulator
 
@@ -188,20 +192,20 @@ Results are reported as mean, maximum and 95th-percentile error. A literal zero-
 
 ## Android preview quickstart
 
-The current Android preview supports one Host and up to 8 connected Speaker phones. It plays a generated timing-click test signal only; synchronized user-selected music is not implemented.
+The current Android preview implements one Host and admission for up to 8 Speakers. It sends a generated 1 kHz timing-click stream and contains a shared ANCHOR/AudioTrack path; physical group start is not currently verified because the latest run did not reach READY. Synchronized user-selected music is not implemented.
 
 1. **Set up the local network.** Enable the Host phone's mobile hotspot, then connect the Speaker phones to it. No internet/mobile data is required for local traffic. A trusted Wi-Fi router also works when client-to-client traffic is allowed.
 2. **Install the Android preview.** Use the latest signed pre-release from [GitHub Releases](https://github.com/Shreyas-patil07/Sync-in-it/releases). Install updates over the previous preview; do not uninstall it.
 3. **Start the Host.** Open Sync In It on the Host phone and tap **Start hosting**.
 4. **Join each Speaker.** Open Sync In It on each Speaker phone, tap **Refresh nearby sessions**, then select the Host.
 5. **Check the Host count.** The Host should show the number of connected Speakers (for example, `2/8 connected`). Each Speaker independently acquires the Host clock and buffers PCM16.
-6. **Verify the audio path.** Each connected Speaker should reach READY and play the generated 1 kHz timing-click stream. A Speaker leaving should not terminate the other connected Speakers.
+6. **Capture diagnostics.** The Host's connected count confirms TCP admission, not readiness. Export logs from both Host and Speakers and look for `READY_GATE_BLOCKED`, `HOST_AUDIO_DELIVERY`, `Speaker READY` and `GROUP_START_SCHEDULED`.
 
-**Important:** Physical multi-phone validation is still pending. Hotspot implementations can filter mDNS multicast or block client-to-client traffic. If the Host does not appear, confirm the phones are connected to the same hotspot and that local peer traffic/multicast is permitted. A QR/manual pairing fallback is not implemented yet. READY confirms transport, clock acquisition and buffering—not a common scheduled playback start or acoustic synchronization.
+**Important:** The latest supplied physical run discovered the Host and admitted multiple Speakers, but none reached READY before the startup deadline. Do not expect verified synchronized output from this preview yet. Hotspots can filter mDNS multicast or client-to-client traffic; confirm both are permitted. A QR/manual pairing fallback is not implemented. READY is a precondition for group start, not proof of acoustic synchronization.
 
 ---
 
-## Planned repository layout
+## Intended architecture layout (not a literal current tree)
 
 ```
 Sync In It/
@@ -222,7 +226,7 @@ Sync In It/
   docs_original/   # original source design documents
 ```
 
-The `core/` library is shared by Android and iOS so the timing logic is identical on every platform.
+The portable `core/` library is designed to be shared by Android and iOS. Android currently integrates it through JNI; an iOS receiver and its bridge are not present in the current implementation.
 
 ---
 
@@ -334,13 +338,11 @@ On the master, use a foreground service, a partial wake lock, a high-performance
 5. Scale to 6-10 receivers and train trial (M9)
 6. Stretch: RBS refinement, mutual-microphone calibration, ultrasonic drift beacon
 
-Rough effort for one person part-time (an estimate): about 4-5 weeks to a working Android-only demonstration.
-
 ---
 
 ## Contributing
 
-The project is at the design stage. Useful contributions right now: review of the design document, measurement ideas, and phone-specific timing data. Once code exists, open an issue before large changes and include logs and device models with any sync bug report.
+The project is in active engineering prototyping. Useful contributions include Android networking/audio review, clock-estimator analysis, reproducible multi-phone test logs, simulator scenarios and acoustic measurement methodology. Open an issue before large changes; for synchronization bugs include the build/version, phone models, network topology, Host and Speaker logs, and whether the failure occurred before READY or after ANCHOR.
 
 ---
 

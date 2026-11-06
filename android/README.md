@@ -5,6 +5,14 @@ The Android workspace contains two Gradle modules:
 - `app/`: Android launcher, local-network NSD discovery/advertising, and JNI bridge into the shared C++ receiver-session and clock-estimator APIs.
 - `transport/`: pure Kotlin/JVM TCP and UDP socket transport, reusable by the Android app.
 
+## Current validation status — 6 November 2026
+
+The Android source implements multi-Speaker Host admission (up to eight), separate control/audio TCP channels, UDP clock acquisition, generated PCM16 fan-out, the rolling pre-ANCHOR buffer, retryable READY, a shared future ANCHOR path and M3a AudioTrack timestamp diagnostics.
+
+The latest supplied three-phone test accepted multiple TCP joins and returned UDP time-sync packets, but **no Speaker reached READY** before the 45-second deadline. This means the current group-start path has not been verified on physical phones. PR #49 adds `READY_GATE_BLOCKED` on the Speaker and `HOST_AUDIO_DELIVERY` on the Host. Its first Android/JNI build failed because `AtomicLong` was missing from the imports in `MasterSessionHost.kt`; the documentation branch adds that import and requires a fresh CI pass. The public v0.5.7-preview.1 APK predates those diagnostics.
+
+See [Current Implementation Status](../docs/11_Current_Implementation_Status.md) for the physical log evidence and next test sequence.
+
 ## Toolchain
 
 Pinned versions:
