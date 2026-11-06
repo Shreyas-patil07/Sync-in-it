@@ -4,16 +4,16 @@ Public project website and Android preview downloads page. The site is intention
 
 ## Current content source
 
-The public site presents the current Android engineering preview, its multi-Speaker implementation path and the latest physical READY-gate failure. Keep release version, supported scope and validation claims aligned with [the canonical implementation status](../docs/11_Current_Implementation_Status.md).
+The public site presents the current Android engineering preview, its multi-Speaker implementation path, the PR #55 receiver hot-path optimization and the still-pending post-fix physical test. Keep release version, supported scope and validation claims aligned with [the canonical implementation status](../docs/11_Current_Implementation_Status.md).
 
-- Latest public pre-release: [v0.5.8-preview.1](https://github.com/Shreyas-patil07/Sync-in-it/releases/tag/v0.5.8-preview.1).
-- Published APK: `SyncInIt-Android-preview-v0.5.8.apk`.
-- The APK includes the PR #49 READY/audio diagnostics and the PR #53 receiver-specific acoustic markers and analyzer tooling.
-- The latest supplied physical run reached discovery, TCP admission and UDP response, but no Speaker reached READY. Synchronized multi-phone playback is not a verified result.
+- Latest public pre-release: [v0.5.9-preview.1](https://github.com/Shreyas-patil07/Sync-in-it/releases/tag/v0.5.9-preview.1).
+- Published APK: `SyncInIt-Android-preview-v0.5.9.apk`.
+- The APK includes PR #49 READY/audio diagnostics, PR #53 receiver-specific acoustic markers/analyzer tooling, and PR #55 cached PCM snapshots plus Speaker ingress and Host slow-write diagnostics.
+- The latest supplied pre-PR #55 run filled the 20-second PCM buffer but remained blocked by clock residuals above the unchanged 0.25 ms threshold; the Host audio queue later overflowed. The PR #55 fix has not yet been physically retested. Synchronized multi-phone playback is not a verified result.
 - Receiver-specific markers and the WAV analyzer are included in the public v0.5.8 preview. Synthetic analyzer tests pass CI; physical phone measurement is still pending.
 - No phone skew measurement is recorded yet. The first measurement is screen-on/foreground and approximately two minutes; longer runs are blocked until the foreground service/wake-lock lifecycle exists.
 - Android-only; the current Host code admits up to eight Speakers. The source is a generated 1 kHz timing-click stream, not user-selected music or system-audio capture.
-- The current-main diagnostic instrumentation needs a fresh successful Android/JNI build before it can be published as a new APK.
+- The PR #55 merged-main Android/JNI build, transport checks and signature verification passed CI. Device ingress-rate, queue and post-fix READY behavior still need physical validation.
 
 ## Stack
 
