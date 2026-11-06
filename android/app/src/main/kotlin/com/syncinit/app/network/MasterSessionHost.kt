@@ -304,6 +304,9 @@ class MasterSessionHost(context: Context, private val onStatus: (String) -> Unit
     ) : Closeable {
         private val peerClosed = AtomicBoolean(false)
         private val audioQueue = ArrayBlockingQueue<ByteArray>(AUDIO_QUEUE_CHUNKS)
+        private val audioFramesQueued = AtomicLong(0L)
+        private val audioFramesWritten = AtomicLong(0L)
+        private val audioQueueHighWater = AtomicInteger(0)
         val udpPeer = AtomicReference<InetSocketAddress?>(null)
         private var audioWriter: Thread? = null
 
@@ -314,6 +317,14 @@ class MasterSessionHost(context: Context, private val onStatus: (String) -> Unit
                     while (!peerClosed.get() && !closed.get()) {
                         val frame = audioQueue.poll(500, TimeUnit.MILLISECONDS) ?: continue
                         audio.writeEncodedFrame(frame)
+                        val written = audioFramesWritten.incrementAndGet()
+                        if (written == 1L || written % 250L == 0L) {
+                            onStatus(
+                                "DIAG HOST_AUDIO_DELIVERY receiverId=$receiverId " +
+                                    "queued=${audioFramesQueued.get()} written=$written " +
+                                    "queueDepth=${audioQueue.size} queueHighWater=${audioQueueHighWater.get()}"
+                            )
+                        }
                     }
                 } catch (_: InterruptedException) {
                     if (!peerClosed.get() && !closed.get()) Thread.currentThread().interrupt()
@@ -328,8 +339,13 @@ class MasterSessionHost(context: Context, private val onStatus: (String) -> Unit
             writer.start()
         }
 
-        fun offerAudio(frame: ByteArray): Boolean =
-            !peerClosed.get() && audioQueue.offer(frame)
+        fun offerAudio(frame: ByteArray): Boolean {
+            if (peerClosed.get() || !audioQueue.offer(frame)) return false
+            audioFramesQueued.incrementAndGet()
+            val depth = audioQueue.size
+            audioQueueHighWater.updateAndGet { previous -> maxOf(previous, depth) }
+            return true
+        }
 
         override fun close() {
             if (!peerClosed.compareAndSet(false, true)) return
