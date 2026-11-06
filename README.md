@@ -210,7 +210,7 @@ The current Android preview implements one Host and admission for up to 8 Speake
 5. **Check the Host count.** The Host should show the number of connected Speakers (for example, `2/8 connected`). Each Speaker independently acquires the Host clock and buffers PCM16.
 6. **Capture diagnostics.** The Host's connected count confirms TCP admission, not readiness. Export logs from both Host and Speakers and look for `READY_GATE_BLOCKED`, `HOST_AUDIO_DELIVERY`, `Speaker READY` and `GROUP_START_SCHEDULED`.
 
-**Important:** The latest supplied physical run discovered the Host and admitted multiple Speakers, but none reached READY before the startup deadline. Do not expect verified synchronized output from this preview yet. Hotspots can filter mDNS multicast or client-to-client traffic; confirm both are permitted. A QR/manual pairing fallback is not implemented. READY is a precondition for group start, not proof of acoustic synchronization.
+**Important:** The earlier pre-PR #55 multi-Speaker run discovered the Host and admitted multiple Speakers, but none reached READY before the startup deadline. The later post-PR #55 Speaker-side run showed near-target PCM ingress and zero missing frames, but clock residuals remained above the 0.25 ms gate and READY was not demonstrated. The supplied post-fix excerpt does not include matching Host logs or an acoustic recording. Do not expect verified synchronized output from this preview yet. Hotspots can filter mDNS multicast or client-to-client traffic; confirm both are permitted. A QR/manual pairing fallback is not implemented. READY is a precondition for group start, not proof of acoustic synchronization. See [Test Results](docs/Test_Results.md) for the dated evidence.
 
 ---
 
