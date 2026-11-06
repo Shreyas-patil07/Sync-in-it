@@ -813,3 +813,38 @@ Do not infer missing hardware/router metadata. Store raw recordings outside Git 
 - Release-commit Android/JNI CI passed in [run 42230554351](https://github.com/Shreyas-patil07/Sync-in-it/actions/runs/42230554351); frontend TypeScript/Vite passed in [run 42230554330](https://github.com/Shreyas-patil07/Sync-in-it/actions/runs/42230554330); Python 3.11/3.12/3.13 and C++17 M0 matrix passed in [run 42230554383](https://github.com/Shreyas-patil07/Sync-in-it/actions/runs/42230554383).
 - The APK includes PR #55's 250 ms PCM snapshot caching, Speaker ingress-rate diagnostics, Host slow TCP-write diagnostics and expanded READY-gate clock details. The READY buffer requirement, 0.25 ms residual threshold, stable-streak requirement and bounded 500 ms Host queue remain unchanged.
 - The last physical failure predates PR #55. A post-release Host/Speaker run is still required to verify receiver ingress rate, Host queue behavior, READY/ANCHOR and eventual acoustic skew. No synchronized-playback claim is made.
+
+
+## 2026-11-06 — v0.5.9 post-PR #55 Speaker-side physical test
+
+**Type:** Physical-device validation / clock acquisition / PCM ingress  
+**Build context:** Run occurred after publication of `v0.5.9-preview.1`; the supplied excerpt did not print the installed APK version or commit, so the exact device binary is not independently identified.  
+**Run ID:** `SIT-2026-11-06-01` · Session diagnostic ID: `b1ab2fb2`  
+**Evidence:** Speaker-side log excerpt covering approximately 23:41:53–23:42:13. Matching Host logs and acoustic recording were not supplied. The detailed table and reusable template are maintained in [Test Results](Test_Results.md).
+
+**Observed results:**
+- UDP probes repeatedly returned successfully; the displayed selected-fit RTT median was approximately 5.40–7.21 ms.
+- Speaker PCM ingress was mostly around 49–53 frames/sec, with interval reports spanning 44.1–56.2 frames/sec.
+- `missingFrames=0` in all supplied ingress and READY diagnostics.
+- Contiguous buffered PCM increased from 800 ms to approximately 19,940 ms, exceeding the 3,000 ms pre-roll requirement.
+- Clock fit reached 15 selected samples and a selected time span of 19,125 ms.
+- Residual RMS stayed approximately 0.412–0.557 ms, exceeding the strict <0.25 ms readiness requirement.
+- `stableStreak` remained 0; READY was not demonstrated. No ANCHOR or acoustic skew result was supplied.
+- Receiver-skew estimates changed sign and magnitude during the excerpt (examples: +68.66, +17.75, −48.92, −63.54 and −9.50 ppm).
+
+**Interpretation:**
+- The receive-path behavior in this Speaker excerpt is encouraging: it sustained near-target ingress, filled the receive buffer and reported no missing PCM frames. The earlier pre-PR #55 receive slowdown was not reproduced in this interval.
+- End-to-end playback still failed at clock acquisition. Passing PCM ingress and successful UDP responses do not establish clock precision.
+- The matching Host log is absent, so Host audio writer health, queue behavior and TCP backpressure cannot be assessed for this run.
+- Repeated rolling-window messages displayed `advances=0` alongside `WindowAdvanced` insert outcomes. Because diagnostics use a cached snapshot refreshed on a 250 ms cadence, stale counter reporting is a plausible explanation; verify using a fresh native snapshot before diagnosing a buffer defect.
+- No root cause for the residual noise is established. Network-delay asymmetry, Android scheduling, timestamp capture and estimator/sample-selection behavior remain hypotheses to test.
+
+**Verdict:** **FAIL — clock acquisition / READY gate.** This is partial evidence of improved PCM ingress, not a successful synchronized-playback test.
+
+**Next actions:**
+1. Capture Host and Speaker logs for the same session and correlate ingress, queued/written counters, queue depth, slow writes and disconnects.
+2. Add per-probe `t1/t2/t3/t4`, individual RTT, raw offset and selected/rejected status; replay the data against the exact estimator offline.
+3. Compare residual RMS with RTT percentiles, sample selection and time span without relaxing the 0.25 ms gate.
+4. Verify the rolling-window counter from a fresh native snapshot.
+5. Repeat one Host + one Speaker through READY and ANCHOR; only then add more Speakers and run the acoustic marker analysis.
+

@@ -5,13 +5,15 @@ The Android workspace contains two Gradle modules:
 - `app/`: Android launcher, local-network NSD discovery/advertising, and JNI bridge into the shared C++ receiver-session and clock-estimator APIs.
 - `transport/`: pure Kotlin/JVM TCP and UDP socket transport, reusable by the Android app.
 
-## Current validation status — 6 November 2026
+## Current validation status — 7 November 2026
 
 The Android source implements multi-Speaker Host admission (up to eight), separate control/audio TCP channels, UDP clock acquisition, generated PCM16 fan-out, the rolling pre-ANCHOR buffer, retryable READY, a shared future ANCHOR path and M3a AudioTrack timestamp diagnostics.
 
-The latest supplied pre-PR #55 run accepted TCP joins and UDP time-sync responses and filled the Speaker's 20-second contiguous PCM buffer with zero missing frames. However, no Speaker reached READY: clock residual RMS stayed around 0.308–0.522 ms, above the unchanged 0.25 ms threshold, and the Host later disconnected the Speaker after its 500 ms audio queue overflowed. PR #55 reduces repeated full-buffer scans by caching snapshots for 250 ms and adds `DIAG SPEAKER_AUDIO_INGRESS` plus `DIAG HOST_AUDIO_WRITE_SLOW`. The v0.5.9-preview.1 release includes these changes. The receive-path scan cost is a suspected contributor, not a confirmed root cause until the new build is tested on devices. No successful physical group start or acoustic skew measurement is recorded.
+The post-PR #55 Speaker-side run on 6 November showed PCM ingress mostly around 49–53 frames/sec (reported interval range 44.1–56.2), `missingFrames=0`, and contiguous buffering up to approximately 19,940 ms. This is encouraging evidence that the earlier receive-path slowdown was not reproduced in the captured interval. It is not a complete end-to-end pass: clock residual RMS remained approximately 0.412–0.557 ms, above the unchanged strict <0.25 ms threshold; stable streak stayed at zero and READY was not demonstrated. No matching Host log, ANCHOR event or acoustic measurement was supplied, so Host writer/queue health and physical synchronization remain unverified.
 
-See [Current Implementation Status](../docs/11_Current_Implementation_Status.md) for the physical log evidence and next test sequence.
+The earlier pre-PR #55 run still records the separate Host-side 500 ms audio-queue overflow. PR #55's snapshot caching and ingress/slow-write diagnostics are present in v0.5.9-preview.1, but the available post-fix Speaker excerpt does not isolate the root cause of clock residual noise. Preserve the current clock threshold and queue bound while gathering per-probe timestamps and matching Host/Speaker evidence.
+
+See [Test Results](../docs/Test_Results.md) for the complete dated test record, measured values, verdict and next actions. See [Current Implementation Status](../docs/11_Current_Implementation_Status.md) for the overall engineering state.
 
 ## Toolchain
 

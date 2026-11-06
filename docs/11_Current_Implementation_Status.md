@@ -1,6 +1,6 @@
 # Current Implementation Status — Sync In It
 
-**Status date:** 6 November 2026  
+**Status date:** 7 November 2026  
 **Main baseline:** PR #55 merged at `6b87eadd018e4d73c4f2d1b40aa6c9692f5d11c0`  
 **Release packaging commit:** `e6e89518d00d00b6aa911832b0740b497f43d6f1`  
 **Latest published Android preview:** [`v0.5.9-preview.1`](https://github.com/Shreyas-patil07/Sync-in-it/releases/tag/v0.5.9-preview.1)  
@@ -12,9 +12,9 @@ This file is the source of truth for present-tense implementation claims. Produc
 
 Sync In It has progressed beyond the original discovery/clock-acquisition shell. The Android preview contains a working implementation path for local Host discovery, multi-Speaker TCP admission, UDP clock synchronization, generated PCM16 test-stream fan-out, bounded receiver buffering, group readiness, a shared future playback ANCHOR, Android AudioTrack rendering and DAC output-timestamp diagnostics. PR #55 also reduces repeated PCM-buffer scanning in the Speaker receive hot path and adds ingress/slow-write diagnostics.
 
-**The end-to-end multi-phone playback path is not yet physically validated.** In the latest supplied pre-PR #55 run, the Speaker discovered the Host, established control/audio TCP and exchanged UDP time-sync packets. It accumulated 20 seconds of contiguous PCM with zero missing frames, but never reached `READY`: residual RMS remained around 0.308–0.522 ms, above the unchanged 0.25 ms stability threshold, leaving the stable streak at zero. The Host later disconnected the Speaker after its 500 ms audio queue overflowed. No group ANCHOR or acoustic synchronization was demonstrated.
+**The end-to-end multi-phone playback path remains physically unvalidated.** The post-PR #55 Speaker-side test on 6 November showed materially better receive-path evidence: ingress was generally close to the 50 frames/sec producer cadence, the contiguous buffer grew to approximately 19.94 seconds, and no missing frames were reported in the supplied interval. However, clock residual RMS stayed around 0.412–0.557 ms, above the unchanged strict 0.25 ms threshold. The stability streak remained zero, READY was not demonstrated, and no ANCHOR or acoustic synchronization result was supplied. The matching Host log was not provided, so Host writer/queue health in this run is unknown.
 
-The current focus is **post-PR #55 receive-throughput retesting, clock-gate diagnosis and then a measured two-phone acoustic-skew result**. PR #55 caches the expensive contiguous-buffer snapshot for up to 250 ms, adds one-second Speaker ingress-rate metrics and adds rate-limited Host slow TCP write diagnostics. The repeated full-buffer scan was a plausible contributor to the observed receive slowdown, but it is not confirmed until the updated APK is tested. The 0.25 ms clock threshold and three-update stability gate remain unchanged. The acoustic marker, click-track reference generator and WAV analyzer still have no physical skew result.
+The earlier pre-PR #55 run remains relevant historical evidence: its Host-side 500 ms queue overflowed after the Speaker failed to reach READY. PR #55 added 250 ms cached PCM snapshots and Speaker ingress/Host slow-write diagnostics. The post-fix Speaker log suggests PCM receive continuity improved in that capture, but it does not prove the Host writer is healthy or establish the root cause of clock residual noise. The current focus is **clock-measurement diagnosis with per-probe evidence, matching Host/Speaker log correlation, then successful READY/ANCHOR and acoustic measurement**. The 0.25 ms threshold, three-update stability gate and queue bound remain unchanged. See [Test Results](Test_Results.md) for the dated record and future-run template.
 
 ## Release, branch and build state
 
@@ -27,9 +27,9 @@ The current focus is **post-PR #55 receive-throughput retesting, clock-gate diag
 | M0 simulator/native CI on release commit | Passed | [Workflow run 42230554383](https://github.com/Shreyas-patil07/Sync-in-it/actions/runs/42230554383) passed the Python 3.11/3.12/3.13 and C++17 matrix, vectors, simulator and queue scenarios |
 | Android/JNI CI on release commit | Passed | [Workflow run 42230554351](https://github.com/Shreyas-patil07/Sync-in-it/actions/runs/42230554351) passed build, Kotlin transport checks, signature verification and artifact upload |
 | Release publisher | Passed | [Workflow run 42230554362](https://github.com/Shreyas-patil07/Sync-in-it/actions/runs/42230554362) built the updateable APK, passed transport checks, verified its signature and uploaded the APK/checksum |
-| Physical validation | Pending | No post-PR #55 device run, successful physical READY/ANCHOR or measured acoustic skew is recorded yet |
+| Physical validation | Partial post-fix device evidence; end-to-end playback not validated | 6 Nov Speaker log: ingress near 50 frames/sec, zero missing frames, buffer to ~19.94 s; clock residual 0.412–0.557 ms kept stable streak at 0 and blocked READY. Matching Host log and acoustic result absent |
 
-The published `v0.5.9-preview.1` APK is built from release commit `e6e89518d00d00b6aa911832b0740b497f43d6f1` with the persistent preview signing key. Android/JNI build and transport checks, APK signature verification, frontend build, the Python/C++ matrix and the release publisher all passed on the release commit. **No post-PR #55 physical run or physical two-phone skew value is recorded yet**; synthetic analyzer tests and CI do not establish real-device synchronization.
+The published `v0.5.9-preview.1` APK is built from release commit `e6e89518d00d00b6aa911832b0740b497f43d6f1` with the persistent preview signing key. Android/JNI build and transport checks, APK signature verification, frontend build, the Python/C++ matrix and the release publisher all passed on the release commit. A post-PR #55 Speaker-side physical log is now recorded in [Test Results](Test_Results.md): it shows continuous PCM ingress in the captured interval but fails clock stability and does not demonstrate READY, ANCHOR or acoustic skew. CI and synthetic analyzer tests remain distinct from physical synchronization evidence.
 
 ## Implemented Android path
 
@@ -72,9 +72,11 @@ These are implemented software paths. They do **not** establish that a real devi
 - Diagnostics expose sample span, estimated rate error, regression residual and rejected timestamp count.
 - This mapping is currently **diagnostic only**. It is not yet consumed by a drift controller, used to compensate output latency, or proven against microphone-recorded sound arrival.
 
-## Latest physical test evidence
+## Physical test evidence
 
-The latest supplied **pre-PR #55** run used a Host and multiple Speaker phones on the same Wi-Fi subnet.
+### Earlier pre-PR #55 baseline
+
+The earlier multi-Speaker run used a Host and multiple Speaker phones on the same Wi-Fi subnet.
 
 | Stage | Observed result |
 |---|---|
@@ -91,7 +93,46 @@ The latest supplied **pre-PR #55** run used a Host and multiple Speaker phones o
 
 The `HOST_UDP_SOURCE_IP_REJECTED` event occurred after receivers had been removed. It is consistent with a packet arriving during/after peer cleanup and is not, by itself, proof of the initial READY failure.
 
-The Speaker-side log now shows the missing detail: by the end of the run the buffer was full at 20,000 ms, `missingFrames=0`, the selected sample span had reached about 23.3 seconds, and the residual RMS had fallen only to roughly 0.308–0.348 ms. Since that still exceeds 0.25 ms, `stableStreak` remained zero and READY was never sent. In the matching Host log, audio writes initially tracked the producer at roughly 50 chunks/second, then the 25-chunk queue overflowed at the 500 ms limit. The Host-side queue overflow is a downstream symptom; the logs do not prove whether the receive hot-path scan, the clock acquisition issue, TCP backpressure or a combination caused the stall. PR #55 reduces scan frequency and adds the measurements needed to distinguish these possibilities on the next run.
+The earlier Speaker-side log showed a full 20,000 ms buffer, `missingFrames=0`, selected sample span around 23.3 seconds and residual RMS around 0.308–0.348 ms. The matching Host log showed audio writes initially tracking the producer at roughly 50 chunks/second, then the 25-chunk queue overflowing at its 500 ms bound. These symptoms did not isolate whether receive hot-path work, clock acquisition, TCP backpressure or a combination caused the stall. PR #55 was introduced to reduce repeated snapshot scans and add diagnostics.
+
+### Post-PR #55 Speaker-side run — 6 November 2026
+
+**Run ID:** `SIT-2026-11-06-01` · **Session diagnostic ID:** `b1ab2fb2`  
+**Build context:** captured after publication of `v0.5.9-preview.1`; the supplied excerpt does not independently print the installed APK version or commit.  
+**Log window:** approximately 23:41:53–23:42:13 in device log time.  
+**Evidence scope:** Speaker-side excerpt only; no matching Host log or acoustic recording was supplied. See [Test Results](Test_Results.md) for the full chronological record.
+
+| Metric / stage | Observed result | Assessment |
+|---|---|---|
+| UDP time-sync responses | Repeated responses succeeded; reported selected-fit RTT median approximately 5.40–7.21 ms | Transport functioning in captured interval; not proof of clock precision |
+| PCM ingress | Interval rates ranged from 44.1 to 56.2 frames/sec, with most reports around 49–53 frames/sec | Close to the 50 frames/sec producer cadence overall |
+| PCM continuity | `missingFrames=0` in all supplied ingress/READY diagnostics | No missing frames observed in this excerpt |
+| Contiguous PCM buffer | Increased from 800 ms to approximately 19,940 ms | Exceeded the 3,000 ms READY buffer requirement |
+| Selected clock samples | Reached 15 | Count requirement met |
+| Selected sample span | Reached 19,125 ms | 10,000 ms span requirement met |
+| Clock residual RMS | Approximately 0.412–0.557 ms; latest supplied estimator value 0.5225 ms | **Failed** the strict <0.25 ms gate |
+| Stable streak | Stayed at 0 | **Failed** the three-update requirement |
+| READY gate | Changed from `CLOCK_AND_PCM_INSUFFICIENT` to `CLOCK_UNSTABLE` as PCM accumulated | Clock stability remained the blocker |
+| READY / ANCHOR | No READY-sent or ANCHOR-received event appears in this excerpt | Not reached / not demonstrated |
+| Host queue and TCP writer | No matching `HOST_AUDIO_DELIVERY` or `HOST_AUDIO_WRITE_SLOW` evidence supplied | Not evaluated |
+| Acoustic synchronization | No microphone recording or analyzer output supplied | Not measured |
+
+Representative estimator samples:
+
+| Probe count | Samples used | Selected span | Residual RMS | Stable streak |
+|---:|---:|---:|---:|---:|
+| 19 | 5 | 995 ms | 0.4506 ms | 0 |
+| 30 | 8 | 5,103 ms | 0.4278 ms | 0 |
+| 41 | 11 | 11,114 ms | 0.4576 ms | 0 |
+| 57 | 15 | 19,125 ms | 0.5225 ms | 0 |
+
+The receiver-skew estimate also changed sign and magnitude during the run (examples: +68.66, +17.75, −48.92, −63.54 and −9.50 ppm). This indicates a noisy/unstable fitted result in this capture. It does not isolate whether network-delay asymmetry, Android scheduling, timestamp capture or estimator behavior is the dominant source.
+
+**Interpretation:** PR #55's main receive-path concern was not reproduced as missing PCM in this Speaker excerpt: ingress stayed near the target cadence, the buffer filled and no missing frames were reported. However, clock acquisition still failed. This is a partial improvement in observed receive behavior, not a successful end-to-end playback result. Since Host counters are absent, do not infer that the Host writer/queue was healthy in this run.
+
+**Diagnostic caveat:** repeated `PCM pre-roll rolling window active · advances=0` messages occur alongside `WindowAdvanced` insert results. PR #55 caches buffer snapshots for up to 250 ms, so these log lines may reflect a stale cached counter. Verify the native counter with a fresh snapshot before concluding that rolling did not occur or that the counter is defective.
+
+**Run verdict: FAIL — clock acquisition / READY gate.** PCM ingress and pre-roll looked healthy in the captured interval; clock residual stayed above 0.25 ms, stable streak remained zero, and coordinated playback/acoustic skew were not demonstrated.
 
 ## Current diagnostics added on main
 
@@ -112,9 +153,9 @@ The Speaker reuses a buffer snapshot for up to 250 ms rather than rescanning the
 | Shared Python/C++ timing vectors | Passed in release-commit M0 CI |
 | Kotlin/JVM transport tests | Passed in release-commit Android workflow 42230554351 and release publisher 42230554362 |
 | Android/JNI debug build | Passed in release-commit Android workflow 42230554351; updateable signed APK artifact uploaded |
-| Host discovery and TCP join on physical LAN | Observed working in the supplied run |
-| Multi-Speaker UDP response | Observed working in the supplied run |
-| Speaker clock stability / READY | Failed in the pre-PR #55 supplied run because residual RMS stayed above 0.25 ms; post-fix device retest pending |
+| Host discovery and TCP join on physical LAN | Observed working in the earlier pre-PR #55 run; not independently established by the supplied post-fix excerpt |
+| UDP time-sync response | Repeatedly observed in both earlier and post-fix captures; clock precision still fails the gate |
+| Speaker clock stability / READY | Failed in the 6 Nov post-PR #55 Speaker-side run: residual 0.412–0.557 ms, stable streak 0; READY not demonstrated |
 | Group-start ANCHOR on physical phones | Not demonstrated |
 | Audible two-/multi-phone synchronization | Not measured |
 | DAC timestamp regression on physical phones | Implemented in code; device evidence still required |
@@ -135,10 +176,10 @@ A successful desktop CI run verifies deterministic core behavior. A successful A
 ## Next engineering sequence
 
 1. Install v0.5.9-preview.1 on one Host and one Speaker using the persistent signing key; keep both apps foregrounded and screens awake on the same trusted Wi-Fi.
-2. Capture both logs from join through READY/ANCHOR or disconnect. Check `DIAG SPEAKER_AUDIO_INGRESS` remains near the 50-chunk/sec producer rate and that Host queued/written counters remain close.
+2. Capture matching Host and Speaker logs from the same session through READY/ANCHOR or disconnect. The 6 Nov Speaker excerpt showed near-target ingress and zero missing frames, but no Host counters were supplied. Compare `DIAG SPEAKER_AUDIO_INGRESS`, `HOST_AUDIO_DELIVERY`, queue depth/overflow and `DIAG HOST_AUDIO_WRITE_SLOW`.
 3. Inspect `DIAG HOST_AUDIO_WRITE_SLOW`. If ingress is still slow but Host writes are fast, investigate receiver parsing/buffer insertion and Android scheduling; if Host writes stall, investigate TCP backpressure/network behavior.
-4. Inspect the clock residual, skew, sample span and stable streak separately. The 0.25 ms threshold must remain unchanged unless measurements justify a different estimator design.
-5. Once one Speaker reaches READY and starts from ANCHOR, repeat with two Speakers, then three/four.
+4. Add per-probe `t1/t2/t3/t4`, RTT, raw offset and selected/rejected-sample diagnostics; replay the observations offline and compare residuals with RTT percentiles and sample selection. Inspect clock residual, skew, sample span and stable streak separately. Keep the 0.25 ms threshold unchanged while investigating.
+5. Verify the cached pre-roll snapshot counter against a fresh native snapshot because the 6 Nov log showed `WindowAdvanced` inserts alongside cached `advances=0` messages. Once one Speaker reaches READY and starts from ANCHOR, repeat with two Speakers, then three/four.
 6. Only after stable group start is observed, run the short two-minute acoustic measurement. Longer/endurance tests remain blocked by the missing foreground-service/wake-lock lifecycle.
 
 ## Repository map
@@ -148,7 +189,7 @@ A successful desktop CI run verifies deterministic core behavior. A successful A
 - `android/app/`: Android app, Kotlin Host/Speaker networking, AudioTrack integration and JNI.
 - `android/transport/`: Kotlin/JVM TCP and UDP transport module.
 - `protocol/vectors/`: shared timing and wire-protocol fixtures.
-- `docs/`: requirements, architecture, protocol, security, testing and current implementation status.
+- `docs/`: requirements, architecture, protocol, security, testing, [chronological physical test results](Test_Results.md) and current implementation status.
 - `frontend/`: public project website and Android preview downloads page.
 - `ios/`: not yet implemented in the current repository.
 
