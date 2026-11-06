@@ -38,7 +38,7 @@
 **Verification:** All five root licensing files are present; README license references resolve; ADR-017 records the split-license decision.  
 **Result:** Code, documentation, brand assets and third-party components have an explicit licensing map.  
 **Risks or limitations:** `NOTICE` uses the GitHub account name as the copyright holder. Confirm the right to reserve the logo/name before relying on the brand-rights statement. Dependency license entries must be re-verified for exact versions at release. Not legal advice.  
-**Next action:** Continue M0 simulator scenarios, cross-language golden vectors and C++ parity before proceeding to M1.
+**Next action:** Follow the current tracker and test evidence index below; M0 simulator and C++ parity checks are now passing in CI.
 
 ## 3. Current engineering status — 6 November 2026
 

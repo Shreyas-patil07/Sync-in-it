@@ -10,6 +10,8 @@ The public site presents the current Android engineering preview, its multi-Spea
 - Published APK: `SyncInIt-Android-preview-v0.5.7.apk`.
 - The published APK predates the READY/audio diagnostic instrumentation merged in PR #49.
 - The latest supplied physical run reached discovery, TCP admission and UDP response, but no Speaker reached READY. Synchronized multi-phone playback is not a verified result.
+- Receiver-specific markers and a WAV analyzer are in branch `measurement/two-phone-skew-tooling`; the public v0.5.7 APK does not include them.
+- No phone skew measurement is recorded yet. The first measurement is screen-on/foreground and approximately two minutes; longer runs are blocked until the foreground service/wake-lock lifecycle exists.
 - Android-only; the current Host code admits up to eight Speakers. The source is a generated 1 kHz timing-click stream, not user-selected music or system-audio capture.
 - The current-main diagnostic instrumentation needs a fresh successful Android/JNI build before it can be published as a new APK.
 
@@ -26,7 +28,7 @@ Requirements: Node.js 20+ and npm.
 
 ```bash
 cd frontend
-npm install
+npm ci
 npm run dev
 ```
 

@@ -12,6 +12,7 @@ const ANDROID_APK = REPO + '/releases/download/v0.5.7-preview.1/SyncInIt-Android
 const ANDROID_CHECKSUMS = REPO + '/releases/download/v0.5.7-preview.1/SHA256SUMS.txt';
 const ANDROID_CI = REPO + '/actions/runs/42086995797';
 const DIAGNOSTICS_PR = REPO + '/pull/49';
+const MEASUREMENT_DOC = REPO + '/blob/measurement/two-phone-skew-tooling/tools/README.md';
 
 type Page = 'home' | 'downloads' | 'not-found';
 type NavigablePage = Exclude<Page, 'not-found'>;
@@ -159,7 +160,7 @@ function ProjectStatus() {
           <span className="status-milestone">M3a</span>
           <div><b>DAC output-clock diagnostics</b><small>IMPLEMENTED · DIAGNOSTIC ONLY</small></div>
         </div>
-        <div className="status-card-foot">Current-main READY/audio counters are merged. Android CI exposed a missing AtomicLong import; this branch includes the import correction and is awaiting a fresh CI result.</div>
+        <div className="status-card-foot">Current-main READY/audio counters are merged. PR #51 fixed the missing AtomicLong import and passed Android/JNI CI. This branch adds the acoustic marker path; its own Android build is still to be validated.</div>
         <div className="status-card-links">
           <a className="inline-link" href={ANDROID_CI} target="_blank" rel="noreferrer">Android build status <Arrow diagonal /></a>
           <a className="inline-link" href={DIAGNOSTICS_PR} target="_blank" rel="noreferrer">Diagnostics changes <Arrow diagonal /></a>
@@ -174,6 +175,7 @@ const milestones = [
   { id: 'M1', title: 'Android LAN and clock acquisition', state: 'Implemented · device validation open', detail: 'mDNS discovery, TCP control/audio admission and UDP four-timestamp exchange are present. The latest physical run did not reach the READY gate.' },
   { id: 'M2a–d', title: 'PCM and coordinated group start', state: 'Implemented · not physically proven', detail: 'PCM16 codec, native sample-indexed buffer, AudioTrack writer, multi-Speaker fan-out and shared future ANCHOR path. Generated 1 kHz test signal only.' },
   { id: 'M3a', title: 'DAC timestamp mapping', state: 'Diagnostics only', detail: 'AudioTrack presentation timestamps feed a rolling regression. The estimate does not yet drive drift correction or latency compensation.' },
+  { id: 'TEST', title: 'Two-phone acoustic measurement', state: 'Tooling implemented · physical run pending', detail: 'Receiver-specific 20 ms markers, reference WAV generation and a PCM16/48 kHz analyzer. Synthetic offsets pass CI; no phone skew value exists yet.' },
   { id: 'M4+', title: 'Drift, recovery and calibration', state: 'Planned / incomplete', detail: 'Integrated drift controller, proven reconnect, microphone calibration, endurance and acoustic acceptance tests remain outstanding.' },
 ];
 
@@ -220,7 +222,9 @@ const questions = [
   { question: 'Can I play Spotify or local music?', answer: 'Not in the current preview. The Host generates a 1 kHz timing-click test stream. User-selected music, local-file decoding and Android playback capture are not implemented in this preview.' },
   { question: 'What does DAC clock mapping mean?', answer: 'The app polls Android AudioTrack presentation timestamps and fits a rolling frame-position/time regression. This currently reports diagnostics only; it does not correct drift, compensate device output latency or measure sound arrival through a microphone.' },
   { question: 'Is the session secure on public Wi-Fi?', answer: 'No. The session token is currently advertised in DNS-SD metadata and can be visible to other devices on the same LAN. The token is not transport encryption. Use a trusted private network only.' },
-  { question: 'What is the next engineering focus?', answer: 'Make the Android/JNI build green, install the READY-gate diagnostics, compare Speaker clock/PCM metrics with Host audio-delivery counters, then repeat one-Speaker and multi-Speaker physical tests without weakening the clock thresholds.' },
+  { question: 'Have the phones been measured yet?', answer: 'No. The latest supplied physical run failed before READY, so it never reached the common ANCHOR and cannot be used as an acoustic-skew measurement. This branch adds receiver-specific markers and a WAV analyzer; the synthetic analyzer tests pass, but PHONE-SKEW-001 is still pending.' },
+  { question: 'Which APK contains the acoustic markers?', answer: 'Not the public v0.5.7-preview.1 release. The markers are in the measurement branch build only. Build and install the APK from measurement/two-phone-skew-tooling before recording; keep both apps foregrounded and screens awake.' },
+  { question: 'What is the next engineering focus?', answer: 'Resolve the READY gate without loosening clock thresholds, install the marker-enabled measurement build, then record about two minutes with two Speakers at equal distance from a laptop microphone. Do not run long tests until a foreground playback service and wake-lock lifecycle exist.' },
 ];
 
 function FAQ() {
@@ -295,15 +299,15 @@ function Downloads({ navigate }: { navigate: (page: NavigablePage) => void }) {
       <div className="downloads-primary">
         <span className="downloads-label">ANDROID PREVIEW / {VERSION}</span>
         <h2>Download the signed engineering preview.</h2>
-        <p>Use Android phones connected to a trusted private Wi-Fi network that permits mDNS and client-to-client traffic. The current release does not include the later READY_GATE_BLOCKED diagnostics added to main after the release was built.</p>
+        <p>Use the measurement-branch APK, not the public v0.5.7 release: the latter does not include READY_GATE_BLOCKED/HOST_AUDIO_DELIVERY or receiver-specific acoustic markers.</p>
         <a className="button button-primary" href={ANDROID_APK} target="_blank" rel="noreferrer">Download Android APK <Arrow diagonal /></a>
         <a className="inline-link" href={ANDROID_CHECKSUMS} target="_blank" rel="noreferrer">Verify SHA-256 checksum <Arrow diagonal /></a>
         <a className="inline-link" href={LATEST_RELEASE} target="_blank" rel="noreferrer">Read release notes <Arrow diagonal /></a>
-        <div className="download-warning"><b>Important limitations</b><p>Generated 1 kHz test signal only; Android only; up to eight Speakers in the current Host implementation. Multi-Speaker READY and acoustic synchronization have not been physically validated. Use a trusted LAN—the session token is visible in DNS-SD metadata.</p></div>
+        <div className="download-warning"><b>Important limitations</b><p>Generated 1 kHz test signal plus a receiver-specific acoustic marker in this branch only; Android only; up to eight Speakers. Multi-Speaker READY and acoustic synchronization have not been physically validated. Use a trusted LAN—the session token is visible in DNS-SD metadata. Keep the app foregrounded and screens awake; no foreground playback service/wake-lock exists.</p></div>
       </div>
       <div className="downloads-secondary">
         <article><span>01 / IMPLEMENTATION</span><h3>See what is in the repository.</h3><p>Python simulator, portable C++17 core, Android Kotlin/JNI client, PCM jitter buffer, TCP/UDP transport and DAC timestamp diagnostic path.</p><a className="inline-link" href={REPO} target="_blank" rel="noreferrer">Browse the source <Arrow diagonal /></a></article>
-        <article><span>02 / TEST STATUS</span><h3>Know what has not passed.</h3><p>Read the current implementation report for observed join behavior, READY timeout evidence, CI state and next diagnostics.</p><a className="inline-link" href={STATUS_DOC} target="_blank" rel="noreferrer">Read current status <Arrow diagonal /></a></article>
+        <article><span>02 / MEASUREMENT</span><h3>Measure the phone output.</h3><p>Use the receiver-specific click markers and analyze a two-minute Audacity WAV. Synthetic tests pass; a physical run is still pending.</p><a className="inline-link" href={MEASUREMENT_DOC} target="_blank" rel="noreferrer">Read measurement instructions <Arrow diagonal /></a></article>
       </div>
     </section>
     <div className="shell downloads-back"><a href="/" onClick={(event) => { event.preventDefault(); navigate('home'); }} className="inline-link"><span aria-hidden="true">←</span> Back to the project</a></div>

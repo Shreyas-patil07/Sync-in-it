@@ -18,7 +18,7 @@
 
 **The Android multi-Speaker implementation path is present; successful physical group playback is not yet demonstrated.** Acoustic marker and WAV analysis tools are now in `tools/`, but no real two-phone skew result is recorded yet.
 
-The latest public pre-release is [`v0.5.7-preview.1`](https://github.com/Shreyas-patil07/Sync-in-it/releases/tag/v0.5.7-preview.1). It contains the multi-Speaker Host/Speaker networking path, generated PCM16 test-stream fan-out, bounded pre-ANCHOR buffering, a common future playback ANCHOR and M3a DAC timestamp diagnostics. The current product target remains 6–10 phones total; the Android Host implementation currently admits up to **8 Speakers**.
+The latest public pre-release is [`v0.5.7-preview.1`](https://github.com/Shreyas-patil07/Sync-in-it/releases/tag/v0.5.7-preview.1). It contains the multi-Speaker Host/Speaker networking path, generated PCM16 test-stream fan-out, bounded pre-ANCHOR buffering, a common future playback ANCHOR and M3a DAC timestamp diagnostics. It predates the current READY/audio diagnostic instrumentation and receiver-specific acoustic markers in this measurement branch. The current product target remains 6–10 phones total; the Android Host implementation currently admits up to **8 Speakers**.
 
 The latest supplied three-phone LAN run successfully discovered the Host, completed multiple control/audio TCP handshakes and exchanged UDP time-sync packets. **No Speaker reached READY before the 45-second readiness deadline**, so the Host removed the cohort and no group ANCHOR was scheduled. The pipeline is implemented, but physical multi-Speaker playback and acoustic synchronization are not verified. The immediate engineering focus is identifying whether the READY gate is blocked by clock acquisition, PCM delivery or both.
 
@@ -26,7 +26,7 @@ The Host opens a 15-second admission window after the first admitted Speaker. A 
 
 M3a polls Android AudioTrack output timestamps and fits a rolling regression in the C++ core. It currently reports diagnostics only; it does not drive drift correction or output-latency compensation. DAC/acoustic alignment, microphone calibration, endurance measurements, robust reconnect and iOS support remain future work.
 
-**Current-main build note:** PR #49 adds Speaker READY-gate and Host audio-delivery diagnostics. Its first Android/JNI CI run failed because `AtomicLong` was not imported in `MasterSessionHost.kt`. The current documentation branch includes that missing import; a fresh Android CI run is required before calling the diagnostic build green. The v0.5.7 release APK predates PR #49 and does not contain those newer diagnostic messages.
+**Build evidence:** PR #51 fixed the missing `AtomicLong` import and its Android/JNI workflow passed. The published v0.5.7 APK predates PR #49 and does not contain the later `READY_GATE_BLOCKED` / `HOST_AUDIO_DELIVERY` diagnostics. The acoustic markers in this measurement branch are also not in that public APK; build and install the branch APK before attempting PHONE-SKEW-001.
 
 See [the canonical implementation status](docs/11_Current_Implementation_Status.md) and [measurement tool guide](tools/README.md) for physical evidence, exact limits and the two-phone skew test procedure.
 
@@ -204,7 +204,7 @@ See [tools/README.md](tools/README.md) for setup and interpretation. Synthetic a
 The current Android preview implements one Host and admission for up to 8 Speakers. It sends a generated 1 kHz timing-click stream and contains a shared ANCHOR/AudioTrack path; physical group start is not currently verified because the latest run did not reach READY. Synchronized user-selected music is not implemented.
 
 1. **Set up the local network.** Enable the Host phone's mobile hotspot, then connect the Speaker phones to it. No internet/mobile data is required for local traffic. A trusted Wi-Fi router also works when client-to-client traffic is allowed.
-2. **Install the Android preview.** Use the latest signed pre-release from [GitHub Releases](https://github.com/Shreyas-patil07/Sync-in-it/releases). Install updates over the previous preview; do not uninstall it.
+2. **Install the measurement build.** Build/install the APK from branch `measurement/two-phone-skew-tooling` (or its successful Android Actions artifact). The public v0.5.7 release APK does not include the receiver-specific acoustic markers, so it cannot produce a valid PHONE-SKEW-001 recording. Preserve the same package/signing key when updating an existing install.
 3. **Start the Host.** Open Sync In It on the Host phone and tap **Start hosting**.
 4. **Join each Speaker.** Open Sync In It on each Speaker phone, tap **Refresh nearby sessions**, then select the Host.
 5. **Check the Host count.** The Host should show the number of connected Speakers (for example, `2/8 connected`). Each Speaker independently acquires the Host clock and buffers PCM16.
@@ -221,7 +221,7 @@ Sync In It/
   core/            # portable C++: time estimator, timeline, drift controller, group deadline
   android/
     master/        # Kotlin app: session, capture, controller
-    receiver/      # Kotlin + Oboe receiver
+    receiver/      # Planned Oboe receiver; current Android preview uses AudioTrack
     app/           # Android launcher shell and C++ JNI bridge
     transport/     # Pure Kotlin/JVM TCP and UDP socket adapters
   ios/
@@ -323,7 +323,7 @@ Test matrix: offset quality, acoustic skew, 60-minute endurance, scaling to 2/4/
 | Buffer underrun | Silence fill, counted, resync if repeated |
 | Master loses router | Receivers play buffered audio, then stop cleanly |
 
-On the master, use a foreground service, a partial wake lock, a high-performance Wi-Fi lock, and a battery-optimization exemption. On iOS, enable background audio and configure the audio session correctly. Validate all of this on the target phones.
+The final design requires a foreground playback service, partial CPU wake lock and appropriate Wi-Fi/network lifecycle. They are not implemented in the current preview. Do not run long/endurance or screen-off/background tests until ADR-022 is resolved. For the initial short test keep both Speaker apps foregrounded and screens awake. iOS background audio is a future platform task.
 
 ---
 

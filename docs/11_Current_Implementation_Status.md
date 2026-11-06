@@ -28,7 +28,7 @@ The current focus is **READY-gate diagnosis followed by a measured two-phone aco
 | Android/JNI CI after PR #51 | Passed | The missing AtomicLong import was fixed and the PR #51 Android/JNI workflow passed |
 | Measurement branch | Adds marker instrumentation, central preview config and click-track/analyzer tools | Synthetic analyzer tests pass; physical build/recording remains outstanding |
 
-The published `v0.5.7-preview.1` APK was built before PR #49 was merged. It contains the v0.5.7 playback/admission implementation, but **does not include the later `READY_GATE_BLOCKED` and `HOST_AUDIO_DELIVERY` diagnostics added by PR #49**. The PR #49 changes are source on current `main`, not a separately published APK.
+The published `v0.5.7-preview.1` APK was built before PR #49 was merged. It contains the v0.5.7 playback/admission implementation, but **does not include the later `READY_GATE_BLOCKED` and `HOST_AUDIO_DELIVERY` diagnostics added by PR #49, nor the acoustic marker added on this measurement branch**. The PR #49 changes are source on current `main`, not a separately published APK.
 
 ## Implemented Android path
 
