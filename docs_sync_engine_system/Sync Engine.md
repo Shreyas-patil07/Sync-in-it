@@ -1,5 +1,8 @@
     # System Design: Offline Synchronized Multi-Phone Audio
 
+> **Current-state warning (6 November 2026):** This file records the intended Sync Engine architecture and product behavior. It is not a status report. The current Android implementation is narrower: one Host, up to eight Speakers, generated PCM16 timing-click source, TCP admission/audio, UDP clock acquisition, READY gating and a start ANCHOR path. The latest supplied physical run admitted multiple Speakers but did not reach READY; no acoustic synchronization result is established. Use [docs/11_Current_Implementation_Status.md](../docs/11_Current_Implementation_Status.md) as the implementation source of truth. Features such as music/file capture, drift correction, reconnect, calibration and iOS should be treated as design targets unless that status report says otherwise.
+
+
 *Master-clock group playout with acoustic calibration for 6-10 Android and iOS phones on a moving train. Draft v1, November 2026.*
 
 ## 1. Purpose and scope
