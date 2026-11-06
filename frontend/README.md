@@ -6,11 +6,11 @@ Public project website and Android preview downloads page. The site is intention
 
 The public site presents the current Android engineering preview, its multi-Speaker implementation path and the latest physical READY-gate failure. Keep release version, supported scope and validation claims aligned with [the canonical implementation status](../docs/11_Current_Implementation_Status.md).
 
-- Latest public pre-release: [v0.5.7-preview.1](https://github.com/Shreyas-patil07/Sync-in-it/releases/tag/v0.5.7-preview.1).
-- Published APK: `SyncInIt-Android-preview-v0.5.7.apk`.
-- The published APK predates the READY/audio diagnostic instrumentation merged in PR #49.
+- Latest public pre-release: [v0.5.8-preview.1](https://github.com/Shreyas-patil07/Sync-in-it/releases/tag/v0.5.8-preview.1).
+- Published APK: `SyncInIt-Android-preview-v0.5.8.apk`.
+- The APK includes the PR #49 READY/audio diagnostics and the PR #53 receiver-specific acoustic markers and analyzer tooling.
 - The latest supplied physical run reached discovery, TCP admission and UDP response, but no Speaker reached READY. Synchronized multi-phone playback is not a verified result.
-- Receiver-specific markers and a WAV analyzer are in branch `measurement/two-phone-skew-tooling`; the public v0.5.7 APK does not include them.
+- Receiver-specific markers and the WAV analyzer are included in the public v0.5.8 preview. Synthetic analyzer tests pass CI; physical phone measurement is still pending.
 - No phone skew measurement is recorded yet. The first measurement is screen-on/foreground and approximately two minutes; longer runs are blocked until the foreground service/wake-lock lifecycle exists.
 - Android-only; the current Host code admits up to eight Speakers. The source is a generated 1 kHz timing-click stream, not user-selected music or system-audio capture.
 - The current-main diagnostic instrumentation needs a fresh successful Android/JNI build before it can be published as a new APK.

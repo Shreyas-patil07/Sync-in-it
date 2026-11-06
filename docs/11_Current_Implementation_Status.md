@@ -1,9 +1,9 @@
 # Current Implementation Status — Sync In It
 
 **Status date:** 6 November 2026  
-**Main baseline:** PR #51 merged at 820dd5da3ab56706346dd053f7c131f5fd8b5de9  
-**Measurement branch:** measurement/two-phone-skew-tooling  
-**Latest published Android preview:** [`v0.5.7-preview.1`](https://github.com/Shreyas-patil07/Sync-in-it/releases/tag/v0.5.7-preview.1)  
+**Main baseline:** PR #53 merged at `2ea47ec950b31cef629999faff3b434321190a52`  
+**Release packaging commit:** `4ad233b00ed4b13cf7710f8b557825d6448a0887`  
+**Latest published Android preview:** [`v0.5.8-preview.1`](https://github.com/Shreyas-patil07/Sync-in-it/releases/tag/v0.5.8-preview.1)  
 **Audience:** contributors, testers and anyone assessing what is implemented versus what is still a design target.
 
 This file is the source of truth for present-tense implementation claims. Product targets, architecture proposals and future behavior in the other design documents remain useful, but they must not be read as evidence that those features are already implemented or validated.
@@ -20,15 +20,15 @@ The current focus is **READY-gate diagnosis followed by a measured two-phone aco
 
 | Item | Current state | Evidence / interpretation |
 |---|---|---|
-| Published preview | `v0.5.7-preview.1` | Public GitHub pre-release with APK and SHA-256 checksum |
-| APK asset | `SyncInIt-Android-preview-v0.5.7.apk` | 5,969,072 bytes on the release page |
-| Release scope | Multi-Speaker admission, rolling pre-ANCHOR PCM prebuffer, READY retry, shared ANCHOR path and M3a timestamp diagnostics | See the linked release notes |
+| Published preview | `v0.5.8-preview.1` | Public GitHub pre-release with APK and SHA-256 checksum |
+| APK asset | `SyncInIt-Android-preview-v0.5.8.apk` | 5,969,084 bytes on the release page |
+| Release scope | Multi-Speaker admission, READY/audio diagnostics, receiver-specific acoustic markers and WAV analysis tooling | See the [release notes](https://github.com/Shreyas-patil07/Sync-in-it/releases/tag/v0.5.8-preview.1) |
 | Current main | PR #49 merged | Adds READY-gate and Host audio-delivery diagnostics |
 | Native/simulator CI for PR #49 | Passed | M0 simulator/native workflow succeeded |
 | Android/JNI CI after PR #51 | Passed | The missing AtomicLong import was fixed and the PR #51 Android/JNI workflow passed |
 | Measurement branch | Adds marker instrumentation, central preview config and click-track/analyzer tools | Synthetic analyzer tests pass; physical build/recording remains outstanding |
 
-The published `v0.5.7-preview.1` APK was built before PR #49 was merged. It contains the v0.5.7 playback/admission implementation, but **does not include the later `READY_GATE_BLOCKED` and `HOST_AUDIO_DELIVERY` diagnostics added by PR #49, nor the acoustic marker added on this measurement branch**. The PR #49 changes are source on current `main`, not a separately published APK.
+The previous `v0.5.7-preview.1` APK was built before PR #49 and PR #53, so it lacked the READY/audio diagnostics and acoustic markers. The current `v0.5.8-preview.1` APK includes these changes, and its signed build plus transport checks passed CI. **No physical two-phone skew value is recorded yet**; the synthetic analyzer tests do not establish real-device synchronization.
 
 ## Implemented Android path
 

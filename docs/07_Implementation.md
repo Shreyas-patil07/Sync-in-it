@@ -16,7 +16,7 @@ The latest observed physical result is: mDNS discovery = pass; control/audio TCP
 
 - **Audio backend:** Android currently uses `AudioTrack.MODE_STREAM` with a dedicated writer thread and a scheduled `AudioTrack.play()` call. Oboe/AAudio callbacks are not implemented. Start-time accuracy is unknown until measured; see ADR-019.
 - **Acoustic toolchain:** current measurement branch overlays a 20 ms receiver-specific marker every second and provides reference WAV generation plus PCM16/48 kHz analysis. Synthetic offsets pass CI; no physical skew result exists.
-- **Measurement APK:** the public v0.5.7 APK does not include the new markers. Build/install from `measurement/two-phone-skew-tooling`.
+- **Measurement APK:** the public v0.5.8-preview.1 release includes receiver-specific markers and the analysis toolchain. Synthetic offsets pass CI; no physical skew result exists yet. See [the measurement guide](../tools/README.md).
 - **Security:** the session token remains in DNS-SD TXT metadata; use a trusted private LAN. See ADR-020.
 - **Capacity:** 8 Speakers + Host is the preview cap. The product goal is 6–10 total phones, not a proof of capacity. See ADR-021.
 - **Long tests:** no foreground playback service or explicit wake-lock lifecycle exists. Limit testing to the short, foregrounded, screen-on recording. See ADR-022.

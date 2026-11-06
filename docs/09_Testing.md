@@ -16,7 +16,7 @@ The latest supplied three-phone LAN run is a **failure at the READY gate**, not 
 - No `GROUP_START_SCHEDULED` or physical ANCHOR delivery was observed.
 - A UDP source-IP rejection appeared after a peer had been removed; treat it as a possible cleanup/late-packet symptom, not the proven root cause.
 
-The Host log alone cannot distinguish unstable clock acquisition from insufficient contiguous PCM. PR #49 adds READY_GATE_BLOCKED on the Speaker and HOST_AUDIO_DELIVERY on the Host. PR #51 fixed the missing AtomicLong import, and its Android/JNI CI build passed. Those diagnostics are still not in the published v0.5.7 APK. Do not claim an end-to-end sync pass from CI alone.
+The Host log alone cannot distinguish unstable clock acquisition from insufficient contiguous PCM. PR #49 adds READY_GATE_BLOCKED on the Speaker and HOST_AUDIO_DELIVERY on the Host. PR #51 fixed the missing AtomicLong import, and PR #53 added receiver-specific acoustic markers plus WAV analysis. The published v0.5.8 APK contains these diagnostics and markers. CI success is not a physical end-to-end sync pass; do not claim acoustic alignment until PHONE-SKEW-001 is recorded.
 
 ## 1. Testing objective
 

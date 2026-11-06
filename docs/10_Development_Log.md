@@ -795,3 +795,11 @@ Do not infer missing hardware/router metadata. Store raw recordings outside Git 
 - The session token remains visible in DNS-SD TXT metadata, and no foreground service/wake-lock lifecycle exists. Do not run long/endurance tests until the lifecycle is implemented and validated.
 
 **Next action:** build and install the measurement branch on one Host and two Speakers. First solve the READY gate without relaxing clock thresholds; then record a screen-on two-minute run and analyze its WAV. No real phone skew value is recorded yet.
+
+
+## 2026-11-06 — v0.5.8-preview.1 published
+
+- Published the signed Android preview APK and SHA-256 checksum at [GitHub Releases](https://github.com/Shreyas-patil07/Sync-in-it/releases/tag/v0.5.8-preview.1).
+- Release build source: `4ad233b00ed4b13cf7710f8b557825d6448a0887`; Android release build, transport checks and APK signature verification passed in [workflow run 42176604387](https://github.com/Shreyas-patil07/Sync-in-it/actions/runs/42176604387).
+- The APK includes the PR #53 receiver-specific acoustic markers and the READY/audio delivery diagnostics. The APK's version metadata is aligned to 0.5.8-preview, with a monotonically generated versionCode.
+- Synthetic skew-analysis tests pass CI. PHONE-SKEW-001 has not been run on physical phones, so no acoustic skew value or synchronized-playback claim is published.

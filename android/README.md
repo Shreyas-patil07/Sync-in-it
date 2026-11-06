@@ -9,7 +9,7 @@ The Android workspace contains two Gradle modules:
 
 The Android source implements multi-Speaker Host admission (up to eight), separate control/audio TCP channels, UDP clock acquisition, generated PCM16 fan-out, the rolling pre-ANCHOR buffer, retryable READY, a shared future ANCHOR path and M3a AudioTrack timestamp diagnostics.
 
-The latest supplied three-phone test accepted multiple TCP joins and returned UDP time-sync packets, but **no Speaker reached READY** before the 45-second deadline. This means the current group-start path has not been verified on physical phones. PR #49 adds `READY_GATE_BLOCKED` on the Speaker and `HOST_AUDIO_DELIVERY` on the Host. PR #51 fixed the missing `AtomicLong` import, and its Android/JNI CI run passed. The public v0.5.7-preview.1 APK predates those diagnostics and the acoustic-marker instrumentation on the measurement branch.
+The latest supplied three-phone test accepted multiple TCP joins and returned UDP time-sync packets, but **no Speaker reached READY** before the 45-second deadline. This means the current group-start path has not been verified on physical phones. PR #49 added `READY_GATE_BLOCKED` on the Speaker and `HOST_AUDIO_DELIVERY` on the Host; PR #53 added receiver-specific acoustic markers and WAV analysis tooling. The published v0.5.8-preview.1 APK includes these changes and passed Android/JNI build, transport tests and APK signature verification. No physical skew measurement is recorded yet.
 
 See [Current Implementation Status](../docs/11_Current_Implementation_Status.md) for the physical log evidence and next test sequence.
 
@@ -107,7 +107,7 @@ The session token is advertised in a DNS-SD TXT record so nearby devices can joi
 
 ## Acoustic measurement build and long-test limits
 
-The receiver-specific marker is generated in `AcousticTestMarker.kt` and overlaid after the PCM buffer read, immediately before AudioTrack writes. It is enabled only in source builds that include the measurement branch; it is not present in the public v0.5.7 APK.
+The receiver-specific marker is generated in `AcousticTestMarker.kt` and overlaid after the PCM buffer read, immediately before AudioTrack writes. It is included in the published v0.5.8-preview.1 APK. The analyzer has only been validated against synthetic recordings so far; real PHONE-SKEW-001 measurement remains pending.
 
 The current Android output path remains `AudioTrack.MODE_STREAM` with a dedicated writer thread and a scheduled `AudioTrack.play()` call. Oboe/AAudio callbacks are not implemented. See [ADR-019](../docs/ADR/Architecture_Decisions.md).
 

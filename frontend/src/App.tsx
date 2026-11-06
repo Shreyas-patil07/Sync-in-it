@@ -6,13 +6,13 @@ const REPO = 'https://github.com/Shreyas-patil07/Sync-in-it';
 const DOCS = REPO + '/tree/main/docs';
 const STATUS_DOC = REPO + '/blob/main/docs/11_Current_Implementation_Status.md';
 const RELEASES = REPO + '/releases';
-const VERSION = 'v0.5.7-preview.1';
-const LATEST_RELEASE = REPO + '/releases/tag/v0.5.7-preview.1';
-const ANDROID_APK = REPO + '/releases/download/v0.5.7-preview.1/SyncInIt-Android-preview-v0.5.7.apk';
-const ANDROID_CHECKSUMS = REPO + '/releases/download/v0.5.7-preview.1/SHA256SUMS.txt';
-const ANDROID_CI = REPO + '/actions/runs/42086995797';
+const VERSION = 'v0.5.8-preview.1';
+const LATEST_RELEASE = REPO + '/releases/tag/v0.5.8-preview.1';
+const ANDROID_APK = REPO + '/releases/download/v0.5.8-preview.1/SyncInIt-Android-preview-v0.5.8.apk';
+const ANDROID_CHECKSUMS = REPO + '/releases/download/v0.5.8-preview.1/SHA256SUMS.txt';
+const ANDROID_CI = REPO + '/actions/runs/42176604387';
 const DIAGNOSTICS_PR = REPO + '/pull/49';
-const MEASUREMENT_DOC = REPO + '/blob/measurement/two-phone-skew-tooling/tools/README.md';
+const MEASUREMENT_DOC = REPO + '/blob/main/tools/README.md';
 
 type Page = 'home' | 'downloads' | 'not-found';
 type NavigablePage = Exclude<Page, 'not-found'>;
@@ -160,7 +160,7 @@ function ProjectStatus() {
           <span className="status-milestone">M3a</span>
           <div><b>DAC output-clock diagnostics</b><small>IMPLEMENTED · DIAGNOSTIC ONLY</small></div>
         </div>
-        <div className="status-card-foot">Current-main READY/audio counters are merged. PR #51 fixed the missing AtomicLong import and passed Android/JNI CI. This branch adds the acoustic marker path; its own Android build is still to be validated.</div>
+        <div className="status-card-foot">PR #53 merged the acoustic measurement path. The published v0.5.8 preview contains the READY/audio diagnostics and receiver-specific markers; synthetic analyzer tests pass CI, but real-phone acoustic measurement is still pending.</div>
         <div className="status-card-links">
           <a className="inline-link" href={ANDROID_CI} target="_blank" rel="noreferrer">Android build status <Arrow diagonal /></a>
           <a className="inline-link" href={DIAGNOSTICS_PR} target="_blank" rel="noreferrer">Diagnostics changes <Arrow diagonal /></a>
@@ -209,7 +209,7 @@ function ValidationSnapshot() {
         <article className="evidence-card evidence-pass"><span>OBSERVED WORKING</span><ul><li>mDNS discovery and Host resolution</li><li>Control TCP HELLO/WELCOME</li><li>Separate audio TCP AUDIO_HELLO</li><li>UDP peer pinning and repeated responses</li></ul></article>
         <article className="evidence-card evidence-blocked"><span>BLOCKING THE GROUP</span><ul><li>No Speaker READY event observed</li><li>45-second readiness deadline expired</li><li>No GROUP_START_SCHEDULED / ANCHOR</li><li>Post-removal UDP source rejection observed</li></ul></article>
       </div>
-      <p className="validation-footnote">The Host log alone cannot distinguish an unstable clock from an insufficient PCM buffer. New Speaker-side READY_GATE_BLOCKED and Host-side HOST_AUDIO_DELIVERY diagnostics are intended to isolate that cause. They were added after the published v0.5.7 APK.</p>
+      <p className="validation-footnote">The Host log alone cannot distinguish an unstable clock from an insufficient PCM buffer. The v0.5.8 preview now includes Speaker-side READY_GATE_BLOCKED and Host-side HOST_AUDIO_DELIVERY diagnostics, plus the receiver-specific acoustic markers. The earlier v0.5.7 APK did not include them; no physical skew result is recorded yet.</p>
     </div>
   </section>;
 }
@@ -217,13 +217,13 @@ function ValidationSnapshot() {
 const questions = [
   { question: 'Does Sync In It need internet?', answer: 'No. Session discovery and audio transport are designed for a private local Wi-Fi network. The router must allow multicast discovery and client-to-client traffic; internet access is not required.' },
   { question: 'Which platforms work today?', answer: 'The current app is Android-only for both Host and Speaker roles. An iOS Speaker is a future milestone; no iOS client is implemented.' },
-  { question: 'Can I install the current preview?', answer: 'Yes. v0.5.7-preview.1 is a published Android engineering pre-release with a signed APK and SHA-256 checksum. Install it over an earlier preview signed with the same persistent key. The later READY-gate diagnostics from PR #49 are not included in that APK.' },
+  { question: 'Can I install the current preview?', answer: 'Yes. v0.5.8-preview.1 is the current signed Android engineering pre-release, with an APK and SHA-256 checksum. It includes the merged READY/audio diagnostics and acoustic markers. Install it over an earlier preview signed with the same persistent key; synchronized playback still has not been physically verified.' },
   { question: 'Does multi-Speaker playback work?', answer: 'The code implements admission for up to eight Speakers, PCM fan-out, a 20-second rolling pre-ANCHOR buffer and a common future playback anchor. The latest physical test connected multiple Speakers and exchanged UDP packets, but none reached READY. Do not treat synchronized group playback as verified.' },
   { question: 'Can I play Spotify or local music?', answer: 'Not in the current preview. The Host generates a 1 kHz timing-click test stream. User-selected music, local-file decoding and Android playback capture are not implemented in this preview.' },
   { question: 'What does DAC clock mapping mean?', answer: 'The app polls Android AudioTrack presentation timestamps and fits a rolling frame-position/time regression. This currently reports diagnostics only; it does not correct drift, compensate device output latency or measure sound arrival through a microphone.' },
   { question: 'Is the session secure on public Wi-Fi?', answer: 'No. The session token is currently advertised in DNS-SD metadata and can be visible to other devices on the same LAN. The token is not transport encryption. Use a trusted private network only.' },
   { question: 'Have the phones been measured yet?', answer: 'No. The latest supplied physical run failed before READY, so it never reached the common ANCHOR and cannot be used as an acoustic-skew measurement. This branch adds receiver-specific markers and a WAV analyzer; the synthetic analyzer tests pass, but PHONE-SKEW-001 is still pending.' },
-  { question: 'Which APK contains the acoustic markers?', answer: 'Not the public v0.5.7-preview.1 release. The markers are in the measurement branch build only. Build and install the APK from measurement/two-phone-skew-tooling before recording; keep both apps foregrounded and screens awake.' },
+  { question: 'Which APK contains the acoustic markers?', answer: 'The public v0.5.8-preview.1 APK includes the receiver-specific markers and analyzer toolchain. Both Speakers still need to reach READY and receive the common ANCHOR before a recording can measure skew. Keep the apps foregrounded and screens awake; no real-phone skew result is available yet.' },
   { question: 'What is the next engineering focus?', answer: 'Resolve the READY gate without loosening clock thresholds, install the marker-enabled measurement build, then record about two minutes with two Speakers at equal distance from a laptop microphone. Do not run long tests until a foreground playback service and wake-lock lifecycle exist.' },
 ];
 
