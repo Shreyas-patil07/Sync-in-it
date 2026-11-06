@@ -2,11 +2,10 @@ import { useEffect, useState } from 'react';
 import type { ReactNode } from 'react';
 
 const REPO = 'https://github.com/Shreyas-patil07/Sync-in-it';
+const RELEASE = REPO + '/releases/tag/v0.5.7-preview.1';
+const APK = REPO + '/releases/download/v0.5.7-preview.1/SyncInIt-Android-preview-v0.5.7.apk';
+const CHECKSUMS = REPO + '/releases/download/v0.5.7-preview.1/SHA256SUMS.txt';
 const DOCS = REPO + '/tree/main/docs';
-const RELEASES = REPO + '/releases';
-const LATEST_RELEASE = REPO + '/releases/tag/v0.4.0-preview.1';
-const ANDROID_APK = REPO + '/releases/download/v0.4.0-preview.1/SyncInIt-Android-preview-v0.4.0.apk';
-const ANDROID_CHECKSUMS = REPO + '/releases/download/v0.4.0-preview.1/SHA256SUMS.txt';
 
 type Page = 'home' | 'downloads' | 'not-found';
 type NavigablePage = Exclude<Page, 'not-found'>;
@@ -33,269 +32,161 @@ function usePage(): [Page, (page: NavigablePage) => void] {
   return [page, navigate];
 }
 
-function Brand({ compact = false }: { compact?: boolean }) {
-  return <a className={compact ? 'brand brand-compact' : 'brand'} href="/" aria-label="Sync In It home">
+function Brand() {
+  return <a className="brand" href="/" aria-label="Sync In It home">
     <img src="/images/sync_in_it.png" alt="" />
-    <span>sync<span className="brand-accent">in</span>it</span>
+    <span>sync<span>in</span>it</span>
   </a>;
 }
 
 function Header({ page, navigate }: { page: Page; navigate: (page: NavigablePage) => void }) {
-  const go = (next: NavigablePage) => navigate(next);
-
   return <>
     <a className="skip-link" href="#main-content">Skip to content</a>
-    <header className="site-header">
-      <div className="brand-island">
-        <Brand compact />
-      </div>
+    <header className="site-header shell">
+      <Brand />
+      <nav aria-label="Primary navigation">
+        <a href="/#how-it-works">How it works</a>
+        <a href="/#status">Status</a>
+        <a href="/downloads" aria-current={page === 'downloads' ? 'page' : undefined}
+          onClick={(event) => { event.preventDefault(); navigate('downloads'); }}>Downloads</a>
+        <a className="nav-github" href={REPO} target="_blank" rel="noreferrer">GitHub <span aria-hidden="true">↗</span></a>
+      </nav>
     </header>
-    <nav id="primary-navigation" className="nav-links action-island" aria-label="Primary navigation">
-      <a href="/downloads" onClick={(event) => { event.preventDefault(); go('downloads'); }} aria-current={page === 'downloads' ? 'page' : undefined}>Downloads</a>
-      <a className="nav-source" href={REPO} target="_blank" rel="noreferrer">GitHub <span aria-hidden="true">↗</span></a>
-    </nav>
   </>;
 }
+
 function Eyebrow({ children }: { children: ReactNode }) {
-  return <p className="eyebrow"><span className="eyebrow-mark" />{children}</p>;
+  return <p className="eyebrow">{children}</p>;
 }
 
-function Arrow({ diagonal = false }: { diagonal?: boolean }) {
-  return <span className="arrow-symbol" aria-hidden="true">{diagonal ? '↗' : '→'}</span>;
+function Arrow() {
+  return <span aria-hidden="true">↗</span>;
 }
 
 function Hero() {
-  return <section className="hero" aria-labelledby="hero-title">
-    <div className="hero-layout shell">
-      <div className="hero-brand-lockup">
-        <img src="/images/sync_in_it.png" alt="Sync In It logo" />
-        <span>sync<span>in</span>it</span>
-        <small>ONE TIMELINE · MANY RECEIVERS</small>
+  return <section className="hero shell">
+    <div className="hero-copy">
+      <Eyebrow><span className="live-dot" /> ANDROID PREVIEW · v0.5.7</Eyebrow>
+      <h1>One host.<br /><span>Up to eight speakers.</span></h1>
+      <p className="hero-lede">Sync In It sends the same generated audio stream to Android phones on a local Wi-Fi network. Each receiver uses a shared timeline to schedule playback.</p>
+      <div className="hero-actions">
+        <a className="button button-primary" href={APK}>Download Android preview <Arrow /></a>
+        <a className="text-link" href={RELEASE} target="_blank" rel="noreferrer">Read release notes <Arrow /></a>
       </div>
-      <div className="hero-copy">
-        <Eyebrow>OFFLINE AUDIO · BUILT AROUND ONE SHARED CLOCK</Eyebrow>
-        <h1 id="hero-title">Many phones.<br /><span className="hero-gradient">One shared moment.</span></h1>
-        <p className="hero-lede">The Android preview can now discover nearby hosts, join a session over local Wi-Fi and acquire a shared clock. Synchronized audio playback is the next stage.</p>
-        <div className="hero-actions">
-          <a className="button button-primary" href="#how-it-works">Discover how it works <Arrow /></a>
-          <a className="button button-text" href={REPO} target="_blank" rel="noreferrer">Explore the project <Arrow diagonal /></a>
+      <p className="hero-note">No internet connection required. A trusted Wi-Fi network with device-to-device traffic is required.</p>
+    </div>
+    <div className="hero-visual" aria-label="One host connected to multiple speaker devices">
+      <div className="visual-top"><span>SESSION TOPOLOGY</span><span>01 / 08</span></div>
+      <div className="topology">
+        <div className="device host-device"><span className="device-icon">H</span><b>Host</b><small>Audio source</small></div>
+        <div className="connection-lines"><i /><i /><i /><i /><i /><i /></div>
+        <div className="speaker-row">
+          {['01','02','03','04','05','06','07','08'].map((n) => <div className="speaker" key={n}><span>▰</span><small>{n}</small></div>)}
         </div>
-        <div className="hero-status"><span className="status-point" /><span>Android preview v0.4.0 available</span><span className="status-separator">·</span><span>Audio playback in development</span></div>
+        <div className="visual-caption"><span className="live-dot" /> Local network · shared session</div>
       </div>
+      <div className="visual-bottom"><span>48 kHz · STEREO · PCM16</span><span>ANDROID</span></div>
     </div>
   </section>;
 }
 
-const highlights = [
-  { icon: '♫', tone: 'cyan', title: 'Find a nearby Host.', text: 'Android hosts advertise over local Wi-Fi. Nearby Android receivers can discover a session and tap to join.' },
-  { icon: '◷', tone: 'violet', title: 'Join and align clocks.', text: 'A two-channel TCP handshake admits the receiver. UDP four-timestamp exchanges feed the shared clock estimator.' },
-  { icon: '⌁', tone: 'magenta', title: 'Designed to work offline.', text: 'Discovery and session transport stay on a private local Wi-Fi network. No internet or cloud service is required.' },
-];
-
-function Highlights() {
-  return <section className="section highlights-section" id="experience">
-    <div className="shell">
-      <div className="section-heading" data-reveal>
-        <Eyebrow>THE IDEA</Eyebrow>
-        <h2>More phones.<br /><span className="heading-gradient">One listening experience.</span></h2>
-        <p>Use the devices you already have to create a shared audio moment, wherever your group is together.</p>
-      </div>
-      <div className="highlight-grid">
-        {highlights.map((item, index) => <article className="highlight-card" data-reveal key={item.title}>
-          <span className={`highlight-icon highlight-${item.tone}`} aria-hidden="true">{item.icon}</span>
-          <span className="highlight-number">0{index + 1}</span>
-          <h3>{item.title}</h3>
-          <p>{item.text}</p>
-        </article>)}
-      </div>
-    </div>
-  </section>;
-}
-
-const steps = [
-  { number: '01', title: 'Start hosting', text: 'An Android Host opens its control and audio TCP listeners, then advertises the session on the local network.' },
-  { number: '02', title: 'Find and join', text: 'Nearby Android receivers discover the Host with mDNS and join through the two-channel TCP handshake.' },
-  { number: '03', title: 'Acquire the clock', text: 'The receiver runs UDP four-timestamp sync and waits for a stable estimate. Playback remains blocked until audio buffering is implemented.' },
+const capabilities = [
+  { number: '01', title: 'Local discovery', text: 'A Host advertises a session over mDNS. Nearby Android devices can find it on the same Wi-Fi network.' },
+  { number: '02', title: 'Clock coordination', text: 'Receivers estimate clock offset with four-timestamp UDP exchanges before joining the playback cohort.' },
+  { number: '03', title: 'Shared audio stream', text: 'The Host fans out sample-indexed 48 kHz stereo PCM16 test audio through separate receiver connections.' },
 ];
 
 function HowItWorks() {
-  return <section className="section process-section" id="how-it-works">
-    <div className="shell">
-      <div className="section-heading" data-reveal>
-        <Eyebrow>MADE TO FEEL SIMPLE</Eyebrow>
-        <h2>Three steps.<br /><span className="heading-gradient">One shared clock.</span></h2>
-        <p>The v0.4.0 Android preview covers nearby discovery, session admission and clock acquisition. Audio playback remains in development.</p>
+  return <section className="section shell" id="how-it-works">
+    <div className="section-intro">
+      <Eyebrow>THE SYSTEM</Eyebrow>
+      <h2>What happens when<br />devices join a session.</h2>
+      <p>The app coordinates discovery, connection, buffering and a common playback start. These are separate stages, each with its own state and diagnostics.</p>
+    </div>
+    <div className="capability-grid">
+      {capabilities.map((item) => <article className="capability" key={item.number}>
+        <span className="number">{item.number}</span>
+        <h3>{item.title}</h3>
+        <p>{item.text}</p>
+      </article>)}
+    </div>
+  </section>;
+}
+
+function Status() {
+  return <section className="section status-section" id="status">
+    <div className="shell status-layout">
+      <div className="section-intro">
+        <Eyebrow>BUILD STATUS · 06 NOV 2026</Eyebrow>
+        <h2>The test path works.<br />Acoustic accuracy is still being measured.</h2>
+        <p>Preview v0.5.7 includes coordinated multi-Speaker admission, pre-playback PCM buffering, a shared start anchor and DAC output-clock diagnostics.</p>
+        <a className="text-link" href={RELEASE} target="_blank" rel="noreferrer">See everything in v0.5.7 <Arrow /></a>
       </div>
-      <div className="process-grid">
-        {steps.map((step) => <article className="process-card" data-reveal key={step.number}>
-          <span className="process-number">{step.number}</span>
-          <div className="process-symbol" aria-hidden="true">{step.number === '01' ? '◉' : step.number === '02' ? '⌘' : '♫'}</div>
-          <h3>{step.title}</h3>
-          <p>{step.text}</p>
-        </article>)}
+      <div className="status-details">
+        <div className="status-row"><span className="status-index">01</span><div><b>Session discovery and admission</b><p>LAN discovery, TCP control/audio channels and up to eight Speaker devices.</p></div><span className="state state-done">Implemented</span></div>
+        <div className="status-row"><span className="status-index">02</span><div><b>Coordinated test playback</b><p>PCM pre-roll, READY recovery and a shared scheduled playback anchor.</p></div><span className="state state-done">Implemented</span></div>
+        <div className="status-row"><span className="status-index">03</span><div><b>DAC output-clock diagnostics</b><p>Measures Android output timestamps. The estimate is not yet used for drift correction.</p></div><span className="state state-progress">Diagnostics</span></div>
+        <div className="status-row"><span className="status-index">04</span><div><b>Real-world synchronization</b><p>Physical multi-phone acoustic testing, Bluetooth latency and device calibration remain open.</p></div><span className="state state-pending">To validate</span></div>
       </div>
     </div>
   </section>;
 }
 
-function ProjectStatus() {
-  return <section className="section status-section" id="project-status">
-    <div className="shell status-panel" data-reveal>
-      <div className="status-copy">
-        <Eyebrow>BUILT IN THE OPEN</Eyebrow>
-        <h2>The Android preview is here.<br />Playback is next.</h2>
-        <p>M0 simulator and timing work continue, while M1 now has an Android v0.4.0 engineering preview for nearby discovery, TCP admission and UDP clock acquisition. Audio chunks, PCM rendering and scheduled playback are not implemented yet; physical two-phone clock synchronization still needs retesting.</p>
-        <a className="button button-light" href={LATEST_RELEASE} target="_blank" rel="noreferrer">Get Android preview v0.4.0 <Arrow diagonal /></a>
-      </div>
-      <div className="status-card">
-        <div className="status-card-top"><span>PROJECT STATUS</span><span className="status-live-dot" /> ACTIVE DEVELOPMENT</div>
-        <div className="status-current">
-          <span className="status-milestone">M1</span>
-          <div><b>Android LAN + clock acquisition</b><small>PREVIEW · M1 IN PROGRESS</small></div>
-        </div>
-        <div className="status-next">
-          <span className="status-milestone">M2a</span>
-          <div><b>PCM codec + jitter buffer</b><small>OPEN PR #28 · NOT MERGED</small></div>
-        </div>
-        <div className="status-card-foot">Physical two-phone clock synchronization still needs retesting; no audio streaming or synchronized playback yet.</div>
-      </div>
-    </div>
-  </section>;
-}
-
-const questions = [
-  { question: 'Does Sync In It need an internet connection?', answer: 'No. The preview uses a private local Wi-Fi network. The access point must allow mDNS/multicast discovery and device-to-device traffic; guest networks with client isolation may block it.' },
-  { question: 'Which phones work with the current preview?', answer: 'The v0.4.0 preview is Android-only: one Android Host and an Android receiver. An iOS receiver is planned, but iOS networking and playback are not implemented.' },
-  { question: 'Can I download and use the app now?', answer: 'An Android engineering preview is available as v0.4.0-preview.1. It demonstrates nearby host discovery, TCP session admission and UDP clock acquisition. It does not stream or play audio, and physical two-phone clock synchronization still needs retesting.' },
-  { question: 'What does the current Android preview actually do?', answer: 'It advertises and discovers nearby Host sessions, completes a two-channel TCP admission handshake and runs four-timestamp UDP clock acquisition. The receiver remains in Synchronizing because the audio buffer is still empty. The release has not yet passed a physical two-phone clock-synchronization retest.' },
-  { question: 'How many phones will it support?', answer: 'The product target remains 6–10 phones in total. The current Android Host UI admits one receiver; group admission and multi-receiver playback have not been implemented or validated.' },
-  { question: 'Is the preview safe on any Wi-Fi network?', answer: 'Use only a trusted private network. The prototype includes its 16-byte session token in the mDNS service record, where other devices on the same LAN can read it. This is not transport encryption or cryptographic peer authentication.' },
+const facts = [
+  { q: 'Does it need internet?', a: 'No. Session discovery and audio transport run over a local Wi-Fi network. The access point must allow multicast discovery and traffic between connected devices.' },
+  { q: 'How many phones can join?', a: 'The current Host cohort supports up to eight Speaker phones. The admission window is 15 seconds, followed by a 45-second readiness deadline.' },
+  { q: 'Does it play my music?', a: 'Not yet. v0.5.7 uses a generated 1 kHz timing-click test signal. User-selected music and system audio are not supported.' },
+  { q: 'Is synchronized playback verified?', a: 'The app schedules the test stream against a shared clock and collects Android output timestamps. This does not measure sound arrival at each speaker. Multi-phone acoustic accuracy has not been independently validated.' },
+  { q: 'Can I install it over an earlier preview?', a: 'Yes. Install the APK as an update over a previous Sync In It preview signed with the same persistent preview key. Do not uninstall the previous build first.' },
+  { q: 'Is it safe to use on public Wi-Fi?', a: 'Use a trusted private network. The preview session token is visible to devices browsing the same LAN; this build does not provide cryptographic transport protection.' },
 ];
 
 function FAQ() {
-  return <section className="section faq-section" id="faq">
-    <div className="shell faq-layout">
-      <div className="faq-copy" data-reveal>
-        <Eyebrow>GOOD TO KNOW</Eyebrow>
-        <h2>Questions?<br /><span className="heading-gradient">We have answers.</span></h2>
-        <p>A few things worth knowing while Sync In It is being built.</p>
-        <a className="inline-link" href={DOCS} target="_blank" rel="noreferrer">Read the project documentation <Arrow diagonal /></a>
-      </div>
-      <div className="faq-list" data-reveal>
-        {questions.map((item, index) => <details className="faq-item" key={item.question} open={index === 0}>
-          <summary><span>{item.question}</span><i aria-hidden="true" /></summary>
-          <p>{item.answer}</p>
-        </details>)}
-      </div>
+  return <section className="section shell faq-section" id="faq">
+    <div className="section-intro"><Eyebrow>FAQ</Eyebrow><h2>Before you install.</h2><p>Current behavior and limitations, without the guesswork.</p></div>
+    <div className="faq-list">
+      {facts.map((item, index) => <details key={item.q} open={index === 0}><summary>{item.q}<span>+</span></summary><p>{item.a}</p></details>)}
     </div>
   </section>;
 }
 
-function ClosingCTA() {
-  return <section className="closing-section shell" data-reveal>
-    <div className="closing-content">
-      <Eyebrow>FOLLOW THE JOURNEY</Eyebrow>
-      <h2>The next great listening moment starts with a shared clock.</h2>
-      <p>Get the Android engineering preview, review what it includes and follow the work toward audio playback.</p>
-      <div className="closing-actions">
-        <a className="button button-light" href={LATEST_RELEASE} target="_blank" rel="noreferrer">Get Android preview v0.4.0 <Arrow diagonal /></a>
-        <a className="button button-outline-light" href={DOCS} target="_blank" rel="noreferrer">Read the docs</a>
-      </div>
+function Downloads({ navigate }: { navigate: (page: NavigablePage) => void }) {
+  return <main id="main-content" className="downloads-page shell">
+    <Eyebrow>DOWNLOADS / ANDROID</Eyebrow>
+    <h1>Sync In It <span>v0.5.7</span></h1>
+    <p className="downloads-lede">Android engineering preview. One Host can send a generated test stream to up to eight Speaker phones on a local Wi-Fi network.</p>
+    <div className="download-card">
+      <div><span className="card-kicker">LATEST PREVIEW</span><h2>Android · v0.5.7-preview.1</h2><p>APK · arm64-v8a and x86_64</p></div>
+      <a className="button button-primary" href={APK}>Download APK <Arrow /></a>
     </div>
-    <img className="closing-logo" src="/images/sync_in_it.png" alt="" aria-hidden="true" />
-  </section>;
+    <div className="download-links"><a href={CHECKSUMS} target="_blank" rel="noreferrer">SHA-256 checksums <Arrow /></a><a href={RELEASE} target="_blank" rel="noreferrer">Release notes <Arrow /></a><a href={REPO} target="_blank" rel="noreferrer">Source code <Arrow /></a></div>
+    <p className="install-note">Install over an earlier preview signed with the same persistent key. The app currently plays a generated timing-click signal, not user-selected audio. Physical acoustic synchronization remains unverified.</p>
+    <button className="back-link" onClick={() => navigate('home')}>← Back to overview</button>
+  </main>;
 }
 
 function Footer({ navigate }: { navigate: (page: NavigablePage) => void }) {
   return <footer className="site-footer">
-    <div className="shell footer-main">
-      <div className="footer-brand"><Brand compact /><p>Local audio. Shared time.<br />Android preview v0.4.0 · playback in development.</p></div>
-      <div className="footer-columns">
-        <div><span>RESOURCES</span><a href={DOCS} target="_blank" rel="noreferrer">Documentation</a><a href={REPO + '/blob/main/LICENSE'} target="_blank" rel="noreferrer">Code license</a><a href={REPO + '/blob/main/LICENSE-DOCS'} target="_blank" rel="noreferrer">Documentation license</a></div>
-        <div><span>PROJECT</span><a href="/downloads" onClick={(event) => { event.preventDefault(); navigate('downloads'); }}>Downloads</a><a href={RELEASES} target="_blank" rel="noreferrer">Releases</a><a href={REPO} target="_blank" rel="noreferrer">GitHub ↗</a></div>
-      </div>
+    <div className="shell footer-inner">
+      <div><Brand /><p>Local audio. Shared playback timeline.</p></div>
+      <div className="footer-links"><a href={DOCS} target="_blank" rel="noreferrer">Documentation</a><a href={REPO + '/releases'} target="_blank" rel="noreferrer">Releases</a><a href="/downloads" onClick={(e) => { e.preventDefault(); navigate('downloads'); }}>Downloads</a><a href={REPO} target="_blank" rel="noreferrer">GitHub <Arrow /></a></div>
+      <small>© 2026 Sync In It · Android engineering preview</small>
     </div>
-    <div className="shell footer-bottom"><span>© 2026 Sync In It</span><span>M0 / M1 in progress. No synchronized audio playback yet.</span></div>
   </footer>;
 }
 
-function Home() {
-  return <main id="main-content">
-    <Hero />
-    <Highlights />
-    <HowItWorks />
-    <ProjectStatus />
-    <FAQ />
-    <ClosingCTA />
-  </main>;
-}
-
-function Downloads({ navigate }: { navigate: (page: NavigablePage) => void }) {
-  return <main id="main-content" className="downloads-page">
-    <section className="downloads-hero shell">
-      <Eyebrow>DOWNLOADS / ANDROID PREVIEW</Eyebrow>
-      <h1>Android preview is here.<br /><span className="hero-gradient">Playback comes next.</span></h1>
-      <p>Version 0.4.0-preview.1 is available for Android. It demonstrates nearby Host discovery, TCP session admission and UDP clock acquisition. Audio streaming and synchronized playback are not implemented yet. Physical two-phone clock synchronization still needs retesting.</p>
-      <div className="release-status"><span className="status-point" /><div><b>v0.4.0-preview.1</b><small>Android engineering preview · arm64-v8a and x86_64</small></div></div>
-    </section>
-    <section className="downloads-content shell">
-      <div className="downloads-primary">
-        <span className="downloads-label">ANDROID PREVIEW / v0.4.0</span>
-        <h2>Download the Android engineering preview.</h2>
-        <p>Install on Android devices connected to a trusted private Wi-Fi network. The session token is visible to other devices browsing that LAN; this preview does not include cryptographic transport protection.</p>
-        <a className="button button-primary" href={ANDROID_APK} target="_blank" rel="noreferrer">Download Android APK <Arrow diagonal /></a>
-        <a className="inline-link" href={ANDROID_CHECKSUMS} target="_blank" rel="noreferrer">Verify SHA-256 checksums <Arrow diagonal /></a>
-      </div>
-      <div className="downloads-secondary">
-        <article><span>01 / SOURCE</span><h3>See the implementation.</h3><p>Explore the Python simulator, C++ protocol and session core, Android Host/receiver shell, TCP/UDP transport and JNI clock acquisition.</p><a className="inline-link" href={REPO} target="_blank" rel="noreferrer">Browse the source <Arrow diagonal /></a></article>
-        <article><span>02 / RELEASE NOTES</span><h3>Review preview v0.4.0.</h3><p>See the LAN reliability fixes, supported ABIs and validation status. The release includes the APK and SHA-256 checksum file; audio playback is not included.</p><a className="inline-link" href={LATEST_RELEASE} target="_blank" rel="noreferrer">View v0.4.0 release notes <Arrow diagonal /></a></article>
-      </div>
-    </section>
-    <div className="shell downloads-back"><a href="/" onClick={(event) => { event.preventDefault(); navigate('home'); }} className="inline-link"><span aria-hidden="true">←</span> Back to the project</a></div>
-  </main>;
-}
-
 function NotFound({ navigate }: { navigate: (page: NavigablePage) => void }) {
-  return <main id="main-content" className="not-found shell">
-    <span className="not-found-code">404 / NOT FOUND</span>
-    <h1>This page is<br /><span className="hero-gradient">out of sync.</span></h1>
-    <p>The address does not match a page in the Sync In It project site.</p>
-    <button className="button button-primary" onClick={() => navigate('home')}>Return to the overview <Arrow /></button>
-  </main>;
+  return <main id="main-content" className="downloads-page shell"><Eyebrow>404 / NOT FOUND</Eyebrow><h1>Page not found.</h1><button className="button button-primary" onClick={() => navigate('home')}>Back to overview</button></main>;
 }
 
 export default function App() {
   const [page, navigate] = usePage();
   useEffect(() => {
-    const titles: Record<Page, string> = {
-      home: 'Sync In It — Many phones. One shared moment.',
-      downloads: 'Downloads — Sync In It',
-      'not-found': 'Page not found — Sync In It',
-    };
-    document.title = titles[page];
+    document.title = page === 'downloads' ? 'Downloads · Sync In It' : page === 'not-found' ? 'Page not found · Sync In It' : 'Sync In It — Local audio, shared playback';
   }, [page]);
-
-  useEffect(() => {
-    const revealElements = document.querySelectorAll<HTMLElement>('[data-reveal]');
-    if (window.matchMedia('(prefers-reduced-motion: reduce)').matches) {
-      revealElements.forEach((element) => element.classList.add('is-revealed'));
-      return;
-    }
-    const observer = new IntersectionObserver((entries, activeObserver) => {
-      entries.forEach((entry) => {
-        if (entry.isIntersecting) {
-          entry.target.classList.add('is-revealed');
-          activeObserver.unobserve(entry.target);
-        }
-      });
-    }, { threshold: 0.16, rootMargin: '0px 0px -48px 0px' });
-    revealElements.forEach((element) => observer.observe(element));
-    return () => observer.disconnect();
-  }, [page]);
-
   return <div className="app-shell">
     <Header page={page} navigate={navigate} />
-    {page === 'home' && <Home />}
+    {page === 'home' && <main id="main-content"><Hero /><HowItWorks /><Status /><FAQ /></main>}
     {page === 'downloads' && <Downloads navigate={navigate} />}
     {page === 'not-found' && <NotFound navigate={navigate} />}
     <Footer navigate={navigate} />
