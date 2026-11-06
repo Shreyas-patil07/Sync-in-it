@@ -66,6 +66,7 @@ jobs:
       - name: Build updateable APK and run transport tests
         env:
           ORG_GRADLE_PROJECT_syncinitVersionCode: ${{ steps.apk_version.outputs.code }}
+          ORG_GRADLE_PROJECT_syncinitVersionName: "0.5.8-preview"
           ORG_GRADLE_PROJECT_previewKeystorePath: ${{ github.workspace }}/android/app/syncinit-preview.jks
           ORG_GRADLE_PROJECT_previewStorePassword: ${{ secrets.SYNCINIT_PREVIEW_KEYSTORE_PASSWORD }}
           ORG_GRADLE_PROJECT_previewKeyPassword: ${{ secrets.SYNCINIT_PREVIEW_KEYSTORE_PASSWORD }}
@@ -81,71 +82,69 @@ jobs:
         run: |
           mkdir -p release-assets
           cp android/app/build/outputs/apk/debug/app-debug.apk \
-            release-assets/SyncInIt-Android-preview-v0.5.7.apk
-          sha256sum release-assets/SyncInIt-Android-preview-v0.5.7.apk \
+            release-assets/SyncInIt-Android-preview-v0.5.8.apk
+          sha256sum release-assets/SyncInIt-Android-preview-v0.5.8.apk \
             | awk '{print $1}' > release-assets/SHA256SUMS.txt
 
       - name: Create GitHub pre-release and upload APK
         env:
           GH_TOKEN: ${{ secrets.GITHUB_TOKEN }}
         run: |
-          cat > release-notes.md <<'EOF'
-          ## Sync In It Android Preview v0.5.7
+          {
+            cat <<'EOF'
+          ## Sync In It Android Preview v0.5.8
 
-          This preview hardens coordinated multi-Speaker admission, pre-playback PCM buffering and READY recovery, building on the M3a DAC output-clock diagnostics introduced in v0.5.6.
+          Measurement-focused preview based on the changes merged in PR #53.
 
-          ### Included
-          - LAN session discovery and TCP control/audio channels, with UDP four-timestamp clock acquisition.
-          - 48 kHz stereo PCM16 test-stream fan-out from one Host to up to eight Speakers, with independent receiver sessions and bounded per-Speaker writer queues.
-          - A 15-second admission window for up to eight Speakers, followed by a 45-second readiness deadline. Speakers that do not reach READY are excluded explicitly; ready peers can still start together.
-          - READY is retried every second until the common ANCHOR arrives, and repeated READY messages are idempotently handled by the Host.
-          - A bounded 20-second rolling PCM pre-roll window before ANCHOR, retaining the newest contiguous audio while clock acquisition completes. After ANCHOR, the buffer switches to strict sample-index handling and never silently skips playback samples.
-          - Per-Speaker audio writer queues bounded to 500 ms, with explicit queue-overflow and socket-writer failure diagnostics.
-          - Receiver-side anchor handling that maps the Host monotonic target through the clock estimate, seeks to the shared buffered sample index, primes AudioTrack and schedules playback.
-          - Native PCM rolling-window and strict post-ANCHOR regression coverage, duplicate-READY state-machine tests and Kotlin/JNI smoke checks.
-          - The receiver keeps the long-lived control channel open after WELCOME while waiting for the coordinated playback ANCHOR, with regression coverage for delayed control frames.
-          - M3a DAC output timestamp polling through Android AudioTrack on a dedicated helper thread, separate from the PCM writer.
-          - Native 30-second rolling regression mapping output frame position to Android monotonic presentation time, with rate-error, fit-residual, sample-span and rejected-sample diagnostics.
-          - Timestamp counter wrap handling, reset detection, native regression tests and an Android JNI smoke test.
-          - Official Sync In It logo and refreshed Host, Nearby Sessions, Connection Status and Network Diagnostics panels.
-          - Persistent preview signing and a monotonically generated Android versionCode for update installs.
+          ### What's included
+          - Receiver-specific acoustic markers in the Android PCM output: a 20 ms marker at each one-second sample boundary, with a distinct frequency per receiver ID.
+          - tools/clicktrack to generate reference WAV files and tools/analyze to measure the relative arrival skew of two receivers from a 48 kHz PCM16 recording.
+          - The analyzer reports signed mean/median skew, p95 and maximum absolute skew, and estimated relative drift slope.
+          - Centralized Android preview configuration for transport ports, PCM format, buffering, queues, timeouts, capacity and acoustic marker parameters.
+          - Reproducible frontend dependency installation through the committed npm lockfile and npm ci, plus repository/documentation cleanup.
 
-          ### Setup and test
-          - Enable the Host phone's Android mobile hotspot and connect all Speaker phones to it. Internet access is not required, but hotspot client-to-client traffic and multicast discovery must be allowed.
-          - Start hosting on the Host. On each Speaker, keep the app open, refresh nearby sessions and join within 15 seconds of the first successful Speaker admission.
-          - Check that each admitted Speaker reaches READY and that the devices begin the generated test stream from the shared scheduled anchor.
-          - Keep playback running for at least 30 seconds so the DAC timestamp mapper can collect enough samples for a valid fit. Capture the "DAC timestamp acquisition" and "DAC output clock mapped" diagnostics from each device.
-          - Test stop/restart and reconnect behavior on two or more physical phones. Physical device and hotspot validation is not performed by CI.
+          ### Two-phone measurement
+          1. Install this APK on one Host and two Speaker phones. Keep the Speaker apps foregrounded and both screens awake.
+          2. Join both Speakers and wait until each reaches READY and the Host schedules the common ANCHOR. A recording without a successful group start is not a valid skew test.
+          3. Place both phones at equal distance (approximately 10 cm) from the laptop microphone. Disable Bluetooth, use a fixed volume, and record roughly two minutes in Audacity.
+          4. Export an uncompressed 48 kHz PCM16 WAV, then run:
+
+             python -m tools.clicktrack.generate --output-dir recordings/reference --receiver-ids 1 2 --duration-seconds 120
+
+             python -m tools.analyze.analyze --input recordings/two-phone-run.wav --receiver-ids 1 2 --output-dir test-results/two-phone-run
+
+          5. Review skew-report.json and skew-events.csv. The next engineering decision gate is p95 absolute skew at or below 10 ms.
 
           ### Important limitations
-          - The audio source is still a generated 1 kHz timing-click test signal, not user-selected music or system audio.
-          - DAC mapping is diagnostics only in this preview. Its estimate is not yet published to the playback callback, used to change playback scheduling, or used for drift correction or manual per-device output offsets.
-          - Android output timestamps are best-effort and may be unavailable on some device/audio routes. The mapping does not measure acoustic sound arrival at the speaker and does not include hardware delays unknown to Android.
-          - A valid regression fit requires at least four timestamp samples spanning 20 seconds. Fit residuals describe the timestamp model, not acoustic synchronization accuracy.
-          - Bluetooth routing, device-specific AudioTrack/HAL latency, microphone-based calibration and real multi-phone acoustic timing remain uncalibrated.
-          - The Host cohort is fixed after the 15-second admission window. A late Speaker requires a new Host group. Speakers that do not reach READY within 45 seconds of the first admission are removed; ready peers may proceed together.
-          - This is an engineering preview, not a claim of verified synchronized-speaker performance.
+          - CI validates the analyzer against synthetic recordings; no real two-phone acoustic skew result has been measured yet. This release does not claim synchronized-speaker performance.
+          - The current Android output remains AudioTrack with a writer thread. Oboe/AAudio, drift correction and manual per-device output offset controls are not implemented.
+          - The current Host admits up to 8 Speakers (9 devices including Host); the 6–10 total-phone product target is not capacity validated.
+          - There is no foreground playback service or explicit wake-lock lifecycle yet. Keep this to short foreground tests with screens awake; do not run screen-off, background or endurance tests.
+          - The session token remains visible in LAN DNS-SD metadata. Use a trusted private network.
+          - The audio source is still a generated test signal, not user-selected music or system audio.
 
-          Install as an update over an existing Sync In It preview signed with the same persistent preview key. Do not uninstall the previous preview first.
+          Install over an existing preview using the same persistent preview signing key. Do not uninstall the previous preview first.
           EOF
+            printf '\nBuild source commit: [%s](https://github.com/%s/commit/%s)\n' "${GITHUB_SHA:0:12}" "$GITHUB_REPOSITORY" "$GITHUB_SHA"
+          } > release-notes.md
 
-          if gh release view "v0.5.7-preview.1" --repo "$GITHUB_REPOSITORY" >/dev/null 2>&1; then
-            gh release edit "v0.5.7-preview.1" \
+          if gh release view "v0.5.8-preview.1" --repo "$GITHUB_REPOSITORY" >/dev/null 2>&1; then
+            gh release edit "v0.5.8-preview.1" \
               --repo "$GITHUB_REPOSITORY" \
-              --title "Sync In It Android Preview v0.5.7" \
+              --title "Sync In It Android Preview v0.5.8" \
               --notes-file release-notes.md \
               --prerelease
-            gh release upload "v0.5.7-preview.1" \
-              "release-assets/SyncInIt-Android-preview-v0.5.7.apk" \
+            gh release upload "v0.5.8-preview.1" \
+              "release-assets/SyncInIt-Android-preview-v0.5.8.apk" \
               "release-assets/SHA256SUMS.txt" \
               --repo "$GITHUB_REPOSITORY" --clobber
           else
-            gh release create "v0.5.7-preview.1" \
-              "release-assets/SyncInIt-Android-preview-v0.5.7.apk#SyncInIt-Android-preview-v0.5.7.apk" \
+            gh release create "v0.5.8-preview.1" \
+              "release-assets/SyncInIt-Android-preview-v0.5.8.apk#SyncInIt-Android-preview-v0.5.8.apk" \
               "release-assets/SHA256SUMS.txt#SHA256SUMS.txt" \
               --repo "$GITHUB_REPOSITORY" \
               --target "$GITHUB_SHA" \
-              --title "Sync In It Android Preview v0.5.7" \
+              --title "Sync In It Android Preview v0.5.8" \
               --notes-file release-notes.md \
               --prerelease
           fi
