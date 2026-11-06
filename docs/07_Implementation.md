@@ -4,7 +4,13 @@
 **Version:** 1.5  
 **Last updated:** 2 November 2026
 
-**Current progress:** M0 is in progress. The Python reference simulator has deterministic impairment scenarios, playout diagnostics, adaptive acquisition cadence, a shared-airtime Wi-Fi queue model, an experimental A/B comparison of frame-slip correction against bounded resampling control, and a deterministic scenario-acceptance gate. The LAN model places per-receiver PCM TCP segments and UDP time-sync probes on one half-duplex AP medium, with bounded retries, router forwarding delay, priority control queueing and per-hop metrics. A portable C++17 timing core and shared vectors cover offset/skew estimation, timeline mapping, DAC clock mapping and the initial frame-slip decision policy. No phone synchronization or audio playback has been validated.
+**Current progress (6 November 2026):** M0 simulator/native CI is passing its current deterministic gates. M1 and M2 Android implementation now includes NSD discovery, per-Speaker TCP control/audio admission, UDP clock acquisition, generated PCM16 fan-out, a rolling pre-ANCHOR jitter buffer, READY retries, a 15-second admission window, a 45-second readiness deadline and a shared future playback ANCHOR path. M3a adds Android AudioTrack timestamp polling and a rolling C++ regression for diagnostics only. The latest physical multi-phone test reached TCP admission and UDP responses but did not reach READY; group start and acoustic synchronization remain unverified. PR #49 diagnostic instrumentation is merged; its first Android/JNI CI run failed on a missing AtomicLong import. The current documentation branch adds the import correction and requires a fresh Android CI pass.
+
+## Current execution snapshot — 6 November 2026
+
+The immediate work is not another algorithm or UI milestone. First make the PR #49 Android/JNI diagnostic build green, then use `READY_GATE_BLOCKED` and `HOST_AUDIO_DELIVERY` to isolate the failed READY gate. Keep the existing acquisition threshold and 3-second PCM requirement unchanged until real Speaker metrics identify the failing condition.
+
+The latest observed physical result is: mDNS discovery = pass; control/audio TCP join = pass for multiple Speakers; UDP time-sync requests/responses = pass; READY = not observed; readiness timeout = fired; common ANCHOR = not reached. Do not mark M1/M2 group playback complete based on source implementation or simulator/CI alone. The authoritative evidence table is in [Current Implementation Status](11_Current_Implementation_Status.md).
 
 ## 1. Implementation strategy
 
