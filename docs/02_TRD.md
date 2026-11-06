@@ -4,6 +4,12 @@
 **Version:** 1.0  
 **Last updated:** 1 November 2026
 
+## Implementation status — 6 November 2026
+
+The implemented Android baseline is Kotlin + JNI + the portable C++17 timing core, with a separate Kotlin/JVM TCP/UDP transport module. The Android toolchain is JDK 17, Gradle 8.13, Android SDK 36, NDK 30.0.16248370 and CMake 3.22.1. The current Host supports up to eight Speakers, 48 kHz stereo PCM16 chunks of 960 frames (20 ms), a 20-second rolling pre-ANCHOR buffer, 15-second admission and a 45-second readiness deadline.
+
+Physical validation currently fails before READY: multiple Speakers can complete TCP admission and exchange UDP packets, but the Host sees no READY before timeout. Do not weaken the clock gate or change timing thresholds without Speaker-side measurements. M3a output timestamp polling/regression is diagnostic only; it is not yet a drift controller or acoustic-latency compensation. Current source and validation state is maintained in [Current Implementation Status](11_Current_Implementation_Status.md).
+
 ## 1. Technical objective
 
 Define the platform, runtime, timing, networking, audio, resource and development constraints required to implement Sync In It. This document specifies technical requirements; architecture rationale is in [03_Architecture.md](03_Architecture.md), while wire-level definitions are in [06_Protocol_and_Data_Schema.md](06_Protocol_and_Data_Schema.md).
