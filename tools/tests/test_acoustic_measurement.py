@@ -61,7 +61,7 @@ class AcousticMeasurementTests(unittest.TestCase):
             self.assertIsNotNone(match, "Missing PreviewConfig constant " + key)
             self.assertEqual(int(match.group(1).replace("_", "")), value, key)
 
-    def test_pcm16_wav_reader_downmixes_stereo(self) -> None
+    def test_pcm16_wav_reader_downmixes_stereo(self) -> None:
         samples = self.make_recording(round(0.005 * SAMPLE_RATE_HZ))
         with tempfile.TemporaryDirectory() as directory:
             path = Path(directory) / "stereo.wav"
