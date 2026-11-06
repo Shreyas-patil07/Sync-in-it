@@ -76,7 +76,7 @@ class MasterSessionHost(context: Context, private val onStatus: (String) -> Unit
             val anyAddress = InetAddress.getByName("0.0.0.0")
             val audioListener = TcpFrameServer(
                 anyAddress,
-                0,
+                PreviewConfig.AUDIO_LISTENER_REQUESTED_PORT,
                 acceptTimeoutMs = PreviewConfig.AUDIO_ACCEPT_TIMEOUT_MS,
                 connectionReadTimeoutMs = 10_000
             )
@@ -84,7 +84,7 @@ class MasterSessionHost(context: Context, private val onStatus: (String) -> Unit
             val controlListener = TcpFrameServer(anyAddress, PreviewConfig.CONTROL_PORT, connectionReadTimeoutMs = PreviewConfig.AUDIO_READ_TIMEOUT_MS)
             control = controlListener
             // Bind UDP before advertising to avoid a receiver racing the time-sync listener.
-            val timeListener = UdpTimeSyncServer(anyAddress, PreviewConfig.TIME_PORT, receiveTimeoutMs = 500)
+            val timeListener = UdpTimeSyncServer(anyAddress, PreviewConfig.TIME_PORT, receiveTimeoutMs = PreviewConfig.TIME_SYNC_RECEIVE_TIMEOUT_MS)
             time = timeListener
 
             val random = SecureRandom()

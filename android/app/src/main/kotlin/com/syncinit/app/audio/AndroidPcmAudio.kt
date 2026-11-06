@@ -415,7 +415,7 @@ class PcmAudioReceiver(
                         "stableStreak=${measurement?.stableStreak ?: 0} " +
                         "residualRmsMs=${measurement?.residualRmsMs?.let { "%.4f".format(it) } ?: "unavailable"} " +
                         "rttMedianMs=${measurement?.rttMedianMs?.let { "%.2f".format(it) } ?: "unavailable"} " +
-                        "bufferedMs=$bufferedMs requiredMs=$PreviewConfig.MIN_READY_BUFFER_MS " +
+                        "bufferedMs=$bufferedMs requiredMs=${PreviewConfig.MIN_READY_BUFFER_MS} " +
                         "contiguousFrames=${snapshot.contiguousBufferedFrames} " +
                         "missingFrames=${snapshot.missingFrames} " +
                         "windowAdvances=${snapshot.windowAdvanceCount}"

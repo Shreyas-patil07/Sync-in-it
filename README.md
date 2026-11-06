@@ -1,7 +1,7 @@
 # Sync In It
 
 <p align="center">
-  <img src="docs/images/sync_in_it.png" alt="Sync In It logo" width="260" />
+  <img src="frontend/public/images/sync_in_it.png" alt="Sync In It logo" width="260" />
 </p>
 
 > Project goal: turn 6–10 phones into one synchronized speaker group over a private local network. The current engineering preview is Android-only.
@@ -16,19 +16,19 @@
 
 ## Current implementation status
 
-**The Android multi-Speaker implementation path is present; successful physical group playback is not yet demonstrated.**
+**The Android multi-Speaker implementation path is present; successful physical group playback is not yet demonstrated.** Acoustic marker and WAV analysis tools are now in `tools/`, but no real two-phone skew result is recorded yet.
 
 The latest public pre-release is [`v0.5.7-preview.1`](https://github.com/Shreyas-patil07/Sync-in-it/releases/tag/v0.5.7-preview.1). It contains the multi-Speaker Host/Speaker networking path, generated PCM16 test-stream fan-out, bounded pre-ANCHOR buffering, a common future playback ANCHOR and M3a DAC timestamp diagnostics. The current product target remains 6–10 phones total; the Android Host implementation currently admits up to **8 Speakers**.
 
 The latest supplied three-phone LAN run successfully discovered the Host, completed multiple control/audio TCP handshakes and exchanged UDP time-sync packets. **No Speaker reached READY before the 45-second readiness deadline**, so the Host removed the cohort and no group ANCHOR was scheduled. The pipeline is implemented, but physical multi-Speaker playback and acoustic synchronization are not verified. The immediate engineering focus is identifying whether the READY gate is blocked by clock acquisition, PCM delivery or both.
 
-The Host opens a 15-second admission window after the first admitted Speaker. A Speaker needs a stable clock estimate and at least 3 seconds of contiguous PCM before READY. READY is retried every second until ANCHOR; repeated READY is idempotent. Each Speaker has a 20-second sample-indexed PCM ring buffer that rolls before ANCHOR and becomes strict after ANCHOR. The Host applies a 45-second readiness deadline and bounds each per-Speaker audio writer queue to approximately 500 ms. The source is a generated 1 kHz timing-click signal—not local music or system-audio capture.
+The Host opens a 15-second admission window after the first admitted Speaker. A Speaker needs a stable clock estimate and at least 3 seconds of contiguous PCM before READY. READY is retried every second until ANCHOR; repeated READY is idempotent. Each Speaker has a 20-second sample-indexed PCM ring buffer that rolls before ANCHOR and becomes strict after ANCHOR. The Host applies a 45-second readiness deadline and bounds each per-Speaker audio writer queue to approximately 500 ms. The source is a generated 1 kHz timing-click signal with a receiver-specific 20 ms acoustic marker at every one-second sample boundary—not local music or system-audio capture.
 
 M3a polls Android AudioTrack output timestamps and fits a rolling regression in the C++ core. It currently reports diagnostics only; it does not drive drift correction or output-latency compensation. DAC/acoustic alignment, microphone calibration, endurance measurements, robust reconnect and iOS support remain future work.
 
 **Current-main build note:** PR #49 adds Speaker READY-gate and Host audio-delivery diagnostics. Its first Android/JNI CI run failed because `AtomicLong` was not imported in `MasterSessionHost.kt`. The current documentation branch includes that missing import; a fresh Android CI run is required before calling the diagnostic build green. The v0.5.7 release APK predates PR #49 and does not contain those newer diagnostic messages.
 
-See [the canonical implementation status](docs/11_Current_Implementation_Status.md) for evidence, exact limits and the next test sequence.
+See [the canonical implementation status](docs/11_Current_Implementation_Status.md) and [measurement tool guide](tools/README.md) for physical evidence, exact limits and the two-phone skew test procedure.
 
 | Milestone | Description | State |
 |---|---|---|

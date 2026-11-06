@@ -45,9 +45,6 @@ node_modules/
 frontend/dist/
 frontend/coverage/
 
-# Generated frontend brand asset
-frontend/public/images/sync_in_it.png
-
 # Test recordings and generated reports
 recordings/
 test-results/
