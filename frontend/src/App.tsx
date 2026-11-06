@@ -3,10 +3,14 @@ import type { ReactNode } from 'react';
 
 const REPO = 'https://github.com/Shreyas-patil07/Sync-in-it';
 const DOCS = REPO + '/tree/main/docs';
+const STATUS_DOC = REPO + '/blob/main/docs/11_Current_Implementation_Status.md';
 const RELEASES = REPO + '/releases';
-const LATEST_RELEASE = REPO + '/releases/tag/v0.4.0-preview.1';
-const ANDROID_APK = REPO + '/releases/download/v0.4.0-preview.1/SyncInIt-Android-preview-v0.4.0.apk';
-const ANDROID_CHECKSUMS = REPO + '/releases/download/v0.4.0-preview.1/SHA256SUMS.txt';
+const VERSION = 'v0.5.7-preview.1';
+const LATEST_RELEASE = REPO + '/releases/tag/v0.5.7-preview.1';
+const ANDROID_APK = REPO + '/releases/download/v0.5.7-preview.1/SyncInIt-Android-preview-v0.5.7.apk';
+const ANDROID_CHECKSUMS = REPO + '/releases/download/v0.5.7-preview.1/SHA256SUMS.txt';
+const ANDROID_CI = REPO + '/actions/runs/42086995797';
+const DIAGNOSTICS_PR = REPO + '/pull/49';
 
 type Page = 'home' | 'downloads' | 'not-found';
 type NavigablePage = Exclude<Page, 'not-found'>;
@@ -42,20 +46,17 @@ function Brand({ compact = false }: { compact?: boolean }) {
 
 function Header({ page, navigate }: { page: Page; navigate: (page: NavigablePage) => void }) {
   const go = (next: NavigablePage) => navigate(next);
-
   return <>
     <a className="skip-link" href="#main-content">Skip to content</a>
-    <header className="site-header">
-      <div className="brand-island">
-        <Brand compact />
-      </div>
-    </header>
+    <header className="site-header"><div className="brand-island"><Brand compact /></div></header>
     <nav id="primary-navigation" className="nav-links action-island" aria-label="Primary navigation">
+      <a href="/" onClick={(event) => { event.preventDefault(); go('home'); }} aria-current={page === 'home' ? 'page' : undefined}>Overview</a>
       <a href="/downloads" onClick={(event) => { event.preventDefault(); go('downloads'); }} aria-current={page === 'downloads' ? 'page' : undefined}>Downloads</a>
       <a className="nav-source" href={REPO} target="_blank" rel="noreferrer">GitHub <span aria-hidden="true">↗</span></a>
     </nav>
   </>;
 }
+
 function Eyebrow({ children }: { children: ReactNode }) {
   return <p className="eyebrow"><span className="eyebrow-mark" />{children}</p>;
 }
@@ -70,35 +71,35 @@ function Hero() {
       <div className="hero-brand-lockup">
         <img src="/images/sync_in_it.png" alt="Sync In It logo" />
         <span>sync<span>in</span>it</span>
-        <small>ONE TIMELINE · MANY RECEIVERS</small>
+        <small>ONE TIMELINE · MANY SPEAKERS</small>
       </div>
       <div className="hero-copy">
-        <Eyebrow>OFFLINE AUDIO · BUILT AROUND ONE SHARED CLOCK</Eyebrow>
+        <Eyebrow>OFFLINE AUDIO · ANDROID ENGINEERING PREVIEW</Eyebrow>
         <h1 id="hero-title">Many phones.<br /><span className="hero-gradient">One shared moment.</span></h1>
-        <p className="hero-lede">The Android preview can now discover nearby hosts, join a session over local Wi-Fi and acquire a shared clock. Synchronized audio playback is the next stage.</p>
+        <p className="hero-lede">Sync In It is building a local-network audio system around one shared clock. The Android preview now implements multi-Speaker admission, PCM16 fan-out and a coordinated playback-start path. The current physical test is still failing before Speakers reach READY, so synchronized playback is not yet a verified result.</p>
         <div className="hero-actions">
-          <a className="button button-primary" href="#how-it-works">Discover how it works <Arrow /></a>
-          <a className="button button-text" href={REPO} target="_blank" rel="noreferrer">Explore the project <Arrow diagonal /></a>
+          <a className="button button-primary" href="/downloads">Get Android preview <Arrow /></a>
+          <a className="button button-text" href={STATUS_DOC} target="_blank" rel="noreferrer">Read current engineering status <Arrow diagonal /></a>
         </div>
-        <div className="hero-status"><span className="status-point" /><span>Android preview v0.4.0 available</span><span className="status-separator">·</span><span>Audio playback in development</span></div>
+        <div className="hero-status"><span className="status-point" /><span>{VERSION} released</span><span className="status-separator">·</span><span>Physical READY gate under investigation</span></div>
       </div>
     </div>
   </section>;
 }
 
 const highlights = [
-  { icon: '♫', tone: 'cyan', title: 'Find a nearby Host.', text: 'Android hosts advertise over local Wi-Fi. Nearby Android receivers can discover a session and tap to join.' },
-  { icon: '◷', tone: 'violet', title: 'Join and align clocks.', text: 'A two-channel TCP handshake admits the receiver. UDP four-timestamp exchanges feed the shared clock estimator.' },
-  { icon: '⌁', tone: 'magenta', title: 'Designed to work offline.', text: 'Discovery and session transport stay on a private local Wi-Fi network. No internet or cloud service is required.' },
+  { icon: '⌁', tone: 'cyan', title: 'Discover and admit Speakers.', text: 'Android Hosts advertise on the local network. Up to eight Android Speakers can establish separate control and audio TCP channels.' },
+  { icon: '♫', tone: 'violet', title: 'Deliver one shared test stream.', text: 'A 48 kHz stereo PCM16 timing-click stream is generated once, indexed by sample position and fanned out through bounded per-Speaker queues.' },
+  { icon: '◷', tone: 'magenta', title: 'Coordinate a common start.', text: 'Speakers acquire the Host clock, buffer PCM and report READY. The Host then sends one future playback ANCHOR to the admitted group.' },
 ];
 
 function Highlights() {
   return <section className="section highlights-section" id="experience">
     <div className="shell">
       <div className="section-heading" data-reveal>
-        <Eyebrow>THE IDEA</Eyebrow>
-        <h2>More phones.<br /><span className="heading-gradient">One listening experience.</span></h2>
-        <p>Use the devices you already have to create a shared audio moment, wherever your group is together.</p>
+        <Eyebrow>WHAT THE PREVIEW CONTAINS</Eyebrow>
+        <h2>From discovery<br /><span className="heading-gradient">to a shared timeline.</span></h2>
+        <p>The implementation has moved beyond a discovery-only shell. Its last mile—reliably reaching READY and proving synchronized sound on physical phones—is still being tested.</p>
       </div>
       <div className="highlight-grid">
         {highlights.map((item, index) => <article className="highlight-card" data-reveal key={item.title}>
@@ -113,18 +114,18 @@ function Highlights() {
 }
 
 const steps = [
-  { number: '01', title: 'Start hosting', text: 'An Android Host opens its control and audio TCP listeners, then advertises the session on the local network.' },
-  { number: '02', title: 'Find and join', text: 'Nearby Android receivers discover the Host with mDNS and join through the two-channel TCP handshake.' },
-  { number: '03', title: 'Acquire the clock', text: 'The receiver runs UDP four-timestamp sync and waits for a stable estimate. Playback remains blocked until audio buffering is implemented.' },
+  { number: '01', title: 'Host and discover', text: 'The Host opens control, audio and UDP listeners and advertises an mDNS service. Speakers discover it on the same Wi-Fi network.' },
+  { number: '02', title: 'Join and prepare', text: 'Each Speaker completes HELLO/WELCOME and AUDIO_HELLO, receives indexed PCM chunks and exchanges UDP timestamps to estimate the Host clock.' },
+  { number: '03', title: 'Reach READY, then start', text: 'The Speaker must have a stable clock and at least 3 seconds of contiguous PCM. The Host starts the cohort only after admission closes and all remaining Speakers are READY.' },
 ];
 
 function HowItWorks() {
   return <section className="section process-section" id="how-it-works">
     <div className="shell">
       <div className="section-heading" data-reveal>
-        <Eyebrow>MADE TO FEEL SIMPLE</Eyebrow>
-        <h2>Three steps.<br /><span className="heading-gradient">One shared clock.</span></h2>
-        <p>The v0.4.0 Android preview covers nearby discovery, session admission and clock acquisition. Audio playback remains in development.</p>
+        <Eyebrow>THE CURRENT ANDROID FLOW</Eyebrow>
+        <h2>Three stages.<br /><span className="heading-gradient">One playback deadline.</span></h2>
+        <p>Audio packet arrival does not start playback. The Host selects a common future timestamp and sample index only after the readiness gate passes.</p>
       </div>
       <div className="process-grid">
         {steps.map((step) => <article className="process-card" data-reveal key={step.number}>
@@ -142,34 +143,79 @@ function ProjectStatus() {
   return <section className="section status-section" id="project-status">
     <div className="shell status-panel" data-reveal>
       <div className="status-copy">
-        <Eyebrow>BUILT IN THE OPEN</Eyebrow>
-        <h2>The Android preview is here.<br />Playback is next.</h2>
-        <p>M0 simulator and timing work continue, while M1 now has an Android v0.4.0 engineering preview for nearby discovery, TCP admission and UDP clock acquisition. Audio chunks, PCM rendering and scheduled playback are not implemented yet; physical two-phone clock synchronization still needs retesting.</p>
-        <a className="button button-light" href={LATEST_RELEASE} target="_blank" rel="noreferrer">Get Android preview v0.4.0 <Arrow diagonal /></a>
+        <Eyebrow>ENGINEERING STATUS · 6 NOVEMBER 2026</Eyebrow>
+        <h2>The pipeline is implemented.<br />The READY gate is not passing yet.</h2>
+        <p>The latest three-phone LAN run discovered the Host, accepted multiple control/audio connections and exchanged UDP time-sync packets. No Speaker reached READY before the 45-second startup deadline, so the Host removed the cohort. No successful multi-Speaker ANCHOR or acoustic-sync result has been demonstrated.</p>
+        <a className="button button-light" href={STATUS_DOC} target="_blank" rel="noreferrer">Read the full status report <Arrow diagonal /></a>
       </div>
       <div className="status-card">
         <div className="status-card-top"><span>PROJECT STATUS</span><span className="status-live-dot" /> ACTIVE DEVELOPMENT</div>
         <div className="status-current">
-          <span className="status-milestone">M1</span>
-          <div><b>Android LAN + clock acquisition</b><small>PREVIEW · M1 IN PROGRESS</small></div>
+          <span className="status-milestone">M2c</span>
+          <div><b>Multi-Speaker PCM fan-out</b><small>IMPLEMENTED · PHYSICAL READY TEST FAILS</small></div>
         </div>
         <div className="status-next">
-          <span className="status-milestone">M2a</span>
-          <div><b>PCM codec + jitter buffer</b><small>OPEN PR #28 · NOT MERGED</small></div>
+          <span className="status-milestone">M3a</span>
+          <div><b>DAC output-clock diagnostics</b><small>IMPLEMENTED · DIAGNOSTIC ONLY</small></div>
         </div>
-        <div className="status-card-foot">Physical two-phone clock synchronization still needs retesting; no audio streaming or synchronized playback yet.</div>
+        <div className="status-card-foot">Current-main READY/audio counters are merged. Android CI exposed a missing AtomicLong import; the documentation branch includes the import correction and is awaiting a fresh CI result.</div>
       </div>
     </div>
   </section>;
 }
 
+const milestones = [
+  { id: 'M0', title: 'Simulator and timing core', state: 'CI passing', detail: 'Python reference simulator, C++17 timing core, shared vectors and deterministic simulator gates.' },
+  { id: 'M1', title: 'Android LAN and clock acquisition', state: 'Implemented · device validation open', detail: 'mDNS discovery, TCP control/audio admission and UDP four-timestamp exchange are present. The latest physical run did not reach the READY gate.' },
+  { id: 'M2a–d', title: 'PCM and coordinated group start', state: 'Implemented · not physically proven', detail: 'PCM16 codec, native sample-indexed buffer, AudioTrack writer, multi-Speaker fan-out and shared future ANCHOR path. Generated 1 kHz test signal only.' },
+  { id: 'M3a', title: 'DAC timestamp mapping', state: 'Diagnostics only', detail: 'AudioTrack presentation timestamps feed a rolling regression. The estimate does not yet drive drift correction or latency compensation.' },
+  { id: 'M4+', title: 'Drift, recovery and calibration', state: 'Planned / incomplete', detail: 'Integrated drift controller, proven reconnect, microphone calibration, endurance and acoustic acceptance tests remain outstanding.' },
+];
+
+function Milestones() {
+  return <section className="section milestones-section" id="milestones">
+    <div className="shell">
+      <div className="section-heading" data-reveal>
+        <Eyebrow>IMPLEMENTED VS. VALIDATED</Eyebrow>
+        <h2>Progress, without<br /><span className="heading-gradient">overstating the result.</span></h2>
+        <p>Code completion, CI success and physical-device proof are tracked separately.</p>
+      </div>
+      <div className="milestone-grid">
+        {milestones.map((item) => <article className="milestone-card" key={item.id} data-reveal>
+          <span>{item.id}</span>
+          <div><h3>{item.title}</h3><b>{item.state}</b><p>{item.detail}</p></div>
+        </article>)}
+      </div>
+    </div>
+  </section>;
+}
+
+function ValidationSnapshot() {
+  return <section className="section validation-section" id="validation">
+    <div className="shell">
+      <div className="section-heading" data-reveal>
+        <Eyebrow>LATEST PHYSICAL TEST</Eyebrow>
+        <h2>What passed.<br /><span className="heading-gradient">What stopped.</span></h2>
+        <p>Evidence from the most recent supplied Host log and screen, not a product-performance claim.</p>
+      </div>
+      <div className="evidence-grid">
+        <article className="evidence-card evidence-pass"><span>OBSERVED WORKING</span><ul><li>mDNS discovery and Host resolution</li><li>Control TCP HELLO/WELCOME</li><li>Separate audio TCP AUDIO_HELLO</li><li>UDP peer pinning and repeated responses</li></ul></article>
+        <article className="evidence-card evidence-blocked"><span>BLOCKING THE GROUP</span><ul><li>No Speaker READY event observed</li><li>45-second readiness deadline expired</li><li>No GROUP_START_SCHEDULED / ANCHOR</li><li>Post-removal UDP source rejection observed</li></ul></article>
+      </div>
+      <p className="validation-footnote">The Host log alone cannot distinguish an unstable clock from an insufficient PCM buffer. New Speaker-side READY_GATE_BLOCKED and Host-side HOST_AUDIO_DELIVERY diagnostics are intended to isolate that cause. They were added after the published v0.5.7 APK.</p>
+    </div>
+  </section>;
+}
+
 const questions = [
-  { question: 'Does Sync In It need an internet connection?', answer: 'No. The preview uses a private local Wi-Fi network. The access point must allow mDNS/multicast discovery and device-to-device traffic; guest networks with client isolation may block it.' },
-  { question: 'Which phones work with the current preview?', answer: 'The v0.4.0 preview is Android-only: one Android Host and an Android receiver. An iOS receiver is planned, but iOS networking and playback are not implemented.' },
-  { question: 'Can I download and use the app now?', answer: 'An Android engineering preview is available as v0.4.0-preview.1. It demonstrates nearby host discovery, TCP session admission and UDP clock acquisition. It does not stream or play audio, and physical two-phone clock synchronization still needs retesting.' },
-  { question: 'What does the current Android preview actually do?', answer: 'It advertises and discovers nearby Host sessions, completes a two-channel TCP admission handshake and runs four-timestamp UDP clock acquisition. The receiver remains in Synchronizing because the audio buffer is still empty. The release has not yet passed a physical two-phone clock-synchronization retest.' },
-  { question: 'How many phones will it support?', answer: 'The product target remains 6–10 phones in total. The current Android Host UI admits one receiver; group admission and multi-receiver playback have not been implemented or validated.' },
-  { question: 'Is the preview safe on any Wi-Fi network?', answer: 'Use only a trusted private network. The prototype includes its 16-byte session token in the mDNS service record, where other devices on the same LAN can read it. This is not transport encryption or cryptographic peer authentication.' },
+  { question: 'Does Sync In It need internet?', answer: 'No. Session discovery and audio transport are designed for a private local Wi-Fi network. The router must allow multicast discovery and client-to-client traffic; internet access is not required.' },
+  { question: 'Which platforms work today?', answer: 'The current app is Android-only for both Host and Speaker roles. An iOS Speaker is a future milestone; no iOS client is implemented.' },
+  { question: 'Can I install the current preview?', answer: 'Yes. v0.5.7-preview.1 is a published Android engineering pre-release with a signed APK and SHA-256 checksum. Install it over an earlier preview signed with the same persistent key. The later READY-gate diagnostics from PR #49 are not included in that APK.' },
+  { question: 'Does multi-Speaker playback work?', answer: 'The code implements admission for up to eight Speakers, PCM fan-out, a 20-second rolling pre-ANCHOR buffer and a common future playback anchor. The latest physical test connected multiple Speakers and exchanged UDP packets, but none reached READY. Do not treat synchronized group playback as verified.' },
+  { question: 'Can I play Spotify or local music?', answer: 'Not in the current preview. The Host generates a 1 kHz timing-click test stream. User-selected music, local-file decoding and Android playback capture are not implemented in this preview.' },
+  { question: 'What does DAC clock mapping mean?', answer: 'The app polls Android AudioTrack presentation timestamps and fits a rolling frame-position/time regression. This currently reports diagnostics only; it does not correct drift, compensate device output latency or measure sound arrival through a microphone.' },
+  { question: 'Is the session secure on public Wi-Fi?', answer: 'No. The session token is currently advertised in DNS-SD metadata and can be visible to other devices on the same LAN. The token is not transport encryption. Use a trusted private network only.' },
+  { question: 'What is the next engineering focus?', answer: 'Make the Android/JNI build green, install the READY-gate diagnostics, compare Speaker clock/PCM metrics with Host audio-delivery counters, then repeat one-Speaker and multi-Speaker physical tests without weakening the clock thresholds.' },
 ];
 
 function FAQ() {
@@ -177,9 +223,9 @@ function FAQ() {
     <div className="shell faq-layout">
       <div className="faq-copy" data-reveal>
         <Eyebrow>GOOD TO KNOW</Eyebrow>
-        <h2>Questions?<br /><span className="heading-gradient">We have answers.</span></h2>
-        <p>A few things worth knowing while Sync In It is being built.</p>
-        <a className="inline-link" href={DOCS} target="_blank" rel="noreferrer">Read the project documentation <Arrow diagonal /></a>
+        <h2>Questions?<br /><span className="heading-gradient">Clear answers.</span></h2>
+        <p>What the current engineering preview does—and what it does not claim.</p>
+        <a className="inline-link" href={DOCS} target="_blank" rel="noreferrer">Browse the documentation <Arrow diagonal /></a>
       </div>
       <div className="faq-list" data-reveal>
         {questions.map((item, index) => <details className="faq-item" key={item.question} open={index === 0}>
@@ -194,12 +240,12 @@ function FAQ() {
 function ClosingCTA() {
   return <section className="closing-section shell" data-reveal>
     <div className="closing-content">
-      <Eyebrow>FOLLOW THE JOURNEY</Eyebrow>
-      <h2>The next great listening moment starts with a shared clock.</h2>
-      <p>Get the Android engineering preview, review what it includes and follow the work toward audio playback.</p>
+      <Eyebrow>FOLLOW THE ENGINEERING</Eyebrow>
+      <h2>Build the shared timeline. Prove it on real devices.</h2>
+      <p>Download the Android preview, review the implementation status and follow the work toward a measured multi-phone listening experience.</p>
       <div className="closing-actions">
-        <a className="button button-light" href={LATEST_RELEASE} target="_blank" rel="noreferrer">Get Android preview v0.4.0 <Arrow diagonal /></a>
-        <a className="button button-outline-light" href={DOCS} target="_blank" rel="noreferrer">Read the docs</a>
+        <a className="button button-light" href={LATEST_RELEASE} target="_blank" rel="noreferrer">View {VERSION} <Arrow diagonal /></a>
+        <a className="button button-outline-light" href={STATUS_DOC} target="_blank" rel="noreferrer">Current status</a>
       </div>
     </div>
     <img className="closing-logo" src="/images/sync_in_it.png" alt="" aria-hidden="true" />
@@ -209,13 +255,13 @@ function ClosingCTA() {
 function Footer({ navigate }: { navigate: (page: NavigablePage) => void }) {
   return <footer className="site-footer">
     <div className="shell footer-main">
-      <div className="footer-brand"><Brand compact /><p>Local audio. Shared time.<br />Android preview v0.4.0 · playback in development.</p></div>
+      <div className="footer-brand"><Brand compact /><p>Local audio. Shared time.<br />Android engineering preview {VERSION}.<br />Physical READY validation is in progress.</p></div>
       <div className="footer-columns">
-        <div><span>RESOURCES</span><a href={DOCS} target="_blank" rel="noreferrer">Documentation</a><a href={REPO + '/blob/main/LICENSE'} target="_blank" rel="noreferrer">Code license</a><a href={REPO + '/blob/main/LICENSE-DOCS'} target="_blank" rel="noreferrer">Documentation license</a></div>
+        <div><span>RESOURCES</span><a href={STATUS_DOC} target="_blank" rel="noreferrer">Current implementation status</a><a href={DOCS} target="_blank" rel="noreferrer">Full documentation</a><a href={REPO + '/blob/main/LICENSE'} target="_blank" rel="noreferrer">Code license</a><a href={REPO + '/blob/main/LICENSE-DOCS'} target="_blank" rel="noreferrer">Documentation license</a></div>
         <div><span>PROJECT</span><a href="/downloads" onClick={(event) => { event.preventDefault(); navigate('downloads'); }}>Downloads</a><a href={RELEASES} target="_blank" rel="noreferrer">Releases</a><a href={REPO} target="_blank" rel="noreferrer">GitHub ↗</a></div>
       </div>
     </div>
-    <div className="shell footer-bottom"><span>© 2026 Sync In It</span><span>M0 / M1 in progress. No synchronized audio playback yet.</span></div>
+    <div className="shell footer-bottom"><span>© 2026 Sync In It</span><span>M0 CI passing · Android READY gate under investigation · acoustic sync unverified</span></div>
   </footer>;
 }
 
@@ -225,6 +271,8 @@ function Home() {
     <Highlights />
     <HowItWorks />
     <ProjectStatus />
+    <Milestones />
+    <ValidationSnapshot />
     <FAQ />
     <ClosingCTA />
   </main>;
@@ -233,22 +281,24 @@ function Home() {
 function Downloads({ navigate }: { navigate: (page: NavigablePage) => void }) {
   return <main id="main-content" className="downloads-page">
     <section className="downloads-hero shell">
-      <Eyebrow>DOWNLOADS / ANDROID PREVIEW</Eyebrow>
-      <h1>Android preview is here.<br /><span className="hero-gradient">Playback comes next.</span></h1>
-      <p>Version 0.4.0-preview.1 is available for Android. It demonstrates nearby Host discovery, TCP session admission and UDP clock acquisition. Audio streaming and synchronized playback are not implemented yet. Physical two-phone clock synchronization still needs retesting.</p>
-      <div className="release-status"><span className="status-point" /><div><b>v0.4.0-preview.1</b><small>Android engineering preview · arm64-v8a and x86_64</small></div></div>
+      <Eyebrow>DOWNLOADS / ANDROID PRE-RELEASE</Eyebrow>
+      <h1>Android preview.<br /><span className="hero-gradient">Engineering build, not a sync guarantee.</span></h1>
+      <p>{VERSION} contains the multi-Speaker networking, PCM test-stream and coordinated-start implementation. The latest supplied physical test did not pass the READY gate, so synchronized multi-phone playback remains unverified.</p>
+      <div className="release-status"><span className="status-point" /><div><b>{VERSION}</b><small>Published GitHub pre-release · Android · signed APK + SHA-256</small></div></div>
     </section>
     <section className="downloads-content shell">
       <div className="downloads-primary">
-        <span className="downloads-label">ANDROID PREVIEW / v0.4.0</span>
-        <h2>Download the Android engineering preview.</h2>
-        <p>Install on Android devices connected to a trusted private Wi-Fi network. The session token is visible to other devices browsing that LAN; this preview does not include cryptographic transport protection.</p>
+        <span className="downloads-label">ANDROID PREVIEW / {VERSION}</span>
+        <h2>Download the signed engineering preview.</h2>
+        <p>Use Android phones connected to a trusted private Wi-Fi network that permits mDNS and client-to-client traffic. The current release does not include the later READY_GATE_BLOCKED diagnostics added to main after the release was built.</p>
         <a className="button button-primary" href={ANDROID_APK} target="_blank" rel="noreferrer">Download Android APK <Arrow diagonal /></a>
-        <a className="inline-link" href={ANDROID_CHECKSUMS} target="_blank" rel="noreferrer">Verify SHA-256 checksums <Arrow diagonal /></a>
+        <a className="inline-link" href={ANDROID_CHECKSUMS} target="_blank" rel="noreferrer">Verify SHA-256 checksum <Arrow diagonal /></a>
+        <a className="inline-link" href={LATEST_RELEASE} target="_blank" rel="noreferrer">Read release notes <Arrow diagonal /></a>
+        <div className="download-warning"><b>Important limitations</b><p>Generated 1 kHz test signal only; Android only; up to eight Speakers in the current Host implementation. Multi-Speaker READY and acoustic synchronization have not been physically validated. Use a trusted LAN—the session token is visible in DNS-SD metadata.</p></div>
       </div>
       <div className="downloads-secondary">
-        <article><span>01 / SOURCE</span><h3>See the implementation.</h3><p>Explore the Python simulator, C++ protocol and session core, Android Host/receiver shell, TCP/UDP transport and JNI clock acquisition.</p><a className="inline-link" href={REPO} target="_blank" rel="noreferrer">Browse the source <Arrow diagonal /></a></article>
-        <article><span>02 / RELEASE NOTES</span><h3>Review preview v0.4.0.</h3><p>See the LAN reliability fixes, supported ABIs and validation status. The release includes the APK and SHA-256 checksum file; audio playback is not included.</p><a className="inline-link" href={LATEST_RELEASE} target="_blank" rel="noreferrer">View v0.4.0 release notes <Arrow diagonal /></a></article>
+        <article><span>01 / IMPLEMENTATION</span><h3>See what is in the repository.</h3><p>Python simulator, portable C++17 core, Android Kotlin/JNI client, PCM jitter buffer, TCP/UDP transport and DAC timestamp diagnostic path.</p><a className="inline-link" href={REPO} target="_blank" rel="noreferrer">Browse the source <Arrow diagonal /></a></article>
+        <article><span>02 / TEST STATUS</span><h3>Know what has not passed.</h3><p>Read the current implementation report for observed join behavior, READY timeout evidence, CI state and next diagnostics.</p><a className="inline-link" href={STATUS_DOC} target="_blank" rel="noreferrer">Read current status <Arrow diagonal /></a></article>
       </div>
     </section>
     <div className="shell downloads-back"><a href="/" onClick={(event) => { event.preventDefault(); navigate('home'); }} className="inline-link"><span aria-hidden="true">←</span> Back to the project</a></div>
