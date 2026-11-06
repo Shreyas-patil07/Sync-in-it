@@ -1,5 +1,8 @@
 # Sync In It: Complete System Structure and Detailed Design
 
+> **Current-state warning (6 November 2026):** This is a detailed target architecture/specification, not a description of all shipped functionality. The repository currently has an Android-only engineering preview with multi-Speaker networking/PCM start code; the latest physical run completed TCP admission and UDP responses but no Speaker reached READY. DAC regression is diagnostic only; drift integration, acoustic calibration, user-media sources, robust reconnect and iOS remain incomplete. Refer to [docs/11_Current_Implementation_Status.md](../docs/11_Current_Implementation_Status.md) for current implementation, CI and physical-test evidence.
+
+
 *Version 0.2, November 2026. Refines `Sync-Engine.md` (v1) into an implementable structure: modules, interfaces, state machines, protocol, algorithms, procedures, testing, and open decisions.*
 
 ---
