@@ -83,7 +83,7 @@ function Hero() {
           <a className="button button-primary" href="/downloads">Get Android preview <Arrow /></a>
           <a className="button button-text" href={STATUS_DOC} target="_blank" rel="noreferrer">Read current engineering status <Arrow diagonal /></a>
         </div>
-        <div className="hero-status"><span className="status-point" /><span>{VERSION} released</span><span className="status-separator">·</span><span>Physical READY gate under investigation</span></div>
+        <div className="hero-status"><span className="status-point" /><span>{VERSION} released</span><span className="status-separator">·</span><span>Post-fix physical validation pending</span></div>
       </div>
     </div>
   </section>;
@@ -160,7 +160,7 @@ function ProjectStatus() {
           <span className="status-milestone">M3a</span>
           <div><b>DAC output-clock diagnostics</b><small>IMPLEMENTED · DIAGNOSTIC ONLY</small></div>
         </div>
-        <div className="status-card-foot">PR #53 merged the acoustic measurement path. The published v0.5.8 preview contains the READY/audio diagnostics and receiver-specific markers; synthetic analyzer tests pass CI, but real-phone acoustic measurement is still pending.</div>
+        <div className="status-card-foot">PR #53 added the acoustic measurement path and PR #55 added PCM snapshot throttling plus receiver/Host backpressure diagnostics. Preview v0.5.9 includes both; CI passes, but post-fix physical READY and real-phone acoustic measurement are still pending.</div>
         <div className="status-card-links">
           <a className="inline-link" href={ANDROID_CI} target="_blank" rel="noreferrer">Android build status <Arrow diagonal /></a>
           <a className="inline-link" href={DIAGNOSTICS_PR} target="_blank" rel="noreferrer">Diagnostics changes <Arrow diagonal /></a>
