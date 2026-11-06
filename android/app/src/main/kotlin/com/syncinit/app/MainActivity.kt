@@ -1,3 +1,4 @@
+// SPDX-License-Identifier: Apache-2.0
 package com.syncinit.app
 
 import android.app.Activity
@@ -126,7 +127,7 @@ class MainActivity : Activity() {
         featureRow.addView(featureChip("NO INTERNET"), LinearLayout.LayoutParams(
             LinearLayout.LayoutParams.WRAP_CONTENT, LinearLayout.LayoutParams.WRAP_CONTENT
         ).apply { rightMargin = dp(8) })
-        featureRow.addView(featureChip("UP TO 8 SPEAKERS"))
+        featureRow.addView(featureChip("UP TO ${PreviewConfig.MAX_SPEAKERS} SPEAKERS"))
         content.addView(featureRow, sectionMargins(bottom = 18))
 
         foundationStatus = TextView(this).apply {
@@ -216,7 +217,7 @@ class MainActivity : Activity() {
         diagnosticsCard.addView(debugLog)
 
         TextView(this).apply {
-            text = "PLAYBACK NOTE\nThe Host waits for the admitted Speakers to become clock-stable and buffered, then sends a shared start anchor. This preview schedules AudioTrack against local monotonic clocks; hardware output latency and acoustic alignment are not yet calibrated. Audio source: generated 1 kHz test tone."
+            text = "PLAYBACK NOTE\nThe Host waits for the admitted Speakers to become clock-stable and buffered, then sends a shared start anchor. AudioTrack is started by a writer thread against local monotonic time; DAC start accuracy is not yet validated. The generated 1 kHz click carries a low-level receiver-specific acoustic marker for recording-based skew measurement."
             textSize = 11f
             setTextColor(Color.rgb(119, 137, 168))
             setLineSpacing(dp(2).toFloat(), 1f)
@@ -251,7 +252,7 @@ class MainActivity : Activity() {
                     } else {
                         hostServiceName = invitation.serviceName
                         hostDetails.text =
-                            "Visible as ${invitation.serviceName}\nWaiting for up to 8 speakers. One shared 1 kHz timing-click stream will be sent to every connected speaker."
+                            "Visible as ${invitation.serviceName}\nWaiting for up to ${PreviewConfig.MAX_SPEAKERS} Speakers. One shared 1 kHz timing-click stream will be sent to every connected speaker."
                         postStatus("Session created. Nearby phones can see this device and tap to join.")
                         renderNearbySessions()
                     }

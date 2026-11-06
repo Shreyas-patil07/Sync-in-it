@@ -1,4 +1,7 @@
+// SPDX-License-Identifier: Apache-2.0
 package com.syncinit.app.core
+
+import com.syncinit.app.PreviewConfig
 
 import java.io.Closeable
 
@@ -33,11 +36,11 @@ data class ReceiverSessionConfig(
     val sessionId: Long,
     val receiverId: Int,
     val token: ByteArray,
-    val minimumBufferedMs: Long = 3_000L,
-    val maximumResidualStdUs: Long = 250L,
-    val audioPort: Int = 47_801,
-    val timePort: Int = 47_802,
-    val startupLeadMs: Int = 1_000
+    val minimumBufferedMs: Long = PreviewConfig.MIN_READY_BUFFER_MS,
+    val maximumResidualStdUs: Long = PreviewConfig.MAX_CLOCK_RESIDUAL_US,
+    val audioPort: Int = PreviewConfig.DEFAULT_AUDIO_PORT,
+    val timePort: Int = PreviewConfig.TIME_PORT,
+    val startupLeadMs: Int = PreviewConfig.STARTUP_LEAD_MS
 ) {
     init {
         require(sessionId in 0L..0xffff_ffffL)

@@ -1,6 +1,8 @@
 // SPDX-License-Identifier: Apache-2.0
 package com.syncinit.app.audio
 
+import com.syncinit.app.PreviewConfig
+
 import android.media.AudioAttributes
 import android.media.AudioFormat
 import android.media.AudioTrack
@@ -37,7 +39,7 @@ class NativePcmJitterBuffer(
     val sessionId: Long,
     val sampleRateHz: Int,
     val channels: Int,
-    capacitySeconds: Int = 20
+    capacitySeconds: Int = PreviewConfig.PCM_BUFFER_SECONDS
 ) : Closeable {
     @Volatile private var handle: Long
 
@@ -45,9 +47,9 @@ class NativePcmJitterBuffer(
         require(sessionId in 0L..0xffff_ffffL)
         require(sampleRateHz in 8_000..192_000)
         require(channels in 1..2)
-        require(capacitySeconds in 1..20)
+        require(capacitySeconds in 1..PreviewConfig.PCM_BUFFER_SECONDS)
         val capacityFrames = Math.multiplyExact(sampleRateHz, capacitySeconds)
-        require(capacityFrames in 1..960_000) {
+        require(capacityFrames in 1..PreviewConfig.MAX_PCM_BUFFER_FRAMES) {
             "native PCM jitter buffer capacity is limited to 960,000 frames"
         }
         handle = NativeCore.nativeCreatePcmBuffer(capacityFrames.toLong(), channels, sessionId)
@@ -121,13 +123,10 @@ class NativePcmJitterBuffer(
 
 private class AndroidPcmAudioOutput(
     private val buffer: NativePcmJitterBuffer,
+    private val receiverId: Int,
     private val onStatus: (String) -> Unit,
     private val onFailure: (Exception) -> Unit
 ) : Closeable {
-    companion object {
-        private const val CHUNK_FRAMES = 960
-    }
-
     private val closed = AtomicBoolean(false)
     @Volatile private var track: AudioTrack? = null
     @Volatile private var writer: Thread? = null
@@ -152,7 +151,7 @@ private class AndroidPcmAudioOutput(
         )
         check(minimumBytes > 0) { "AudioTrack does not support the negotiated PCM format" }
 
-        val chunkBytes = CHUNK_FRAMES * buffer.channels * 2
+        val chunkBytes = PreviewConfig.CHUNK_FRAMES * buffer.channels * 2
         val trackBufferBytes = maxOf(minimumBytes * 2, chunkBytes * 4)
         val audioTrack = AudioTrack.Builder()
             .setAudioAttributes(
@@ -187,7 +186,7 @@ private class AndroidPcmAudioOutput(
     }
 
     private fun writeLoop(audioTrack: AudioTrack, startAtNs: Long) {
-        val playbackSamples = ShortArray(CHUNK_FRAMES * buffer.channels)
+        val playbackSamples = ShortArray(PreviewConfig.CHUNK_FRAMES * buffer.channels)
         try {
             val requiredPrerollFrames = if (Build.VERSION.SDK_INT >= Build.VERSION_CODES.S) {
                 audioTrack.startThresholdInFrames
@@ -200,7 +199,7 @@ private class AndroidPcmAudioOutput(
             // MODE_STREAM can be primed before play(). Fill the device-specific start threshold
             // so play() does not wait for additional frames after the shared T0.
             while (!closed.get() && primedFrames < requiredPrerollFrames) {
-                val framesToWrite = minOf(CHUNK_FRAMES, requiredPrerollFrames - primedFrames)
+                val framesToWrite = minOf(PreviewConfig.CHUNK_FRAMES, requiredPrerollFrames - primedFrames)
                 val bufferedMs = buffer.bufferedMillis()
                 val requiredBufferedMs =
                     framesToWrite.toLong() * 1_000L / buffer.sampleRateHz.toLong()
@@ -210,7 +209,9 @@ private class AndroidPcmAudioOutput(
                 }
 
                 val prerollSamples = ShortArray(framesToWrite * buffer.channels)
+                val firstSampleIndex = buffer.snapshot().nextSampleIndex
                 buffer.readNext(prerollSamples)
+                AcousticTestMarker.overlayInPlace(prerollSamples, firstSampleIndex, buffer.sampleRateHz, buffer.channels, receiverId)
                 writeFully(audioTrack, prerollSamples, AudioTrack.WRITE_NON_BLOCKING)
                 primedFrames += framesToWrite
             }
@@ -228,7 +229,9 @@ private class AndroidPcmAudioOutput(
             }
 
             while (!closed.get()) {
+                val firstSampleIndex = buffer.snapshot().nextSampleIndex
                 buffer.readNext(playbackSamples)
+                AcousticTestMarker.overlayInPlace(playbackSamples, firstSampleIndex, buffer.sampleRateHz, buffer.channels, receiverId)
                 writeFully(audioTrack, playbackSamples, AudioTrack.WRITE_BLOCKING)
             }
         } catch (error: InterruptedException) {
@@ -298,11 +301,6 @@ class PcmAudioReceiver(
     private val onStatus: (String) -> Unit,
     private val onFailure: (Exception) -> Unit
 ) : Closeable {
-    companion object {
-        private const val MIN_READY_BUFFER_MS = 3_000L
-        private const val READY_RETRY_INTERVAL_NS = 1_000_000_000L
-    }
-
     private val closed = AtomicBoolean(false)
     private val anchorReceived = AtomicBoolean(false)
     private val readySent = AtomicBoolean(false)
@@ -314,21 +312,22 @@ class PcmAudioReceiver(
     @Volatile private var reader: Thread? = null
 
     init {
-        require(welcome.sampleRateHz == 48_000) { "unsupported sample rate ${welcome.sampleRateHz}" }
-        require(welcome.channels == 2) { "only stereo PCM16 is supported by this Android preview" }
+        require(welcome.sampleRateHz == PreviewConfig.SAMPLE_RATE_HZ) { "unsupported sample rate ${welcome.sampleRateHz}" }
+        require(welcome.channels == PreviewConfig.CHANNELS) { "only stereo PCM16 is supported by this Android preview" }
         require(welcome.codec == 0) { "unsupported audio codec ${welcome.codec}" }
-        require(welcome.chunkFrames == 960) { "unsupported audio chunk size ${welcome.chunkFrames}" }
+        require(welcome.chunkFrames == PreviewConfig.CHUNK_FRAMES) { "unsupported audio chunk size ${welcome.chunkFrames}" }
         buffer = NativePcmJitterBuffer(
             sessionId = welcome.sessionId,
             sampleRateHz = welcome.sampleRateHz,
             channels = welcome.channels
         )
-        output = AndroidPcmAudioOutput(buffer, onStatus, onFailure)
+        output = AndroidPcmAudioOutput(buffer, welcome.receiverId, onStatus, onFailure)
     }
 
     fun start() {
         check(!closed.get()) { "PCM audio receiver is closed" }
         check(reader == null) { "PCM audio receiver has already started" }
+        onStatus("Acoustic marker active · receiverId=${welcome.receiverId} · frequency=${PreviewConfig.ACOUSTIC_MARKER_BASE_HZ + (welcome.receiverId - 1) * PreviewConfig.ACOUSTIC_MARKER_STEP_HZ} Hz · 20 ms every second.")
         val thread = Thread(::readAudioFrames, "syncinit-audio-network-reader").apply {
             isDaemon = true
         }
@@ -394,7 +393,7 @@ class PcmAudioReceiver(
         val snapshot = buffer.snapshot()
         val bufferedMs = snapshot.contiguousBufferedFrames * 1_000L / welcome.sampleRateHz.toLong()
         val clockStable = measurement?.acquisitionStable == true
-        val bufferReady = bufferedMs >= MIN_READY_BUFFER_MS
+        val bufferReady = bufferedMs >= PreviewConfig.MIN_READY_BUFFER_MS
 
         if (!clockStable || !bufferReady) {
             val nowNs = System.nanoTime()
@@ -416,7 +415,7 @@ class PcmAudioReceiver(
                         "stableStreak=${measurement?.stableStreak ?: 0} " +
                         "residualRmsMs=${measurement?.residualRmsMs?.let { "%.4f".format(it) } ?: "unavailable"} " +
                         "rttMedianMs=${measurement?.rttMedianMs?.let { "%.2f".format(it) } ?: "unavailable"} " +
-                        "bufferedMs=$bufferedMs requiredMs=$MIN_READY_BUFFER_MS " +
+                        "bufferedMs=$bufferedMs requiredMs=${PreviewConfig.MIN_READY_BUFFER_MS} " +
                         "contiguousFrames=${snapshot.contiguousBufferedFrames} " +
                         "missingFrames=${snapshot.missingFrames} " +
                         "windowAdvances=${snapshot.windowAdvanceCount}"
@@ -430,7 +429,7 @@ class PcmAudioReceiver(
         // duplicate READY frames idempotently and can recover from a transient gate.
         val nowNs = System.nanoTime()
         val previousSentAtNs = lastReadySentAtNs.get()
-        if (previousSentAtNs != 0L && nowNs - previousSentAtNs < READY_RETRY_INTERVAL_NS) return
+        if (previousSentAtNs != 0L && nowNs - previousSentAtNs < PreviewConfig.READY_RETRY_INTERVAL_NS) return
         if (!lastReadySentAtNs.compareAndSet(previousSentAtNs, nowNs)) return
 
         val firstReady = readySent.compareAndSet(false, true)

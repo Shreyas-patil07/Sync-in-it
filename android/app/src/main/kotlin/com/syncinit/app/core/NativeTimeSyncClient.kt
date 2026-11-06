@@ -1,3 +1,4 @@
+// SPDX-License-Identifier: Apache-2.0
 package com.syncinit.app.core
 
 data class ClockSyncMeasurement(

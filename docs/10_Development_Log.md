@@ -38,59 +38,61 @@
 **Verification:** All five root licensing files are present; README license references resolve; ADR-017 records the split-license decision.  
 **Result:** Code, documentation, brand assets and third-party components have an explicit licensing map.  
 **Risks or limitations:** `NOTICE` uses the GitHub account name as the copyright holder. Confirm the right to reserve the logo/name before relying on the brand-rights statement. Dependency license entries must be re-verified for exact versions at release. Not legal advice.  
-**Next action:** Continue M0 simulator scenarios, cross-language golden vectors and C++ parity before proceeding to M1.
+**Next action:** Follow the current tracker and test evidence index below; M0 simulator and C++ parity checks are now passing in CI.
 
-## 3. Current engineering status
+## 3. Current engineering status — 6 November 2026
 
-| Area | Status | Evidence required to advance |
+| Area | Current state | Evidence required to advance |
 |---|---|---|
-| Product requirements | Drafted | Review and approve capacity/device scope |
-| Technical requirements | Drafted | Confirm device OS baselines and hardware inventory |
-| Architecture | Drafted | Resolve open ADRs and review timing boundaries |
-| App flow | Draft v2.0 | Validate state transitions and accept remaining open UX choices |
-| UI design brief | Drafted | Visual design and usability review |
-| Protocol/data schema | Draft proposal | Protocol review, test vectors and parser tests |
-| Implementation plan | Drafted | M0 repository skeleton and task breakdown |
-| Security | Draft baseline | Threat review and transport-hardening decision |
-| Testing | Draft plan | Test instrumentation and repeatable setup |
-| ADR register | Initial record | Review provisional decisions |
+| Product scope | Product target 6–10 phones total; actual Android cap 8 Speakers plus Host | Validate real group capacity before raising the cap |
+| M0 simulator and C++ timing core | CI passing on Python 3.11/3.12/3.13 and C++17 | Continue synthetic regression; it does not prove acoustic performance |
+| M1 LAN discovery and clock acquisition | Android code implemented; latest supplied run connected but did not reach READY | Compare Speaker READY_GATE_BLOCKED and Host HOST_AUDIO_DELIVERY counters |
+| M2a PCM16 codec and native buffer | Implemented with native tests | Verify contiguous PCM on two physical phones |
+| M2b Android PCM delivery and AudioTrack writer | Implemented; group start has not been physically proven | Get two Speakers through READY and common ANCHOR |
+| M2c group admission and fan-out | Implemented; 15 s admission, 45 s readiness deadline, 8 Speaker cap | Physical group-start validation; no scale claim |
+| M2d shared start ANCHOR | Implemented in code | Capture and analyze acoustic output |
+| M3a DAC output-clock mapping | AudioTrack timestamp polling and rolling regression; diagnostics only | Compare device logs with acoustic recording |
+| Acoustic skew tooling | Implemented; synthetic offset tests pass in CI | First real two-phone WAV and repeatability run |
+| M3b/M4 offsets, drift and endurance | Not integrated or validated | Wait for acoustic result; add foreground service/wake locks before long tests |
+| Security | Session token is visible in DNS-SD TXT metadata | Choose pairing/token design in ADR before changing protocol |
+| iOS, user-media source, calibration and train trial | Planned | Separate implementation and measurement milestones |
 
 ## 4. Milestone tracker
 
 | Milestone | Description | Status |
 |---|---|---|
-| M0 | Python simulator for time sync and drift control | In progress |
-| M1 | Time sync between two physical phones | Planned |
-| M2 | Scheduled click-track start on two receivers | Planned |
-| M3 | Output timestamp mapping and manual offsets | Planned |
-| M4 | Drift controller and 30-minute run | Planned |
-| M5 | 3–4 receivers, group deadline and reconnect | Planned |
-| M6 | Opus and supported live capture | Planned |
+| M0 | Python simulator, shared vectors and portable C++ timing core | CI complete/passing; synthetic only |
+| M1 | Android discovery, TCP admission and UDP clock acquisition | Implemented; supplied physical run failed before READY |
+| M2a | PCM16 codec and native sample-indexed jitter buffer | Implemented/tested |
+| M2b | Android PCM delivery and AudioTrack output | Implemented; no physical group-start proof |
+| M2c | Multi-Speaker admission and fan-out | Implemented; cap 8 Speakers; READY gate still blocks |
+| M2d | Shared future-T0 ANCHOR and scheduled group start | Implemented in code; physical start not observed |
+| M3a | AudioTrack output timestamp regression | Implemented as diagnostics only |
+| Acoustic measurement | Receiver-specific markers and WAV analyzer | Implemented; synthetic CI tests pass; real recording pending |
+| M3b/M4 | Callback-safe mapping, offsets, drift controller and endurance | Not complete |
+| M5 | Reconnect, resilience and 4+ Speaker testing | Not validated |
+| M6 | User-selected source, capture fallback and Opus | Planned |
 | M7 | iOS receiver | Planned |
-| M8 | Acoustic calibration | Planned |
-| M9 | 6–10 phone target and train trial | Planned |
+| M8 | Microphone-based acoustic calibration | Planned |
+| M9 | 6–10 phone scale and train trial | Planned; preview limit is currently 8 Speakers plus Host |
 
-## 5. Open decisions
+## 5. Open decisions and blockers
 
-1. Resolve whether the device capacity means 10 phones total or 10 receivers plus the master.
-2. Confirm the initial Android and iOS test devices.
-3. Confirm whether a Mac and physical iPhone are available for M7.
-4. Verify OS minimums against the required audio and background APIs.
-5. Choose and record the final C++ unit-test framework.
-6. Review the NOTICE copyright holder and confirm rights over reserved project branding before release.
-7. Decide when authenticated encryption becomes mandatory.
+1. Audio backend: the current implementation uses AudioTrack MODE_STREAM and a worker thread; Oboe/AAudio callbacks are not implemented. See ADR-019.
+2. Session admission security: the 16-byte token is exposed in DNS-SD TXT metadata. Decide on host approval or short-lived/out-of-band pairing before untrusted-network use; see ADR-020.
+3. Capacity: retain the preview cap of eight Speakers (nine devices including Host). The 6–10 total-phone target is not a capacity test result; see ADR-021.
+4. Long-running execution: no foreground playback service or explicit wake-lock lifecycle exists. Long/endurance tests are blocked until this is implemented; see ADR-022.
+5. Review the NOTICE copyright holder and project name/logo reservation before release.
 
 ## 6. Test evidence index
 
-No physical-device synchronization results are recorded in this initial log. Add one entry per test run using:
-- Run ID.
-- Date/time.
-- App commit.
-- Device and router configuration.
-- Scenario and duration.
-- Metrics and artifacts.
-- Pass/fail decision.
-- Limitations and follow-up issue.
+| Run ID | Date | Devices / setup | Result | Evidence and limitations |
+|---|---|---|---|---|
+| LAN-READY-2026-11-06 | 6 Nov 2026 | Host plus multiple Speakers; exact models, OS, router and duration absent from supplied log | Failed before READY | mDNS, control/audio TCP and UDP response observed; no READY; 45 s deadline removed peers; no group ANCHOR; no acoustic skew data |
+| SYNTHETIC-ACOUSTIC-CI | 6 Nov 2026 | Python 3.11, 3.12 and 3.13; generated PCM16 samples | Passed | Analyzer recovered injected ±5–8 ms offsets within test tolerance; software validation only |
+| PHONE-SKEW-001 | Pending | Two Android Speakers IDs 1 and 2; laptop microphone at equal distance | Not run | Requires a physical WAV recording after both Speakers reach READY and start from the common ANCHOR |
+
+Do not infer missing hardware/router metadata. Store raw recordings outside Git unless explicitly approved and link them from the test report.
 
 ## 7. Change-entry template
 
@@ -773,7 +775,23 @@ No physical-device synchronization results are recorded in this initial log. Add
 - Latest supplied three-phone LAN run: mDNS discovery, control TCP HELLO/WELCOME, separate audio TCP AUDIO_HELLO and repeated Host UDP time-sync responses were observed for multiple Speakers.
 - No Speaker READY event was observed. The 45-second group-readiness deadline removed the admitted receivers; no GROUP_START_SCHEDULED or physical start ANCHOR was observed.
 - A UDP source-IP rejection appeared after a receiver was removed. Treat this as a late-packet/peer-cleanup observation until correlated with Speaker-side timing; it is not the proven root cause.
-- PR #49 merged Speaker-side READY gate diagnostics (`READY_GATE_BLOCKED`) and per-receiver Host audio queue/write counters (`HOST_AUDIO_DELIVERY`). Native/simulator CI passed; Android/JNI CI failed at Kotlin compilation because `AtomicLong` was not imported in `MasterSessionHost.kt`.
-- The documentation/status branch adds the missing import as a build correction; a fresh Android/JNI CI run is required before a new diagnostic APK is considered buildable.
+- PR #49 merged Speaker-side READY gate diagnostics (`READY_GATE_BLOCKED`) and per-receiver Host audio queue/write counters (`HOST_AUDIO_DELIVERY`). Its first Android/JNI CI run failed because `AtomicLong` was not imported in `MasterSessionHost.kt`.
+- PR #51 fixed that missing import and its Android/JNI CI run passed. The later measurement branch had a separate SPDX comment-syntax failure in Kotlin Gradle settings; those files now use valid `//` comments and require a fresh current-head Android/JNI run.
 - The published v0.5.7-preview.1 release predates PR #49 and does not contain the newer READY/audio delivery diagnostic messages.
 - Website and engineering docs are being aligned to distinguish implemented code, published APK contents, CI results and physical-device evidence. No acoustic synchronization claim is made.
+
+
+## 2026-11-06 — Acoustic measurement instrumentation and repository consistency
+
+- Renamed docs_sync_engine_system to docs_original; the legacy system-design links now resolve to the preserved source documents.
+- Added the root .gitignore and generated/committed frontend/package-lock.json; frontend CI now uses npm ci.
+- Consolidated the source logo at frontend/public/images/sync_in_it.png. Android Gradle generates its drawable resource from that source instead of checking in a second PNG.
+- Added SPDX headers to remaining Android, Gradle, workflow and frontend source files.
+- Centralized Android ports, capacity, PCM/chunk/buffer limits, readiness thresholds, timing windows, retry cadence and acoustic marker parameters in PreviewConfig.kt.
+- Added a receiver-ID-specific 20 ms acoustic marker every second to the generated Android test output. The marker is mixed after the PCM buffer read and before AudioTrack writes; the 1 kHz base test click remains.
+- Added tools/clicktrack reference WAV generation and tools/analyze PCM16 WAV detection/reporting. Different frequencies let one laptop recording distinguish two Speakers even when their bursts overlap.
+- Synthetic analyzer tests passed on Python 3.11, 3.12 and 3.13 in CI. This is not a physical-device skew result.
+- The current output backend remains AudioTrack MODE_STREAM with a dedicated writer thread and scheduled AudioTrack.play(). Oboe/AAudio is not ported; ADR-019 records the measurement-first decision.
+- The session token remains visible in DNS-SD TXT metadata, and no foreground service/wake-lock lifecycle exists. Do not run long/endurance tests until the lifecycle is implemented and validated.
+
+**Next action:** build and install the measurement branch on one Host and two Speakers. First solve the READY gate without relaxing clock thresholds; then record a screen-on two-minute run and analyze its WAV. No real phone skew value is recorded yet.

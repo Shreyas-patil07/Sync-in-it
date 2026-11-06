@@ -9,7 +9,7 @@ The Android workspace contains two Gradle modules:
 
 The Android source implements multi-Speaker Host admission (up to eight), separate control/audio TCP channels, UDP clock acquisition, generated PCM16 fan-out, the rolling pre-ANCHOR buffer, retryable READY, a shared future ANCHOR path and M3a AudioTrack timestamp diagnostics.
 
-The latest supplied three-phone test accepted multiple TCP joins and returned UDP time-sync packets, but **no Speaker reached READY** before the 45-second deadline. This means the current group-start path has not been verified on physical phones. PR #49 adds `READY_GATE_BLOCKED` on the Speaker and `HOST_AUDIO_DELIVERY` on the Host. Its first Android/JNI build failed because `AtomicLong` was missing from the imports in `MasterSessionHost.kt`; the documentation branch adds that import and requires a fresh CI pass. The public v0.5.7-preview.1 APK predates those diagnostics.
+The latest supplied three-phone test accepted multiple TCP joins and returned UDP time-sync packets, but **no Speaker reached READY** before the 45-second deadline. This means the current group-start path has not been verified on physical phones. PR #49 adds `READY_GATE_BLOCKED` on the Speaker and `HOST_AUDIO_DELIVERY` on the Host. PR #51 fixed the missing `AtomicLong` import, and its Android/JNI CI run passed. The public v0.5.7-preview.1 APK predates those diagnostics and the acoustic-marker instrumentation on the measurement branch.
 
 See [Current Implementation Status](../docs/11_Current_Implementation_Status.md) for the physical log evidence and next test sequence.
 
@@ -103,3 +103,12 @@ M3 output-clock measurement is now in progress. A helper thread polls AudioTrack
 AudioTimestamp is a best-effort estimate of a frame's position/time in the output pipeline. The timestamp may refer to a frame already presented or committed to be presented, and cannot account for delays unknown to Android; it is not a microphone measurement of acoustic arrival. Routes may not provide timestamps. The generated 1 kHz source remains an integration test signal, not a user media source.
 
 The session token is advertised in a DNS-SD TXT record so nearby devices can join automatically. It is visible to devices on the LAN and is not cryptographic transport protection. Use this build only on a trusted private network. When raising targetSdk to API 37, add the Android 17 local-network permission/picker path described in the [Android local network permission guide](https://developer.android.com/privacy-and-security/local-network-permission).
+
+
+## Acoustic measurement build and long-test limits
+
+The receiver-specific marker is generated in `AcousticTestMarker.kt` and overlaid after the PCM buffer read, immediately before AudioTrack writes. It is enabled only in source builds that include the measurement branch; it is not present in the public v0.5.7 APK.
+
+The current Android output path remains `AudioTrack.MODE_STREAM` with a dedicated writer thread and a scheduled `AudioTrack.play()` call. Oboe/AAudio callbacks are not implemented. See [ADR-019](../docs/ADR/Architecture_Decisions.md).
+
+No foreground playback service or explicit CPU/Wi-Fi wake-lock lifecycle exists. Keep the first approximately two-minute skew test foregrounded and screen-on. Do not run endurance, background, screen-off or train trials until ADR-022 is implemented and validated.

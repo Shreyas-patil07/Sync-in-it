@@ -1,3 +1,4 @@
+// SPDX-License-Identifier: Apache-2.0
 package com.syncinit.app.core
 
 /** JNI entry points for the portable C++ session core. */

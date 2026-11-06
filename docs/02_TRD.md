@@ -31,6 +31,10 @@ Resource efficiency remains an engineering constraint: the system must not overh
 
 Do not perform speculative micro-optimizations or choose an implementation merely because it is smaller or more elegant. Optimize a measured bottleneck, compare viable alternatives under the same repeatable workload, and select the one that delivers the strongest sustained end-to-end result within safe device and network limits. Use simulator results for early screening, then validate decisive performance claims on physical devices with acoustic measurements.
 
+### Current Android adapter deviation — 6 November 2026
+
+The planned Android output adapter is Oboe/AAudio, but the current preview uses AudioTrack.MODE_STREAM with a dedicated PCM writer thread. It primes the stream, waits against the locally mapped group-start time, then calls AudioTrack.play(). That call time is not a hardware presentation timestamp and has not been proven to produce accurate acoustic start timing. Oboe callback output is not implemented. See ADR-019; the measurement-first decision is to collect repeatable two-phone skew evidence before changing the output backend.
+
 ## 2. Platform and toolchain baseline
 
 | Area | Planned technology | Status |

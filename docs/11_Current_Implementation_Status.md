@@ -1,7 +1,8 @@
 # Current Implementation Status — Sync In It
 
 **Status date:** 6 November 2026  
-**Repository baseline:** `main` at `c5da8bdb11cfeb27d05e138a1f263f18414b9ea1` before this documentation update  
+**Main baseline:** PR #51 merged at 820dd5da3ab56706346dd053f7c131f5fd8b5de9  
+**Measurement branch:** measurement/two-phone-skew-tooling  
 **Latest published Android preview:** [`v0.5.7-preview.1`](https://github.com/Shreyas-patil07/Sync-in-it/releases/tag/v0.5.7-preview.1)  
 **Audience:** contributors, testers and anyone assessing what is implemented versus what is still a design target.
 
@@ -13,7 +14,7 @@ Sync In It has progressed beyond the original discovery/clock-acquisition shell.
 
 **The end-to-end multi-phone playback path is not yet physically validated.** The latest supplied three-phone LAN run successfully discovered the Host, established the control and audio TCP channels for multiple Speakers, and exchanged UDP time-sync packets. None of the Speakers reached `READY`; the Host's 45-second readiness deadline removed the receivers. No successful multi-Speaker group start or measured acoustic synchronization was demonstrated by that run.
 
-The current development focus is therefore **READY-gate diagnosis and Android build verification**, not adding more playback features or weakening clock thresholds.
+The current focus is **READY-gate diagnosis followed by a measured two-phone acoustic-skew result**. This branch adds receiver-specific acoustic markers, a click-track reference generator and a WAV analyzer. It does not yet contain a physical recording or measured skew result.
 
 ## Release, branch and build state
 
@@ -24,10 +25,10 @@ The current development focus is therefore **READY-gate diagnosis and Android bu
 | Release scope | Multi-Speaker admission, rolling pre-ANCHOR PCM prebuffer, READY retry, shared ANCHOR path and M3a timestamp diagnostics | See the linked release notes |
 | Current main | PR #49 merged | Adds READY-gate and Host audio-delivery diagnostics |
 | Native/simulator CI for PR #49 | Passed | M0 simulator/native workflow succeeded |
-| Android/JNI CI for PR #49 | Failed before this documentation branch | Kotlin compile error: unresolved `AtomicLong` in `MasterSessionHost.kt` |
-| This branch | Adds the missing `AtomicLong` import plus documentation/site updates | Android CI must be rerun; do not treat the import fix as verified until it passes |
+| Android/JNI CI after PR #51 | Passed | The missing AtomicLong import was fixed and the PR #51 Android/JNI workflow passed |
+| Measurement branch | Adds marker instrumentation, central preview config and click-track/analyzer tools | Synthetic analyzer tests pass; physical build/recording remains outstanding |
 
-The published `v0.5.7-preview.1` APK was built before PR #49 was merged. It contains the v0.5.7 playback/admission implementation, but **does not include the later `READY_GATE_BLOCKED` and `HOST_AUDIO_DELIVERY` diagnostics added by PR #49**. The PR #49 changes are source on current `main`, not a separately published APK.
+The published `v0.5.7-preview.1` APK was built before PR #49 was merged. It contains the v0.5.7 playback/admission implementation, but **does not include the later `READY_GATE_BLOCKED` and `HOST_AUDIO_DELIVERY` diagnostics added by PR #49, nor the acoustic marker added on this measurement branch**. The PR #49 changes are source on current `main`, not a separately published APK.
 
 ## Implemented Android path
 
@@ -148,3 +149,21 @@ A successful desktop CI run verifies deterministic core behavior. A successful A
 - `docs/`: requirements, architecture, protocol, security, testing and current implementation status.
 - `frontend/`: public project website and Android preview downloads page.
 - `ios/`: not yet implemented in the current repository.
+
+
+## Acoustic measurement tooling — 6 November 2026
+
+The measurement branch adds a 20 ms receiver-specific acoustic marker every second to the generated Android test stream. Speaker 1 uses 1,500 Hz; Speaker 2 uses 2,250 Hz. This allows their overlapping arrivals to be separated in one mono/stereo recording.
+
+- Generate references with: python -m tools.clicktrack.generate --output-dir recordings/reference --receiver-ids 1 2 --duration-seconds 120
+- Analyze a PCM16/48 kHz Audacity export with: python -m tools.analyze.analyze --input recordings/run.wav --receiver-ids 1 2 --output-dir test-results/run
+- Synthetic tests inject known offsets and pass on Python 3.11/3.12/3.13. They are not a substitute for a physical recording.
+- No PHONE-SKEW-001 result exists yet. The latest supplied physical run failed before READY and never reached the group ANCHOR.
+
+## Architecture and operational constraints
+
+- Android currently uses AudioTrack.MODE_STREAM with a worker thread. Oboe/AAudio output is not implemented; see ADR-019.
+- The 16-byte session token is included in DNS-SD TXT metadata and is readable by LAN browsers; see ADR-020. Use a trusted private network only.
+- The code cap is eight Speakers plus one Host (nine devices total), while the product target remains 6–10 phones total; see ADR-021.
+- No foreground playback service or explicit wake-lock lifecycle exists. Keep the short two-minute test foregrounded/screen-on. Do not run endurance tests until that is addressed; see ADR-022.
+- Android ports, capacity, buffer sizes and timers are centralized in PreviewConfig.kt. Marker constants are mirrored in Python and checked by CI.
