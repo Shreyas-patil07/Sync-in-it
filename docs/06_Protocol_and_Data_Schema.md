@@ -4,6 +4,12 @@
 **Version:** 1.0  
 **Last updated:** 2 November 2026
 
+## Current Android implementation note — 6 November 2026
+
+The Android preview currently exercises HELLO/WELCOME, AUDIO_HELLO, READY and start-ANCHOR over its active path, plus AUDIO_CHUNK over the separate audio connection and four-timestamp UDP requests/responses. Other control-message definitions in this document are protocol design/schema coverage; they should not be assumed to have complete app/UI workflows merely because their wire shape is specified.
+
+The Android implementation caps the Host at eight Speakers, opens a 15-second cohort admission window, waits up to 45 seconds for READY, requires stable clock acquisition plus at least 3 seconds of contiguous PCM, retries READY every second, and sends one future start ANCHOR only after the cohort is ready. The Speaker buffer rolls only before ANCHOR and becomes strict after ANCHOR. The latest physical run did not reach READY, so this implementation path is not yet validated end-to-end. See [Current Implementation Status](11_Current_Implementation_Status.md).
+
 ## 1. Scope and terminology
 
 This document defines the local network protocol and the data persisted by the apps. Sync In It has no cloud backend and no server-side relational database in the current architecture. The Android master is the session authority, but it is not a cloud service.
@@ -28,7 +34,7 @@ This document consolidates the protocol material in the original design. It inte
 | Audio | TCP | 47801 | Master to receiver |
 | Time sync | UDP | 47802 | Bidirectional request/response |
 
-The master listens on these ports. Each receiver creates its own control and audio TCP connections and uses UDP for clock synchronization. Actual port values are supplied during WELCOME so deployments can change them.
+The Android Host currently binds control TCP to 47800 and UDP time sync to 47802. Its audio TCP listener is created on an available port (ephemeral port selection) and the chosen port is supplied in WELCOME. The 47801 value remains the draft/default port, not a guarantee that the current Android Host binds that fixed port. Each Speaker opens separate control and audio TCP connections and uses UDP for clock synchronization.
 
 ## 3. Session join payload
 
@@ -157,7 +163,7 @@ Flags:
 - bit 1: silence chunk; payload may be empty and receiver supplies zero samples.
 - Other bits are reserved and ignored in compatible minor versions.
 
-For PCM16 stereo, a 960-frame chunk has 3,840 payload bytes and represents 20 ms at 48 kHz. A silence chunk has an empty payload and is expanded to zero-valued samples. A receiver inserts audio by sampleIdx, not by arrival order. Duplicates are ignored. Late chunks behind the playback pointer are dropped and counted. The portable C++ core now implements the AUDIO_CHUNK encoder/decoder and a bounded sample-indexed PCM16 jitter buffer. The buffer accepts out-of-order chunks, rejects duplicates and data outside its configured window, and fills missing samples with silence while counting underrun frames. Android socket-to-buffer integration and actual audio source/output remain separate work.
+For PCM16 stereo, a 960-frame chunk has 3,840 payload bytes and represents 20 ms at 48 kHz. A silence chunk has an empty payload and is expanded to zero-valued samples. A receiver inserts audio by sampleIdx, not by arrival order. Duplicates are ignored. Late chunks behind the playback pointer are dropped and counted. The portable C++ core implements the AUDIO_CHUNK encoder/decoder and a bounded sample-indexed PCM16 jitter buffer. The Android app receives AUDIO_CHUNK frames over the separate audio TCP channel, validates/inserts them through JNI, and writes buffered samples through a dedicated AudioTrack writer thread. The Host currently generates one 1 kHz timing-click stream and fans identical sample-indexed chunks out through bounded per-Speaker queues. This is not user-media playback. The latest supplied physical run completed audio-channel handshakes but did not establish that the Speaker's contiguous buffer or clock gate reached READY.
 
 ## 7. UDP time-sync packet format
 
@@ -316,7 +322,7 @@ The shared vector file `protocol/vectors/wire_protocol.json` provides fixtures f
 7. Truncated frame, invalid length and oversized frame.
 8. Little-endian edge values and signed timestamp handling.
 
-Both Python reference code and C++ encoders/decoders pass the shared byte-level vectors. Typed control payload codecs validate all 15 listed control messages, exact field lengths, the documented boolean and range constraints, and UTF-8 model/detail strings. Invalid typed payload fixtures are stored alongside the valid frames. TCP stream accumulation is implemented in Python and C++ as a bounded incremental framer. It handles partial headers and payloads, multiple frames per read, per-frame length validation and one retained partial frame per connection. Audio chunk field parsing and PCM16 jitter-buffer primitives are implemented in `core/audio.h` and `core/audio.cpp`; Android source capture, network delivery, output rendering and scheduled playback remain implementation tasks.
+Both Python reference code and C++ encoders/decoders pass the shared byte-level vectors. Typed control payload codecs validate the documented typed payload shapes and boundary constraints. TCP stream accumulation is implemented in Python and C++ as a bounded incremental framer. It handles partial headers and payloads, multiple frames per read, per-frame length validation and one retained partial frame per connection. Audio chunk parsing and PCM16 jitter-buffer primitives are implemented in `core/audio.h` and `core/audio.cpp`; Android transport-to-buffer integration, generated test-stream fan-out, AudioTrack output and a common start-anchor path are also present. These paths still require physical multi-phone validation. User-selected audio, integrated drift correction, and acoustic calibration remain out of scope for the current preview.
 ## 13. Outstanding protocol questions
 
 - Capacity definition: 10 total phones versus 10 receivers plus master.
