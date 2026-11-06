@@ -1,4 +1,7 @@
+// SPDX-License-Identifier: Apache-2.0
 package com.syncinit.app.network
+
+import com.syncinit.app.PreviewConfig
 
 import android.content.Context
 import android.net.Network
@@ -24,16 +27,6 @@ class ReceiverSessionClient(
     private val context: Context,
     private val onStatus: (String) -> Unit
 ) : Closeable {
-    companion object {
-        private const val CONNECT_TIMEOUT_MS = 5_000
-        private const val HANDSHAKE_READ_TIMEOUT_MS = 10_000
-        private const val TIME_SYNC_RECEIVE_TIMEOUT_MS = 500
-        private const val JOIN_BURST_PROBES = 20
-        private const val JOIN_BURST_INTERVAL_MS = 50L
-        private const val UNSTABLE_RETRY_INTERVAL_MS = 500L
-        private const val STEADY_STATE_INTERVAL_MS = 2_000L
-    }
-
     private val closed = AtomicBoolean(false)
     private val started = AtomicBoolean(false)
     private val executor = Executors.newSingleThreadExecutor { task ->
@@ -44,7 +37,7 @@ class ReceiverSessionClient(
     @Volatile private var audioConnection: TcpFrameConnection? = null
     @Volatile private var audioPipeline: PcmAudioReceiver? = null
 
-    fun connect(host: String, tokenHex: String, controlPort: Int = MasterSessionHost.CONTROL_PORT) {
+    fun connect(host: String, tokenHex: String, controlPort: Int = PreviewConfig.CONTROL_PORT) {
         check(!closed.get()) { "receiver client is closed" }
         check(started.compareAndSet(false, true)) { "receiver client has already started" }
         require(host.isNotBlank()) { "master address must not be blank" }
@@ -62,16 +55,16 @@ class ReceiverSessionClient(
                         "interface=${peerRoute.interfaceName} route=${peerRoute.matchedRoute} " +
                         "internet=${peerRoute.hasInternet} validated=${peerRoute.isValidated}"
                 )
-                onStatus("[DIAG $attemptId] STAGE_CONTROL_TCP_CONNECT_BEGIN target=$host:$controlPort timeoutMs=$CONNECT_TIMEOUT_MS")
+                onStatus("[DIAG $attemptId] STAGE_CONTROL_TCP_CONNECT_BEGIN target=$host:$controlPort timeoutMs=${PreviewConfig.TCP_CONNECT_TIMEOUT_MS}")
                 val control = connectTcp(
-                    attemptId, "CONTROL", host, controlPort, HANDSHAKE_READ_TIMEOUT_MS, peerRoute.network
+                    attemptId, "CONTROL", host, controlPort, PreviewConfig.TCP_HANDSHAKE_READ_TIMEOUT_MS, peerRoute.network
                 )
                 controlConnection = control
                 diagnosticStage(attemptId, "CONTROL_HELLO_WRITE") {
                     control.writeEncodedFrame(NativeProtocol.encodeHelloFrame(token))
                 }
 
-                onStatus("[DIAG $attemptId] STAGE_WELCOME_READ_BEGIN timeoutMs=$HANDSHAKE_READ_TIMEOUT_MS")
+                onStatus("[DIAG $attemptId] STAGE_WELCOME_READ_BEGIN timeoutMs=${PreviewConfig.TCP_HANDSHAKE_READ_TIMEOUT_MS}")
                 val welcomeFrame = diagnosticStage(attemptId, "WELCOME_READ") {
                     control.readFrame() ?: error("master closed before WELCOME")
                 }
@@ -197,12 +190,12 @@ class ReceiverSessionClient(
         network: Network
     ): TcpFrameConnection {
         val startedAt = SystemClock.elapsedRealtime()
-        onStatus("[DIAG $attemptId] TCP_${channel}_CONNECT_BEGIN remote=$host:$port connectTimeoutMs=$CONNECT_TIMEOUT_MS readTimeoutMs=$readTimeoutMs")
+        onStatus("[DIAG $attemptId] TCP_${channel}_CONNECT_BEGIN remote=$host:$port connectTimeoutMs=${PreviewConfig.TCP_CONNECT_TIMEOUT_MS} readTimeoutMs=$readTimeoutMs")
         return try {
             val connection = TcpFrameConnection.connect(
                 host = host,
                 port = port,
-                connectTimeoutMs = CONNECT_TIMEOUT_MS,
+                connectTimeoutMs = PreviewConfig.TCP_CONNECT_TIMEOUT_MS,
                 readTimeoutMs = readTimeoutMs,
                 socketFactory = network.socketFactory
             )
@@ -265,7 +258,7 @@ class ReceiverSessionClient(
             UdpTimeSyncClient(
                 masterAddress = address,
                 masterPort = timePort,
-                receiveTimeoutMs = TIME_SYNC_RECEIVE_TIMEOUT_MS,
+                receiveTimeoutMs = PreviewConfig.TIME_SYNC_RECEIVE_TIMEOUT_MS,
                 datagramSocket = networkBoundDatagram
             ).use { udp ->
                 var probeAttempts = 0
@@ -276,7 +269,7 @@ class ReceiverSessionClient(
                 onStatus(
                     "[DIAG $attemptId] UDP_TIME_SYNC_SOCKET_READY local=${udp.localAddress}:${udp.localPort} " +
                         "remote=${udp.remoteAddress}:${udp.remotePort} connected=${udp.isConnected} " +
-                        "receiveTimeoutMs=$TIME_SYNC_RECEIVE_TIMEOUT_MS packetBytes=${UdpTimeSyncClient.PACKET_SIZE}"
+                        "receiveTimeoutMs=${PreviewConfig.TIME_SYNC_RECEIVE_TIMEOUT_MS} packetBytes=${UdpTimeSyncClient.PACKET_SIZE}"
                 )
 
                 while (!closed.get()) {
@@ -299,7 +292,7 @@ class ReceiverSessionClient(
                         } else {
                             consecutiveUnreachable = 0
                             lastMeasurement = measurement
-                            if (probeAttempts <= JOIN_BURST_PROBES || probeAttempts % 10 == 0) {
+                            if (probeAttempts <= PreviewConfig.JOIN_BURST_PROBES || probeAttempts % 10 == 0) {
                                 onStatus("[DIAG $attemptId] UDP_PROBE_OK attempt=$probeAttempts elapsedMs=${"%.2f".format(probeElapsedMs)} rttMedianMs=${"%.2f".format(measurement.rttMedianMs)} offsetMs=${"%.3f".format(measurement.offsetNs / 1_000_000.0)}")
                             }
                             audioPipeline.updateClockMeasurement(measurement)
@@ -335,7 +328,7 @@ class ReceiverSessionClient(
                         nativeClock.expireRequestsBefore(System.nanoTime() + 1L)
                         timeoutCount += 1
                         if (timeoutCount <= 3 || timeoutCount % 10 == 0) {
-                            onStatus("[DIAG $attemptId] UDP_PROBE_TIMEOUT attempt=$probeAttempts totalTimeouts=$timeoutCount timeoutMs=$TIME_SYNC_RECEIVE_TIMEOUT_MS target=${udp.remoteAddress}:${udp.remotePort} ${NetworkDiagnostics.exceptionDetails(error)}")
+                            onStatus("[DIAG $attemptId] UDP_PROBE_TIMEOUT attempt=$probeAttempts totalTimeouts=$timeoutCount timeoutMs=${PreviewConfig.TIME_SYNC_RECEIVE_TIMEOUT_MS} target=${udp.remoteAddress}:${udp.remotePort} ${NetworkDiagnostics.exceptionDetails(error)}")
                         }
                         onStatus("UDP time-sync response timed out; retrying.")
                     } catch (error: FrameProtocolException) {
@@ -348,9 +341,9 @@ class ReceiverSessionClient(
                     val stable = lastMeasurement?.acquisitionStable == true &&
                         (lastMeasurement?.stableStreak ?: 0) >= 3
                     val intervalMs = when {
-                        probeAttempts <= JOIN_BURST_PROBES -> JOIN_BURST_INTERVAL_MS
-                        stable -> STEADY_STATE_INTERVAL_MS
-                        else -> UNSTABLE_RETRY_INTERVAL_MS
+                        probeAttempts <= PreviewConfig.JOIN_BURST_PROBES -> PreviewConfig.JOIN_BURST_INTERVAL_MS
+                        stable -> PreviewConfig.STEADY_STATE_INTERVAL_MS
+                        else -> PreviewConfig.UNSTABLE_RETRY_INTERVAL_MS
                     }
                     val remainingNs = t1Ns + intervalMs * 1_000_000L - System.nanoTime()
                     if (remainingNs > 0L) {

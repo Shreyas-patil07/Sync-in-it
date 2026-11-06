@@ -1,4 +1,7 @@
+// SPDX-License-Identifier: Apache-2.0
 package com.syncinit.app.network
+
+import com.syncinit.app.PreviewConfig
 
 import android.content.Context
 import android.os.Build
@@ -40,23 +43,6 @@ private data class StreamCursor(
 
 /** Android master that admits several independent receivers into one shared audio session. */
 class MasterSessionHost(context: Context, private val onStatus: (String) -> Unit) : Closeable {
-    companion object {
-        const val CONTROL_PORT = 47_800
-        const val TIME_PORT = 47_802
-        const val MAX_RECEIVERS = 8
-        private const val AUDIO_READ_TIMEOUT_MS = 0
-        private const val AUDIO_ACCEPT_TIMEOUT_MS = 15_000
-        private const val AUDIO_QUEUE_CHUNKS = 25
-        private const val SAMPLE_RATE_HZ = 48_000
-        private const val CHANNELS = 2
-        private const val CHUNK_FRAMES = 960
-        private const val CHUNK_PERIOD_NS = 20_000_000L
-        private const val GROUP_START_LEAD_NS = 1_000_000_000L
-        private const val GROUP_ADMISSION_WINDOW_NS = 15_000_000_000L
-        private const val GROUP_READINESS_TIMEOUT_NS = 45_000_000_000L
-        private const val GROUP_START_BUFFER_MS = 2_000L
-    }
-
     private val appContext = context.applicationContext
     private val closed = AtomicBoolean(false)
     private val started = AtomicBoolean(false)
@@ -91,14 +77,14 @@ class MasterSessionHost(context: Context, private val onStatus: (String) -> Unit
             val audioListener = TcpFrameServer(
                 anyAddress,
                 0,
-                acceptTimeoutMs = AUDIO_ACCEPT_TIMEOUT_MS,
+                acceptTimeoutMs = PreviewConfig.AUDIO_ACCEPT_TIMEOUT_MS,
                 connectionReadTimeoutMs = 10_000
             )
             audio = audioListener
-            val controlListener = TcpFrameServer(anyAddress, CONTROL_PORT, connectionReadTimeoutMs = AUDIO_READ_TIMEOUT_MS)
+            val controlListener = TcpFrameServer(anyAddress, PreviewConfig.CONTROL_PORT, connectionReadTimeoutMs = PreviewConfig.AUDIO_READ_TIMEOUT_MS)
             control = controlListener
             // Bind UDP before advertising to avoid a receiver racing the time-sync listener.
-            val timeListener = UdpTimeSyncServer(anyAddress, TIME_PORT, receiveTimeoutMs = 500)
+            val timeListener = UdpTimeSyncServer(anyAddress, PreviewConfig.TIME_PORT, receiveTimeoutMs = 500)
             time = timeListener
 
             val random = SecureRandom()
@@ -109,7 +95,7 @@ class MasterSessionHost(context: Context, private val onStatus: (String) -> Unit
                 receiverId = 0,
                 token = token.copyOf(),
                 audioPort = audioListener.localPort,
-                timePort = TIME_PORT
+                timePort = PreviewConfig.TIME_PORT
             )
 
             check(!closed.get()) { "host session was stopped while starting" }
@@ -117,7 +103,7 @@ class MasterSessionHost(context: Context, private val onStatus: (String) -> Unit
             check(audioListener.isListening) { "audio TCP listener did not bind" }
             onStatus(
                 "DIAG HOST_LISTENERS_BOUND control=${controlListener.localBindAddress}:${controlListener.localPort} " +
-                    "audio=${audioListener.localBindAddress}:${audioListener.localPort} udp=0.0.0.0:$TIME_PORT"
+                    "audio=${audioListener.localBindAddress}:${audioListener.localPort} udp=0.0.0.0:${PreviewConfig.TIME_PORT}"
             )
             onStatus(NetworkDiagnostics.networkSnapshot(appContext))
             controlServer = controlListener
@@ -136,9 +122,9 @@ class MasterSessionHost(context: Context, private val onStatus: (String) -> Unit
             advertiser = serviceAdvertiser
             serviceAdvertiser.start(serviceName, controlListener.localPort, token.toHex())
 
-            onStatus("DIAG HOST_READY controlPort=${controlListener.localPort} audioPort=${audioListener.localPort} timePort=$TIME_PORT controlListening=${controlListener.isListening} audioListening=${audioListener.isListening}")
-            onStatus("TCP listener ready on port ${controlListener.localPort}. Advertising a session for up to $MAX_RECEIVERS speakers.")
-            onStatus("Waiting for speakers · 0/$MAX_RECEIVERS connected.")
+            onStatus("DIAG HOST_READY controlPort=${controlListener.localPort} audioPort=${audioListener.localPort} timePort=${PreviewConfig.TIME_PORT} controlListening=${controlListener.isListening} audioListening=${audioListener.isListening}")
+            onStatus("TCP listener ready on port ${controlListener.localPort}. Advertising a session for up to ${PreviewConfig.MAX_SPEAKERS} speakers.")
+            onStatus("Waiting for speakers · 0/${PreviewConfig.MAX_SPEAKERS} connected.")
             return HostInvitation(serviceName, controlListener.localPort)
         } catch (error: Exception) {
             onStatus("DIAG HOST_START_FAILED ${NetworkDiagnostics.exceptionDetails(error)}")
@@ -176,20 +162,20 @@ class MasterSessionHost(context: Context, private val onStatus: (String) -> Unit
                     }
                     val admissionStartedAt = firstReceiverAdmissionNs
                     if (admissionStartedAt != 0L &&
-                        System.nanoTime() - admissionStartedAt >= GROUP_ADMISSION_WINDOW_NS) {
+                        System.nanoTime() - admissionStartedAt >= PreviewConfig.GROUP_ADMISSION_WINDOW_NS) {
                         val rejected = listeningControl.accept()
                         onStatus("Group admission window closed · restart hosting to add another speaker.")
                         closeQuietly(rejected)
                         continue
                     }
-                    if (receivers.size >= MAX_RECEIVERS) {
+                    if (receivers.size >= PreviewConfig.MAX_SPEAKERS) {
                         val rejected = listeningControl.accept()
-                        onStatus("Host is full · rejected another connection (limit $MAX_RECEIVERS).")
+                        onStatus("Host is full · rejected another connection (limit ${PreviewConfig.MAX_SPEAKERS}).")
                         closeQuietly(rejected)
                         continue
                     }
 
-                    onStatus("Waiting for Speaker HELLO · ${receivers.size}/$MAX_RECEIVERS connected.")
+                    onStatus("Waiting for Speaker HELLO · ${receivers.size}/${PreviewConfig.MAX_SPEAKERS} connected.")
                     val acceptedControl = listeningControl.accept()
                     control = acceptedControl
                     onStatus("DIAG HOST_CONTROL_ACCEPTED local=${acceptedControl.localEndpoint} peer=${acceptedControl.remoteEndpoint}")
@@ -244,7 +230,7 @@ class MasterSessionHost(context: Context, private val onStatus: (String) -> Unit
                         }
                         val admissionWindowStartedAt = firstReceiverAdmissionNs
                         check(admissionWindowStartedAt == 0L ||
-                            System.nanoTime() - admissionWindowStartedAt < GROUP_ADMISSION_WINDOW_NS) {
+                            System.nanoTime() - admissionWindowStartedAt < PreviewConfig.GROUP_ADMISSION_WINDOW_NS) {
                             "group admission window closed while this Speaker was joining"
                         }
                         check(receivers.putIfAbsent(receiverId, peer) == null) {
@@ -252,7 +238,7 @@ class MasterSessionHost(context: Context, private val onStatus: (String) -> Unit
                         }
                         if (receivers.size == 1) {
                             firstReceiverAdmissionNs = System.nanoTime()
-                            onStatus("Group admission window open · add up to $MAX_RECEIVERS speakers within 15 seconds.")
+                            onStatus("Group admission window open · add up to ${PreviewConfig.MAX_SPEAKERS} speakers within 15 seconds.")
                             scheduleGroupReadinessTimeout(firstReceiverAdmissionNs)
                         }
                         ownershipTransferred = true
@@ -265,7 +251,7 @@ class MasterSessionHost(context: Context, private val onStatus: (String) -> Unit
                     startControlReader(peer)
                     onStatus(
                         "Speaker connected · receiverId=$receiverId · native state ${peer.session.state()} · " +
-                            "${receivers.size}/$MAX_RECEIVERS connected."
+                            "${receivers.size}/${PreviewConfig.MAX_SPEAKERS} connected."
                     )
                     startAudioTestStream(baseConfig.sessionId)
                 } catch (error: SocketException) {
@@ -304,7 +290,7 @@ class MasterSessionHost(context: Context, private val onStatus: (String) -> Unit
         val audio: TcpFrameConnection
     ) : Closeable {
         private val peerClosed = AtomicBoolean(false)
-        private val audioQueue = ArrayBlockingQueue<ByteArray>(AUDIO_QUEUE_CHUNKS)
+        private val audioQueue = ArrayBlockingQueue<ByteArray>(PreviewConfig.AUDIO_QUEUE_CHUNKS)
         private val audioFramesQueued = AtomicLong(0L)
         private val audioFramesWritten = AtomicLong(0L)
         private val audioQueueHighWater = AtomicInteger(0)
@@ -418,7 +404,7 @@ class MasterSessionHost(context: Context, private val onStatus: (String) -> Unit
         if (!removed) return
         peer.close()
         if (!closed.get()) {
-            onStatus("Speaker disconnected · receiverId=${peer.receiverId} · $reason · ${receivers.size}/$MAX_RECEIVERS connected.")
+            onStatus("Speaker disconnected · receiverId=${peer.receiverId} · $reason · ${receivers.size}/${PreviewConfig.MAX_SPEAKERS} connected.")
         }
 
         if (!closed.get() && !groupStartScheduled.get() && receivers.isNotEmpty()) {
@@ -436,7 +422,7 @@ class MasterSessionHost(context: Context, private val onStatus: (String) -> Unit
      */
     private fun scheduleGroupReadinessTimeout(admissionStartedAtNs: Long) {
         Thread({
-            val deadlineNs = admissionStartedAtNs + GROUP_READINESS_TIMEOUT_NS
+            val deadlineNs = admissionStartedAtNs + PreviewConfig.GROUP_READINESS_TIMEOUT_NS
             val remainingNs = deadlineNs - System.nanoTime()
             if (remainingNs > 0L) {
                 try {
@@ -461,7 +447,7 @@ class MasterSessionHost(context: Context, private val onStatus: (String) -> Unit
                 }
                 if (notReady.isNotEmpty()) {
                     onStatus(
-                        "GROUP_START_READINESS_TIMEOUT elapsedMs=${GROUP_READINESS_TIMEOUT_NS / 1_000_000L} " +
+                        "GROUP_START_READINESS_TIMEOUT elapsedMs=${PreviewConfig.GROUP_READINESS_TIMEOUT_NS / 1_000_000L} " +
                             "excludingReceivers=${notReady.joinToString(",") { it.receiverId.toString() }}"
                     )
                     notReady.forEach { peer ->
@@ -490,7 +476,7 @@ class MasterSessionHost(context: Context, private val onStatus: (String) -> Unit
             val nowNs = System.nanoTime()
             val admissionStartedAt = firstReceiverAdmissionNs
             if (admissionStartedAt == 0L) return
-            val admissionDeadlineNs = admissionStartedAt + GROUP_ADMISSION_WINDOW_NS
+            val admissionDeadlineNs = admissionStartedAt + PreviewConfig.GROUP_ADMISSION_WINDOW_NS
             if (nowNs < admissionDeadlineNs) {
                 if (groupStartCheckQueued.compareAndSet(false, true)) {
                     Thread({
@@ -523,10 +509,10 @@ class MasterSessionHost(context: Context, private val onStatus: (String) -> Unit
                 return
             }
 
-            val targetMasterTimeNs = nowNs + GROUP_START_LEAD_NS
-            val bufferedOffsetFrames = SAMPLE_RATE_HZ.toLong() * GROUP_START_BUFFER_MS / 1_000L
+            val targetMasterTimeNs = nowNs + PreviewConfig.GROUP_START_LEAD_NS
+            val bufferedOffsetFrames = PreviewConfig.SAMPLE_RATE_HZ.toLong() * PreviewConfig.GROUP_START_BUFFER_MS / 1_000L
             val latestAlignedSample = cursor.nextSampleIndex -
-                (cursor.nextSampleIndex % CHUNK_FRAMES.toLong())
+                (cursor.nextSampleIndex % PreviewConfig.CHUNK_FRAMES.toLong())
             val startSampleIndex = latestAlignedSample - bufferedOffsetFrames
             if (startSampleIndex < 0L) {
                 onStatus("Group start is waiting for enough shared PCM history.")
@@ -598,7 +584,7 @@ class MasterSessionHost(context: Context, private val onStatus: (String) -> Unit
             streamCursor.set(StreamCursor(sampleIndex, nextDeadlineNs))
 
             try {
-                onStatus("Shared 1 kHz timing-click source ready · fan-out limit $MAX_RECEIVERS speakers.")
+                onStatus("Shared 1 kHz timing-click source ready · fan-out limit ${PreviewConfig.MAX_SPEAKERS} speakers.")
                 while (!closed.get()) {
                     val peers = receivers.values.toList()
                     if (peers.isEmpty()) {
@@ -608,17 +594,17 @@ class MasterSessionHost(context: Context, private val onStatus: (String) -> Unit
                         continue
                     }
 
-                    val pcm = ByteArray(CHUNK_FRAMES * CHANNELS * 2)
-                    for (frameIndex in 0 until CHUNK_FRAMES) {
+                    val pcm = ByteArray(PreviewConfig.CHUNK_FRAMES * PreviewConfig.CHANNELS * 2)
+                    for (frameIndex in 0 until PreviewConfig.CHUNK_FRAMES) {
                         val absoluteSample = sampleIndex + frameIndex
-                        val positionInSecond = absoluteSample % SAMPLE_RATE_HZ.toLong()
+                        val positionInSecond = absoluteSample % PreviewConfig.SAMPLE_RATE_HZ.toLong()
                         val sample = if (positionInSecond < 1_440L) {
-                            (sin(2.0 * PI * 1_000.0 * positionInSecond / SAMPLE_RATE_HZ) * 6_000.0).toInt()
+                            (sin(2.0 * PI * 1_000.0 * positionInSecond / PreviewConfig.SAMPLE_RATE_HZ) * 6_000.0).toInt()
                         } else {
                             0
                         }
-                        for (channel in 0 until CHANNELS) {
-                            val offset = (frameIndex * CHANNELS + channel) * 2
+                        for (channel in 0 until PreviewConfig.CHANNELS) {
+                            val offset = (frameIndex * PreviewConfig.CHANNELS + channel) * 2
                             pcm[offset] = (sample and 0xff).toByte()
                             pcm[offset + 1] = ((sample shr 8) and 0xff).toByte()
                         }
@@ -628,20 +614,20 @@ class MasterSessionHost(context: Context, private val onStatus: (String) -> Unit
                         sessionId = sessionId,
                         sequence = sequence,
                         sampleIndex = sampleIndex,
-                        frames = CHUNK_FRAMES,
-                        channels = CHANNELS,
+                        frames = PreviewConfig.CHUNK_FRAMES,
+                        channels = PreviewConfig.CHANNELS,
                         pcm16LittleEndian = pcm
                     )
                     peers.forEach { peer ->
                         if (!peer.offerAudio(encoded)) {
-                            onStatus("DIAG HOST_AUDIO_QUEUE_OVERFLOW receiverId=${peer.receiverId} limitChunks=$AUDIO_QUEUE_CHUNKS limitMs=${AUDIO_QUEUE_CHUNKS * CHUNK_PERIOD_NS / 1_000_000L}")
-                            removeReceiver(peer, "audio send queue exceeded ${AUDIO_QUEUE_CHUNKS * CHUNK_PERIOD_NS / 1_000_000L} ms of backlog")
+                            onStatus("DIAG HOST_AUDIO_QUEUE_OVERFLOW receiverId=${peer.receiverId} limitChunks=${PreviewConfig.AUDIO_QUEUE_CHUNKS} limitMs=${PreviewConfig.AUDIO_QUEUE_CHUNKS * PreviewConfig.CHUNK_PERIOD_NS / 1_000_000L}")
+                            removeReceiver(peer, "audio send queue exceeded ${PreviewConfig.AUDIO_QUEUE_CHUNKS * PreviewConfig.CHUNK_PERIOD_NS / 1_000_000L} ms of backlog")
                         }
                     }
 
                     sequence = (sequence + 1L) and 0xffff_ffffL
-                    sampleIndex += CHUNK_FRAMES
-                    nextDeadlineNs += CHUNK_PERIOD_NS
+                    sampleIndex += PreviewConfig.CHUNK_FRAMES
+                    nextDeadlineNs += PreviewConfig.CHUNK_PERIOD_NS
                     streamCursor.set(StreamCursor(sampleIndex, nextDeadlineNs))
                     val remainingNs = nextDeadlineNs - System.nanoTime()
                     if (remainingNs > 0L) {

@@ -1,6 +1,15 @@
+// SPDX-License-Identifier: Apache-2.0
+import org.gradle.api.tasks.Copy
+
 plugins {
     id("com.android.application")
     id("org.jetbrains.kotlin.android")
+}
+
+val generatedBrandResources = layout.buildDirectory.dir("generated/res/brand/main")
+val generateBrandResources = tasks.register<Copy>("generateBrandResources") {
+    from(rootProject.file("../frontend/public/images/sync_in_it.png"))
+    into(generatedBrandResources.map { it.dir("drawable-nodpi") })
 }
 
 val previewKeystorePath = providers.gradleProperty("previewKeystorePath").orNull
@@ -24,6 +33,7 @@ require(requestedVersionCode in 1..2_100_000_000) {
 }
 
 android {
+    sourceSets.getByName("main").res.srcDir(generatedBrandResources)
     namespace = "com.syncinit.app"
     compileSdk = 36
     ndkVersion = "30.0.16248370"
@@ -91,6 +101,10 @@ android {
             version = "3.22.1"
         }
     }
+}
+
+tasks.configureEach {
+    if (name == "preBuild") dependsOn(generateBrandResources)
 }
 
 dependencies {
