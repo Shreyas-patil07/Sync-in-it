@@ -1,0 +1,56 @@
+# OS and editor files
+.DS_Store
+Thumbs.db
+*.swp
+*.swo
+.idea/
+.vscode/
+*.iml
+
+# Android / Gradle
+.gradle/
+local.properties
+**/build/
+**/.cxx/
+**/.externalNativeBuild/
+*.jks
+*.keystore
+
+# CMake / native build output
+/build/
+/out/
+CMakeFiles/
+CMakeCache.txt
+cmake_install.cmake
+compile_commands.json
+*.o
+*.obj
+*.a
+*.so
+*.dll
+*.exe
+
+# Python
+__pycache__/
+*.py[cod]
+*.egg-info/
+.venv/
+venv/
+.pytest_cache/
+.mypy_cache/
+.ruff_cache/
+
+# Node / frontend
+node_modules/
+frontend/dist/
+frontend/coverage/
+
+# Generated frontend brand asset
+frontend/public/images/sync_in_it.png
+
+# Test recordings and generated reports
+recordings/
+test-results/
+*.wav
+*.csv
+*.jsonl
