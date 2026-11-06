@@ -4,13 +4,22 @@
 **Version:** 1.5  
 **Last updated:** 2 November 2026
 
-**Current progress (6 November 2026):** M0 simulator/native CI is passing its current deterministic gates. M1 and M2 Android implementation now includes NSD discovery, per-Speaker TCP control/audio admission, UDP clock acquisition, generated PCM16 fan-out, a rolling pre-ANCHOR jitter buffer, READY retries, a 15-second admission window, a 45-second readiness deadline and a shared future playback ANCHOR path. M3a adds Android AudioTrack timestamp polling and a rolling C++ regression for diagnostics only. The latest physical multi-phone test reached TCP admission and UDP responses but did not reach READY; group start and acoustic synchronization remain unverified. PR #49 diagnostic instrumentation is merged; its first Android/JNI CI run failed on a missing AtomicLong import. The current documentation branch adds the import correction and requires a fresh Android CI pass.
+**Current progress (6 November 2026):** M0 simulator/native CI and acoustic analyzer synthetic tests pass on Python 3.11, 3.12 and 3.13. Android source includes NSD discovery, per-Speaker TCP control/audio admission, UDP clock acquisition, generated PCM16 fan-out, rolling pre-ANCHOR buffering, READY retry, 15-second admission, 45-second readiness deadline, common future ANCHOR and M3a AudioTrack timestamp diagnostics. The latest supplied physical run connected multiple Speakers and received UDP responses but did not reach READY; no group start or acoustic skew result exists. PR #51 fixed the prior AtomicLong compile error and its Android/JNI CI passed. The measurement branch adds receiver-specific acoustic markers and a PCM16/48 kHz WAV analyzer. Its synthetic offsets pass CI; a real two-phone recording is still pending.
 
 ## Current execution snapshot — 6 November 2026
 
-The immediate work is not another algorithm or UI milestone. First make the PR #49 Android/JNI diagnostic build green, then use `READY_GATE_BLOCKED` and `HOST_AUDIO_DELIVERY` to isolate the failed READY gate. Keep the existing acquisition threshold and 3-second PCM requirement unchanged until real Speaker metrics identify the failing condition.
+The immediate task is to get a physical READY/ANCHOR on two Speakers without relaxing the current clock or 3-second PCM gates. Use `READY_GATE_BLOCKED` and `HOST_AUDIO_DELIVERY` to identify the failing condition. After both Speakers start, make the screen-on two-minute recording with the measurement build and analyze it with `tools/analyze`. Do not change to Oboe before the result is measured; ADR-019 sets p95 absolute skew ≤10 ms as the next decision gate. Do not run longer tests until the foreground-service/wake-lock gate in ADR-022 is resolved.
 
 The latest observed physical result is: mDNS discovery = pass; control/audio TCP join = pass for multiple Speakers; UDP time-sync requests/responses = pass; READY = not observed; readiness timeout = fired; common ANCHOR = not reached. Do not mark M1/M2 group playback complete based on source implementation or simulator/CI alone. The authoritative evidence table is in [Current Implementation Status](11_Current_Implementation_Status.md).
+
+## Current measurement and platform boundaries — 6 November 2026
+
+- **Audio backend:** Android currently uses `AudioTrack.MODE_STREAM` with a dedicated writer thread and a scheduled `AudioTrack.play()` call. Oboe/AAudio callbacks are not implemented. Start-time accuracy is unknown until measured; see ADR-019.
+- **Acoustic toolchain:** current measurement branch overlays a 20 ms receiver-specific marker every second and provides reference WAV generation plus PCM16/48 kHz analysis. Synthetic offsets pass CI; no physical skew result exists.
+- **Measurement APK:** the public v0.5.7 APK does not include the new markers. Build/install from `measurement/two-phone-skew-tooling`.
+- **Security:** the session token remains in DNS-SD TXT metadata; use a trusted private LAN. See ADR-020.
+- **Capacity:** 8 Speakers + Host is the preview cap. The product goal is 6–10 total phones, not a proof of capacity. See ADR-021.
+- **Long tests:** no foreground playback service or explicit wake-lock lifecycle exists. Limit testing to the short, foregrounded, screen-on recording. See ADR-022.
 
 ## 1. Implementation strategy
 

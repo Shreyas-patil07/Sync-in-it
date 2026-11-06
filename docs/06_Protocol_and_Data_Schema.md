@@ -325,7 +325,7 @@ The shared vector file `protocol/vectors/wire_protocol.json` provides fixtures f
 Both Python reference code and C++ encoders/decoders pass the shared byte-level vectors. Typed control payload codecs validate the documented typed payload shapes and boundary constraints. TCP stream accumulation is implemented in Python and C++ as a bounded incremental framer. It handles partial headers and payloads, multiple frames per read, per-frame length validation and one retained partial frame per connection. Audio chunk parsing and PCM16 jitter-buffer primitives are implemented in `core/audio.h` and `core/audio.cpp`; Android transport-to-buffer integration, generated test-stream fan-out, AudioTrack output and a common start-anchor path are also present. These paths still require physical multi-phone validation. User-selected audio, integrated drift correction, and acoustic calibration remain out of scope for the current preview.
 ## 13. Outstanding protocol questions
 
-- Capacity definition: 10 total phones versus 10 receivers plus master.
+- Preview capacity is 8 Speakers plus one Host (9 devices total). The product target remains 6–10 phones total; M9 must validate the intended 10-phone total before any cap change. See ADR-021.
 - Whether sessionId remains 32-bit for the expected session lifetime and collision model.
 - Whether token authentication is upgraded to challenge-response and encrypted transport before a public/less-trusted deployment.
 - Exact error semantics for late join and group admission.
