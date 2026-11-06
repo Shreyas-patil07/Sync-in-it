@@ -4,6 +4,20 @@
 **Version:** 1.0  
 **Last updated:** 1 November 2026
 
+## Latest physical test evidence — 6 November 2026
+
+The latest supplied three-phone LAN run is a **failure at the READY gate**, not a discovery or TCP-admission failure:
+
+- Host NSD advertisement, Speaker discovery and Host resolution worked.
+- Multiple control HELLO/WELCOME and separate AUDIO_HELLO handshakes were accepted.
+- UDP peers were pinned and the Host sent repeated time-sync responses.
+- No `Speaker READY` event was observed.
+- `GROUP_START_READINESS_TIMEOUT` fired after 45 seconds and removed the unready receivers.
+- No `GROUP_START_SCHEDULED` or physical ANCHOR delivery was observed.
+- A UDP source-IP rejection appeared after a peer had been removed; treat it as a possible cleanup/late-packet symptom, not the proven root cause.
+
+The Host log alone cannot distinguish unstable clock acquisition from insufficient contiguous PCM. PR #49 adds `READY_GATE_BLOCKED` on the Speaker and `HOST_AUDIO_DELIVERY` on the Host for that diagnosis. Its first Android CI run failed because of a missing `AtomicLong` import; the current documentation branch includes the import fix and requires a new successful Android build. Native/simulator CI passed. Do not claim an end-to-end sync pass from CI alone.
+
 ## 1. Testing objective
 
 The goal is to prove the timing behavior on physical devices under measurable conditions. A successful build or a successful network connection is not evidence of synchronized acoustic output.
