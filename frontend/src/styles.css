@@ -536,3 +536,6 @@ a:hover .arrow-symbol { transform: translate(3px,-1px); }
   .milestone-card { min-height: 0; padding: 19px; }
   .evidence-card { padding: 20px; }
 }
+
+.status-card-links { display: flex; flex-wrap: wrap; gap: 10px 20px; padding-top: 14px; border-top: 1px solid rgba(255,255,255,.09); }
+.status-card-links .inline-link { margin: 0; color: #c9d5f1; font-size: 11px; }
