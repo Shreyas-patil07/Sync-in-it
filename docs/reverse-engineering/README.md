@@ -24,7 +24,7 @@ No accounts were accessed, private APIs probed, DRM bypassed, or non-public code
 
 ## Detailed product briefs
 
-The original product notes are retained in grouped pages:
+The 38 original product entries are represented as condensed grouped briefs. Each entry preserves its public workflow, described synchronization model, strengths/constraints, material unknowns, suggested REA focus and source links:
 
 1. [Multiple-phone audio distribution](01_multi_phone_audio.md) — Unison, Boomi, SoundSeeder, SoundSync, SyncWave, UniTune, WaveSync, SMusic, LekSync, AmpMe and Sync Music.
 2. [Shared listening sessions](02_shared_sessions.md) — Spotify Jam, Apple SharePlay, Stationhead, Eclipse, Rave, mJam, Segno, Discord Listen Along and Sound Room.
