@@ -189,7 +189,7 @@ A successful desktop CI run verifies deterministic core behavior. A successful A
 - `android/app/`: Android app, Kotlin Host/Speaker networking, AudioTrack integration and JNI.
 - `android/transport/`: Kotlin/JVM TCP and UDP transport module.
 - `protocol/vectors/`: shared timing and wire-protocol fixtures.
-- `docs/`: requirements, architecture, protocol, security, testing, [chronological physical test results](Test_Results.md) and current implementation status.
+- `docs/`: requirements, architecture, protocol, security, testing, [chronological physical test results](Test_Results.md), current implementation status and [audio synchronization reverse-engineering research](reverse-engineering/README.md) covering 38 products/systems.
 - `frontend/`: public project website and Android preview downloads page.
 - `ios/`: not yet implemented in the current repository.
 
