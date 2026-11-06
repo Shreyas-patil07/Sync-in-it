@@ -4,16 +4,16 @@ Public project website and Android preview downloads page. The site is intention
 
 ## Current content source
 
-The public site presents the current Android engineering preview, its multi-Speaker implementation path, the PR #55 receiver hot-path optimization and the still-pending post-fix physical test. Keep release version, supported scope and validation claims aligned with [the canonical implementation status](../docs/11_Current_Implementation_Status.md).
+The public site presents the Android engineering preview and its validation state. Keep release version, supported scope and validation claims aligned with [the canonical implementation status](../docs/11_Current_Implementation_Status.md) and [the chronological test log](../docs/Test_Results.md).
 
 - Latest public pre-release: [v0.5.9-preview.1](https://github.com/Shreyas-patil07/Sync-in-it/releases/tag/v0.5.9-preview.1).
 - Published APK: `SyncInIt-Android-preview-v0.5.9.apk`.
 - The APK includes PR #49 READY/audio diagnostics, PR #53 receiver-specific acoustic markers/analyzer tooling, and PR #55 cached PCM snapshots plus Speaker ingress and Host slow-write diagnostics.
-- The latest supplied pre-PR #55 run filled the 20-second PCM buffer but remained blocked by clock residuals above the unchanged 0.25 ms threshold; the Host audio queue later overflowed. The PR #55 fix has not yet been physically retested. Synchronized multi-phone playback is not a verified result.
-- Receiver-specific markers and the WAV analyzer are included in the public v0.5.8 preview. Synthetic analyzer tests pass CI; physical phone measurement is still pending.
-- No phone skew measurement is recorded yet. The first measurement is screen-on/foreground and approximately two minutes; longer runs are blocked until the foreground service/wake-lock lifecycle exists.
+- The latest post-PR #55 Speaker-side physical log (6 Nov 2026) reports PCM ingress mostly around 49–53 frames/sec, zero missing frames and a buffer up to approximately 19.94 seconds. Clock residual RMS remains around 0.412–0.557 ms, above the unchanged <0.25 ms gate; stable streak stayed 0 and READY was not demonstrated.
+- The post-fix excerpt does not include matching Host queue/write diagnostics, an ANCHOR event or an acoustic recording. Therefore it does not establish Host writer health or synchronized playback.
+- Receiver-specific acoustic markers and the WAV analyzer are available. Synthetic analyzer tests pass CI, but no physical phone-skew measurement is recorded. The first acoustic run must be screen-on/foreground and approximately two minutes; longer runs are blocked until the foreground-service/wake-lock lifecycle exists.
 - Android-only; the current Host code admits up to eight Speakers. The source is a generated 1 kHz timing-click stream, not user-selected music or system-audio capture.
-- The PR #55 merged-main Android/JNI build, transport checks and signature verification passed CI. Device ingress-rate, queue and post-fix READY behavior still need physical validation.
+- The PR #55 merged-main Android/JNI build, transport checks and signature verification passed CI. Post-fix Speaker ingress was observed on-device; clock stability/READY failed and Host queue behavior remains unevaluated for that run. Synchronized playback remains unverified.
 
 ## Stack
 
