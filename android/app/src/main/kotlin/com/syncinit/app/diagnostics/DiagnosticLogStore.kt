@@ -39,7 +39,25 @@ class DiagnosticLogStore(context: Context) {
     @Synchronized
     fun snapshot(): String {
         if (!logFile.exists()) return header()
-        return logFile.readText(StandardCharsets.UTF_8)
+        val persisted = logFile.readText(StandardCharsets.UTF_8)
+        val separator = "================================================================"
+        val separatorIndex = persisted.indexOf(separator)
+        if (separatorIndex < 0) return header() + persisted
+
+        val storedHeader = persisted.substring(0, separatorIndex)
+        fun storedValue(key: String): String? = storedHeader.lineSequence()
+            .firstOrNull { it.startsWith("$key=") }
+            ?.substringAfter('=')
+
+        val events = persisted.substring(separatorIndex + separator.length)
+            .trimStart('\n', '\r')
+        return buildString {
+            append(header())
+            appendLine("logInitializedAt=${storedValue("createdAt") ?: "unknown"}")
+            appendLine("logInitializedAppVersion=${storedValue("appVersion") ?: "unknown"}")
+            appendLine(separator)
+            append(events)
+        }
     }
 
     @Synchronized
