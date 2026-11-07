@@ -198,6 +198,10 @@ The repository currently contains inconsistent residual criteria: this TRD's pro
 Move readiness parameters into a shared core `ClockReadinessConfig` used by JNI and desktop replay, with one default configuration object. Diagnostics must preserve every t1–t4 probe, RTT, raw offset, selected/rejected/expired status and reason, plus each fit's sample count/span, slope, residual, predicted offset at t4 and stable streak. Matching Host delivery, slow-write, queue and disconnect metrics must share the Speaker session diagnostic ID. A physical log must replay through the same C++ estimator and gate and be checked against the Python reference. No threshold change is authorized by this documentation; derive any future uncertainty gate from replay evidence and the T2 acoustic budget under ADR-024.
 
 
+## 9. Runtime and real-time requirements
+
+The receiver's audio callback runs every few milliseconds depending on hardware burst size. It must perform bounded work and remain independent of network delays.
+
 ### 9.1 Experimental continuous output / timeline-frame scheduling
 
 **Status:** design hypothesis only; see [ADR-025](ADR/Architecture_Decisions.md#adr-025--continuous-output-and-timeline-frame-scheduling).
@@ -222,9 +226,6 @@ This makes output activation a join-time operation and makes ANCHOR a media-time
 
 The two Xiaomi phones must be tested with the current scheduled AudioTrack path, tuned low-latency AudioTrack, and Oboe/AAudio callback output. Record the actual selected backend/modes, timestamp availability and mapping error, buffer/frames-per-burst, underruns/XRuns, callback timing and physical acoustic skew. No backend switch or claim of timestamp superiority is accepted without this A/B evidence.
 
-## 9. Runtime and real-time requirements
-
-The receiver's audio callback runs every few milliseconds depending on hardware burst size. It must perform bounded work and remain independent of network delays.
 
 Forbidden inside the audio callback:
 - Heap allocation or deallocation.
