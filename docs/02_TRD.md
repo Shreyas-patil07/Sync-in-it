@@ -190,6 +190,13 @@ The Python M0 simulator includes a controlled shared-airtime approximation: each
 - Duplicate chunks are ignored and late chunks are counted/dropped.
 - The normative v1 draft is in [06_Protocol_and_Data_Schema.md](06_Protocol_and_Data_Schema.md).
 
+
+### 8.1 Readiness-gate consistency and replay diagnostics — 7 November 2026
+
+The repository currently contains inconsistent residual criteria: this TRD's provisional <1 ms baseline, the Testing plan's historical <1 ms residual-standard-deviation wording, Android JNI's enforced <0.25 ms residual RMS, and the core `ReceiverSession` default of `UINT32_MAX` (effectively unlimited). These are not interchangeable definitions. Until [ADR-024](ADR/Architecture_Decisions.md#adr-024--clock-readiness-criterion-and-replay-parity) is resolved, the Android preview's configured gate remains authoritative for device readiness: at least 8 selected samples, at least 10 seconds of selected span, residual RMS <0.25 ms and three consecutive stable updates.
+
+Move readiness parameters into a shared core `ClockReadinessConfig` used by JNI and desktop replay, with one default configuration object. Diagnostics must preserve every t1–t4 probe, RTT, raw offset, selected/rejected/expired status and reason, plus each fit's sample count/span, slope, residual, predicted offset at t4 and stable streak. Matching Host delivery, slow-write, queue and disconnect metrics must share the Speaker session diagnostic ID. A physical log must replay through the same C++ estimator and gate and be checked against the Python reference. No threshold change is authorized by this documentation; derive any future uncertainty gate from replay evidence and the T2 acoustic budget under ADR-024.
+
 ## 9. Runtime and real-time requirements
 
 The receiver's audio callback runs every few milliseconds depending on hardware burst size. It must perform bounded work and remain independent of network delays.
