@@ -247,6 +247,7 @@ These records consolidate decisions and open questions from [docs/System Structu
 **Hard constraints:**
 - Callback-safe clock/DAC snapshots; no allocation, lock, JNI, I/O or logging in the audio callback.
 - Never commit silence beyond the target frame; the output queue/writable-frame horizon and ANCHOR lead must be accounted for.
+- Establish a canonical stream-frame coordinate and explicitly relate callback/write counters to the timestamp framePosition. Do not equate the renderer's next writable frame with a frame already presented or committed; validate the offset and queued-frame horizon for each backend.
 - Treat absent, stale or route-reset timestamps as a readiness/degraded condition, not as a precise scheduling basis.
 - This does not prove that downstream DSP, speaker transducer latency or acoustic-path delay disappears. Preserve acoustic measurement and route-specific calibration until measurements justify changing them.
 
