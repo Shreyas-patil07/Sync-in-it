@@ -16,7 +16,7 @@ permissions:
   contents: write
 
 concurrency:
-  group: android-release-\${{ github.ref }}
+  group: android-release-${{ github.ref }}
   cancel-in-progress: false
 
 jobs:
@@ -28,21 +28,21 @@ jobs:
       - name: Check out release source
         uses: actions/checkout@v4
         with:
-          ref: \${{ github.sha }}
+          ref: ${{ github.sha }}
 
       - name: Derive release tag and app version
         id: release
         env:
-          INPUT_RELEASE_TAG: \${{ inputs.release_tag }}
-          REF_NAME: \${{ github.ref_name }}
+          INPUT_RELEASE_TAG: ${{ inputs.release_tag }}
+          REF_NAME: ${{ github.ref_name }}
         shell: bash
         run: |
           RELEASE_TAG="$INPUT_RELEASE_TAG"
           if [ -z "$RELEASE_TAG" ]; then
-            RELEASE_TAG="\${REF_NAME#release/}"
+            RELEASE_TAG="${REF_NAME#release/}"
           fi
-          if [[ "$RELEASE_TAG" =~ ^v([0-9]+\\.[0-9]+\\.[0-9]+)$ ]]; then
-            VERSION="\${BASH_REMATCH[1]}"
+          if [[ "$RELEASE_TAG" =~ ^v([0-9]+\.[0-9]+\.[0-9]+)$ ]]; then
+            VERSION="${BASH_REMATCH[1]}"
           else
             echo "::error::Expected a semantic version tag such as v0.6.1; received '$RELEASE_TAG'."
             exit 1
@@ -76,8 +76,8 @@ jobs:
 
       - name: Require persistent preview signing key
         env:
-          PREVIEW_KEYSTORE_BASE64: \${{ secrets.SYNCINIT_PREVIEW_KEYSTORE_BASE64 }}
-          PREVIEW_KEYSTORE_PASSWORD: \${{ secrets.SYNCINIT_PREVIEW_KEYSTORE_PASSWORD }}
+          PREVIEW_KEYSTORE_BASE64: ${{ secrets.SYNCINIT_PREVIEW_KEYSTORE_BASE64 }}
+          PREVIEW_KEYSTORE_PASSWORD: ${{ secrets.SYNCINIT_PREVIEW_KEYSTORE_PASSWORD }}
         run: |
           if [ -z "$PREVIEW_KEYSTORE_BASE64" ] || [ -z "$PREVIEW_KEYSTORE_PASSWORD" ]; then
             echo "::error::Configure SYNCINIT_PREVIEW_KEYSTORE_BASE64 and SYNCINIT_PREVIEW_KEYSTORE_PASSWORD before publishing an updateable APK."
@@ -95,11 +95,11 @@ jobs:
 
       - name: Build updateable APK and run transport tests
         env:
-          ORG_GRADLE_PROJECT_syncinitVersionCode: \${{ steps.apk_version.outputs.code }}
-          ORG_GRADLE_PROJECT_syncinitVersionName: \${{ steps.release.outputs.version }}
-          ORG_GRADLE_PROJECT_previewKeystorePath: \${{ github.workspace }}/android/app/syncinit-preview.jks
-          ORG_GRADLE_PROJECT_previewStorePassword: \${{ secrets.SYNCINIT_PREVIEW_KEYSTORE_PASSWORD }}
-          ORG_GRADLE_PROJECT_previewKeyPassword: \${{ secrets.SYNCINIT_PREVIEW_KEYSTORE_PASSWORD }}
+          ORG_GRADLE_PROJECT_syncinitVersionCode: ${{ steps.apk_version.outputs.code }}
+          ORG_GRADLE_PROJECT_syncinitVersionName: ${{ steps.release.outputs.version }}
+          ORG_GRADLE_PROJECT_previewKeystorePath: ${{ github.workspace }}/android/app/syncinit-preview.jks
+          ORG_GRADLE_PROJECT_previewStorePassword: ${{ secrets.SYNCINIT_PREVIEW_KEYSTORE_PASSWORD }}
+          ORG_GRADLE_PROJECT_previewKeyPassword: ${{ secrets.SYNCINIT_PREVIEW_KEYSTORE_PASSWORD }}
           ORG_GRADLE_PROJECT_previewKeyAlias: syncinit-preview
         run: gradle -p android :app:assembleDebug :transport:check --stacktrace
 
@@ -110,10 +110,10 @@ jobs:
 
       - name: Prepare release assets
         env:
-          VERSION: \${{ steps.release.outputs.version }}
+          VERSION: ${{ steps.release.outputs.version }}
         run: |
           mkdir -p release-assets
-          APK="SyncInIt-Android-preview-v\${VERSION}.apk"
+          APK="SyncInIt-Android-preview-v${VERSION}.apk"
           cp android/app/build/outputs/apk/debug/app-debug.apk "release-assets/$APK"
           sha256sum "release-assets/$APK" | awk '{print $1}' > release-assets/SHA256SUMS.txt
           echo "apk=$APK" >> "$GITHUB_OUTPUT"
@@ -121,11 +121,11 @@ jobs:
 
       - name: Prepare release notes
         env:
-          VERSION: \${{ steps.release.outputs.version }}
-          RELEASE_TAG: \${{ steps.release.outputs.tag }}
+          VERSION: ${{ steps.release.outputs.version }}
+          RELEASE_TAG: ${{ steps.release.outputs.tag }}
         run: |
           cat > release-notes.md <<EOF
-          ## Sync In It Android Preview v\${VERSION}
+          ## Sync In It Android Preview v${VERSION}
 
           This update adds persistent diagnostic text export and replay-oriented clock telemetry. It is an engineering preview, not a claim of verified synchronized playback.
 
@@ -151,15 +151,15 @@ jobs:
           - The preview is for a trusted private LAN. Transport encryption, foreground playback service and wake-lock lifecycle are not yet complete.
           - Audio source remains a generated test click; local music and system-audio capture are not implemented.
 
-          Build source commit: https://github.com/\${GITHUB_REPOSITORY}/commit/\${GITHUB_SHA}
+          Build source commit: https://github.com/${GITHUB_REPOSITORY}/commit/${GITHUB_SHA}
           EOF
 
       - name: Create GitHub pre-release and upload APK
         env:
-          GH_TOKEN: \${{ secrets.GITHUB_TOKEN }}
-          RELEASE_TAG: \${{ steps.release.outputs.tag }}
-          VERSION: \${{ steps.release.outputs.version }}
-          APK: \${{ steps.assets.outputs.apk }}
+          GH_TOKEN: ${{ secrets.GITHUB_TOKEN }}
+          RELEASE_TAG: ${{ steps.release.outputs.tag }}
+          VERSION: ${{ steps.release.outputs.version }}
+          APK: ${{ steps.assets.outputs.apk }}
         run: |
           if gh release view "$RELEASE_TAG" --repo "$GITHUB_REPOSITORY" >/dev/null 2>&1; then
             echo "::error::Release $RELEASE_TAG already exists; refusing to overwrite a published release."
