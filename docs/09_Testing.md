@@ -216,6 +216,15 @@ Correlate Host audio delivery, slow writes, queue depth/high-water/overflow and 
 
 Replay must run the same C++ estimator and readiness gate as Android and compare against the Python reference. A captured physical run must replay to the on-device residual and streak within rounding. Verify cached PCM snapshot counters using a fresh native read.
 
+**Diagnostic text export checks:**
+1. Generate more than 240 diagnostic events, including several `CLOCK_PROBE` and `CLOCK_FIT` records. Confirm the on-screen preview remains limited while the exported text report contains the retained full file history.
+2. Recreate the Activity and restart the app; confirm previously written events remain in the app-private log.
+3. Export through **Save diagnostic report (.txt)**, choose Downloads in Android's document picker, and verify a readable UTF-8 `.txt` file is created.
+4. Confirm timestamps, app version, device/API metadata, multiline network snapshots and clock-probe nanosecond values survive export.
+5. Inject token/password/secret/API-key assignments into test log messages and verify the exported report contains `[REDACTED]`, not their values.
+6. Confirm no audio is included, export cancellation creates no file, clear-log clears retained history, and log rollover stays within the 4 MB cap.
+7. Confirm the export works without broad external-storage permissions.
+
 **Threshold integrity:** the current device gate (<0.25 ms residual RMS, minimum 8 samples, 10 s span, three consecutive stable updates) remains unchanged until an ADR-backed decision. The TRD's <1 ms baseline, Testing doc's <1 ms residual standard deviation, JNI <0.25 ms residual RMS, and effectively unlimited core default are inconsistent; resolve definitions and defaults before changing behavior. Do not mix threshold changes with a failing-test fix.
 
 
