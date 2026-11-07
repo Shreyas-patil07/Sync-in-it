@@ -210,3 +210,27 @@ When an ADR changes, review:
 ## 3. Source documents
 
 These records consolidate decisions and open questions from [docs/System Structure.md](../../docs_original/System%20Structure.md) and [docs/Sync Engine.md](../../docs_original/Sync%20Engine.md). The original source documents remain unchanged.
+
+
+## ADR-024 — Clock-readiness criterion and replay parity
+
+**Status:** Open — evidence required before changing runtime behavior  
+**Date:** 7 November 2026
+
+**Context:** The repository contains inconsistent readiness criteria. The TRD records a <1 ms baseline residual; the Testing plan historically records residual standard deviation <1 ms; Android JNI `stable_fit` uses residual RMS <0.25 ms with at least 8 samples and 10 seconds of span, plus a three-update streak; the core `ReceiverSession` default is `UINT32_MAX`, effectively disabling its residual bound unless overridden. These values measure related but non-identical quantities and must not be treated as interchangeable.
+
+**Current decision:** Preserve the Android preview's existing <0.25 ms residual-RMS gate, sample-count/span requirements and three-consecutive-update rule while gathering evidence. No threshold is relaxed or reinterpreted by this ADR.
+
+**Required evidence and decision process:**
+1. Add per-probe t1–t4, RTT, offset, selected/rejected/expired status and reason.
+2. Add fit-update fields: samples seen/used, span, slope, residual, predicted offset at t4 and stable streak.
+3. Correlate Speaker and Host audio delivery, slow-write, queue and disconnect diagnostics by session ID.
+4. Replay a captured physical run through the same C++ estimator and readiness gate used on Android; compare with the Python reference and golden fixtures.
+5. Run the controlled hotspot/router, power, receive-priority, probe-policy, sample-selection and slope A/B matrix.
+6. Derive the clock-error allocation from the T2 acoustic acceptance target (p95 absolute skew ≤10 ms). Explicitly state the allocated clock budget, uncertainty metric and why it is sufficient.
+
+**Change control:** A threshold change requires replayable evidence, updated shared core/device configuration, golden-vector and test updates, and a separate reviewed amendment. Do not combine a threshold change with a patch fixing a failing acceptance run.
+
+**Consequences:** Until this decision is completed, the strict Android gate remains authoritative for device readiness; TRD/testing references to <1 ms are historical/provisional baselines, not permission to bypass it. Core and JNI defaults must ultimately share one explicit `ClockReadinessConfig` object.
+
+**Open questions:** What clock-error budget is appropriate within the 10 ms acoustic target? Is residual RMS an adequate readiness statistic, or should start-time uncertainty and hold-out prediction error be the principal criteria? How should correlation between probes affect standard-error calculations?
