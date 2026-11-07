@@ -63,6 +63,8 @@ struct NativeTimeSyncClient {
     std::mutex mutex;
     syit::TimeSyncClient client;
     std::vector<syit::SyncSample> samples;
+    syit::TimeSyncExchange last_exchange{};
+    bool has_last_exchange{false};
     std::size_t stable_streak{0U};
 };
 
@@ -599,6 +601,8 @@ Java_com_syncinit_app_core_NativeCore_nativeAcceptTimeSyncResponse(
             return nullptr;
         }
 
+        native_client->last_exchange = exchange;
+        native_client->has_last_exchange = true;
         native_client->samples.push_back(exchange.to_sync_sample(static_cast<syit::Nanoseconds>(t4_ns)));
         constexpr syit::Nanoseconds kEstimatorWindowNs = 60'000'000'000LL;
         native_client->samples.erase(
@@ -636,6 +640,36 @@ Java_com_syncinit_app_core_NativeCore_nativeAcceptTimeSyncResponse(
             static_cast<jdouble>(fit.selected_sample_span_ns),
             static_cast<jdouble>(native_client->stable_streak)
         }});
+    } catch (const std::exception&) {
+        return nullptr;
+    }
+}
+
+extern "C" JNIEXPORT jlongArray JNICALL
+Java_com_syncinit_app_core_NativeCore_nativeLastTimeSyncExchange(
+    JNIEnv* env, jobject, jlong handle) {
+    auto native_client = find_clock_client(handle);
+    if (!native_client) return nullptr;
+
+    std::lock_guard<std::mutex> lock(native_client->mutex);
+    if (!native_client->has_last_exchange) return nullptr;
+
+    try {
+        const auto& exchange = native_client->last_exchange;
+        const auto values = syit::calculate_four_timestamp(exchange.to_sync_sample(exchange.t4_ns));
+        const std::array<jlong, 7> fields{{
+            static_cast<jlong>(exchange.sequence),
+            static_cast<jlong>(exchange.t1_ns),
+            static_cast<jlong>(exchange.t2_ns),
+            static_cast<jlong>(exchange.t3_ns),
+            static_cast<jlong>(exchange.t4_ns),
+            static_cast<jlong>(values.rtt_ns),
+            static_cast<jlong>(values.offset_ns)
+        }};
+        jlongArray output = env->NewLongArray(static_cast<jsize>(fields.size()));
+        if (output == nullptr) return nullptr;
+        env->SetLongArrayRegion(output, 0, static_cast<jsize>(fields.size()), fields.data());
+        return output;
     } catch (const std::exception&) {
         return nullptr;
     }
