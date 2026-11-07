@@ -53,8 +53,8 @@ class DiagnosticLogStore(context: Context) {
             .trimStart('\n', '\r')
         val exportHeader = header().replaceFirst(
             separator,
-            "logInitializedAt=${storedValue("createdAt") ?: "unknown"}\\n" +
-                "logInitializedAppVersion=${storedValue("appVersion") ?: "unknown"}\\n" +
+            "logInitializedAt=${storedValue("createdAt") ?: "unknown"}\n" +
+                "logInitializedAppVersion=${storedValue("appVersion") ?: "unknown"}\n" +
                 separator
         )
         return exportHeader + events
