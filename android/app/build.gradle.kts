@@ -31,7 +31,7 @@ val requestedVersionCode = providers.gradleProperty("syncinitVersionCode")
 val requestedVersionName = providers.gradleProperty("syncinitVersionName")
     .orNull
     ?.takeIf { it.isNotBlank() }
-    ?: "0.5.9-preview"
+    ?: "0.6.1"
 
 require(requestedVersionCode in 1..2_100_000_000) {
     "syncinitVersionCode must be between 1 and 2100000000"
