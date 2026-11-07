@@ -78,12 +78,12 @@ class NativeReceiverSession private constructor(private var nativeHandle: Long) 
     }
 
     @Synchronized
-    fun timeSyncResponse(packet: ByteArray, t2Ns: Long, t3Ns: Long): ByteArray? {
+    fun timeSyncResponse(packet: ByteArray, t2Ns: Long): ByteArray? {
         checkOpen()
         require(packet.size == 38) { "time-sync request must be exactly 38 bytes" }
-        require(t3Ns >= t2Ns) { "time-sync server timestamps are invalid" }
+        // The transport replaces this provisional T3 immediately before the UDP socket send.
         return NativeCore.nativeTimeSyncResponseFrame(
-            nativeHandle, packet.copyOf(), t2Ns, t3Ns
+            nativeHandle, packet.copyOf(), t2Ns, t2Ns
         )
     }
 
