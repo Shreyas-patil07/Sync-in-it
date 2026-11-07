@@ -190,7 +190,7 @@ Procedure:
 5. Repeat under idle and loaded Wi-Fi conditions.
 6. Compare offset estimates with the test's independent reference method where available.
 
-Historical provisional gate: offset-estimator residual standard deviation below 1 ms under a stable, controlled setup. This conflicts with the Android preview's enforced <0.25 ms residual-RMS gate and must be reconciled in ADR-018. Do not weaken or silently reinterpret the device gate. A clock pass does not prove acoustic synchronization.
+Historical provisional gate: offset-estimator residual standard deviation below 1 ms under a stable, controlled setup. This conflicts with the Android preview's enforced <0.25 ms residual-RMS gate and must be reconciled in ADR-024. Do not weaken or silently reinterpret the device gate. A clock pass does not prove acoustic synchronization.
 
 
 ## 7.1 Clock-readiness diagnostic A/B matrix (7 November 2026)
