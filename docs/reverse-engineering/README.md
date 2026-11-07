@@ -53,6 +53,12 @@ The current Android implementation is primarily **host-to-client PCM audio distr
 
 The current physical test record remains authoritative for Sync In It's measured behaviour: [Test Results](../Test_Results.md). Competitor claims must not be substituted for our device measurements.
 
+
+## Current execution priority — 7 November 2026
+
+The final upgrade brief is consolidated into the [Implementation Plan](../07_Implementation.md), with the clock-readiness inconsistency tracked in [ADR-024](../ADR/Architecture_Decisions.md#adr-024--clock-readiness-criterion-and-replay-parity). The next task is per-probe + Host-correlated evidence and offline replay, followed by the controlled clock A/B matrix and one-Host/one-Speaker acoustic validation. The current <0.25 ms Android device gate is not to be relaxed until the criterion is derived from replay evidence and the T2 acoustic budget. See [Current Implementation Status](../11_Current_Implementation_Status.md) for what is implemented versus physically validated.
+
+
 ## Maintenance rules
 
 1. Recheck product availability and platform support on target devices before acting on this research.
