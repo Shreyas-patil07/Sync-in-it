@@ -295,6 +295,50 @@ The primary result is target-output-frame-to-acoustic-arrival error and p95 acou
 
 **Decision gate:** compare timestamp mapping quality and physical acoustic skew on both phones. Require p95 acoustic skew ≤10 ms (T2) with no new underrun/XRun or transition artifact before promoting the continuous path. Do not assume Oboe is better because it is the recommended low-latency API.
 
+
+## 8.3 Single-Speaker-first and transport/codec experiments
+
+**Execution order is a test constraint.** Do not begin transport/codec implementation while the current PCM/TCP Speaker has not passed the single-Speaker READY → ANCHOR → audible-output gate. First capture a passing one-Speaker run, then the continuous-output comparison, then add a second Speaker and establish the T2 acoustic baseline. The transport/codec matrix starts only after that two-Speaker baseline passes.
+
+### Transport/codec comparison matrix
+
+Use identical sample-indexed source audio, devices, AP/router, placement, output route, volume, buffer configuration and scheduled timeline. Change one dimension per run.
+
+| ID | Codec | Transport | Purpose |
+|---|---|---|---|
+| T0 | PCM16 | Current per-Speaker TCP | Control/baseline |
+| T1 | FLAC lossless | TCP | Measure real source-dependent compression and decode cost |
+| T2 | Opus, initially 20 ms frames | TCP | Measure bitrate/quality/codec delay/CPU |
+| T3 | PCM16 | UDP + selective retransmit | Isolate transport head-of-line and repair-deadline behavior |
+| T4 | Opus, 20 ms frames | UDP + selective retransmit | Optional combined candidate; run only after T2 and T3 are understood |
+
+Do not compare T1/T2 to T3/T4 simultaneously as a single "new transport" result. First hold transport constant while changing codec; then hold codec constant while changing transport.
+
+### Required measurements
+
+- Mean/p95/peak payload bitrate per Speaker and aggregate; bytes per sample interval; protocol and retransmission overhead.
+- TCP retransmission count, blocked-stream stall duration and per-Speaker queue wait; distinguish one receiver's TCP head-of-line blocking from other independent Speaker connections.
+- UDP datagram loss, reorder, duplicate and late-arrival count; NACK count, repair RTT, repair success and fraction repaired before the target sample deadline.
+- Chunk sequence/sample-index continuity; missing sample spans; decode completion time relative to target presentation; decoder resets and concealed/dropped samples.
+- Receiver buffer fill/high-water, time-to-depletion during stalls, underruns, dropouts and resynchronization count.
+- Encoder/decoder CPU, memory, battery/thermal state and acoustic quality.
+- Acoustic skew and the already-established T2 p95 ≤10 ms gate; verify a transport/codec change does not regress output timing.
+
+### Specific guardrails
+
+- FLAC compression ratio is source-dependent. Report the measured ratio for generated tones, speech and representative music; do not assume 50%.
+- Opus frame duration and packet aggregation change both latency and loss sensitivity. Record actual encoder lookahead, frames per packet and decoder delay; map decoded PCM back to the original sample indices.
+- A multi-second playback buffer gives the system time to receive and decode ahead, but codec latency still exists and must be included in the source-to-output timestamp model.
+- For UDP repair, request only chunks whose playout deadlines remain reachable. Once a chunk is too late, count it and apply an explicit concealment/drop policy; never stall the group timeline waiting for it.
+- Keep packet sizes below the path MTU; test fragmentation/large-packet behavior explicitly before any field deployment.
+- Maintain per-Speaker isolation: one receiver's loss or repair queue must not stall healthy Speakers.
+
+**Exit gate:** a candidate preserves the sample-index timeline, meets acoustic gates, reduces measured bandwidth or improves measured stall behavior, and does not introduce unacceptable loss, quality, CPU, thermal or battery regressions. PCM/TCP remains the fallback until then.
+
+## 8.4 Implementation sequencing and work-in-progress limit
+
+Maintain one primary implementation workstream. The order is: minimum diagnostics → one-Speaker PCM/TCP end-to-end pass → continuous-output comparison → two-Speaker acoustic pass → transport/codec matrix → group scale and resilience. Research and deterministic replay may run in parallel only when they directly diagnose the active gate. No iOS, PWA, provider/queue, calibration, codec or UDP transport implementation should be started as a workaround for a blocked single-Speaker path.
+
 ## 9. Drift and endurance tests (M4)
 
 Run a click track or continuous test tone for at least 30 minutes in the first endurance gate and 60 minutes for the broader reliability target.

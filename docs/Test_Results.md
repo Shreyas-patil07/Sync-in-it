@@ -133,6 +133,22 @@ For the AudioTrack-versus-Oboe and continuous-output experiment, add:
 For estimator variants, preserve the same ordered raw probe log and record algorithm/configuration ID, per-update predicted offset before measurement assimilation, covariance (for the two-state tracker), entry/exit state and stable-streak transitions. Keep baseline, hysteresis, tracker and combined results separate. Do not compare runs whose input probe sequence or device/network conditions differ.
 
 
+
+## 2.3 Single-Speaker and transport baseline fields — 7 November 2026
+
+The first next-run record must prove one Host + one Speaker over the existing PCM16/TCP + AudioTrack path before any transport or codec experiment. Record READY sent/accepted, ANCHOR received, first audible marker, output-frame-to-marker timing, missing sample spans, underruns and a physical recording. A single Speaker proves the end-to-end path; it does not establish inter-device acoustic skew.
+
+After the first one-/two-Speaker timing gates pass, transport/codec runs must add:
+- Codec and transport ID (PCM/TCP, FLAC/TCP, Opus/TCP, PCM/UDP-repair).
+- Payload bytes and mean/p95/peak bitrate per Speaker and aggregate.
+- TCP retransmission count, per-Speaker HOL stall duration, write queue and buffer depletion.
+- UDP lost/reordered/duplicated/late datagrams; NACK count; repair RTT; repaired-before-deadline ratio; unrepaired sample spans.
+- Encoder lookahead, packetization duration, frames per packet, decoder processing/delay and decoded sample-index continuity.
+- CPU, memory, battery and thermal state; underruns/dropouts; acoustic quality and p95 skew.
+- Whether each missing chunk was repaired before its target presentation deadline or was concealed/dropped.
+
+Do not compare combined codec/transport changes as one result. First compare codecs over TCP, then transport with a fixed codec. Keep PCM/TCP as the fallback until a candidate passes acoustic and reliability gates.
+
 ## 3. Reusable template for future runs
 
 Copy this section for each new run and replace the placeholders. Preserve prior test records.
@@ -168,6 +184,16 @@ Copy this section for each new run and replace the placeholders. Preserve prior 
 | ANCHOR received | |
 | Playback start result | |
 | Acoustic marker skew | |
+| READY sent / Host accepted | |
+| First audible marker / output-frame mapping error | |
+| Transport / codec | |
+| Mean / p95 / peak payload bitrate per Speaker + aggregate | |
+| TCP retransmissions / HOL stall duration | |
+| UDP loss / reorder / duplicate / late count | |
+| NACK / repair success before deadline | |
+| Encoder lookahead / decoder delay / packetization | |
+| Buffer depletion / underrun / dropouts | |
+| CPU / battery / thermal state | |
 
 - **Verdict:** PASS / FAIL / BLOCKED / INCONCLUSIVE
 - **Evidence:** log filenames, workflow runs, analysis artifacts

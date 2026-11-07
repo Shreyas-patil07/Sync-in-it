@@ -905,3 +905,30 @@ Do not infer missing hardware/router metadata. Store raw recordings outside Git 
 
 **Next action:** Capture/replay the physical clock log for baseline/hysteresis/two-state variants, and run the scheduled-versus-continuous AudioTrack/Oboe output comparison on the two Xiaomi devices before selecting an implementation.
 
+
+
+### 7 November 2026 — Single-Speaker process gate and transport alternatives documented
+
+**Type:** Documentation / architecture review  
+**Status:** Completed in documentation; all implementation work remains pending  
+**Branch:** `docs/final-upgrade-brief-2026-11-07`
+
+**Summary:**
+- Reordered the critical path around one Host + one Speaker on the current PCM16/TCP + AudioTrack backend. The hard gate is READY sent/accepted → common ANCHOR → audible, marker-verified output with correlated logs.
+- Added a process rule: keep one primary implementation workstream and do not start codec, UDP transport, iOS, PWA, provider/queue, calibration or security work while the one-Speaker path is blocked.
+- Made continuous silence-first output the next same-device comparison after the current scheduled-start baseline passes; added frame-coordinate and queue-horizon checks.
+- Added gated transport/codec experiments: PCM/TCP baseline, FLAC/TCP, Opus/TCP, then PCM/UDP with selective repair; compare one variable at a time.
+- Added transport measurements for payload bitrate, per-Speaker TCP stall/retransmission, UDP loss/repair deadlines, sample-index continuity, decoder delay, buffer depletion, acoustic skew and resource cost.
+- Added ADR-027 and updated the Implementation Plan, TRD, Testing Strategy, Current Implementation Status, Test Results and reverse-engineering recommendations/index.
+
+**Technical clarifications:**
+- Current PCM payload is 1.536 Mbps per Speaker; eight preview Speakers represent 12.288 Mbps aggregate payload before protocol and Wi-Fi overhead.
+- Each Speaker owns a separate TCP audio connection. TCP head-of-line blocking is per affected connection, not one shared group-wide stream.
+- FLAC compression is source-dependent; do not assume a fixed 50% reduction.
+- Opus delay must be measured and decoded samples must preserve original sample indices; multi-second playout lead permits decode-ahead but does not erase codec delay.
+- Android recommends Oboe/AAudio low-latency configuration; this does not establish timestamp accuracy superiority over AudioTrack on the target Xiaomi phones.
+
+**Non-changes:** No runtime code, wire protocol, audio backend, codec, transport or clock algorithm changed. The current <0.25 ms readiness gate is unchanged. No physical-device experiment or build/test run was performed.
+
+**Next action:** Complete the one-Speaker PCM/TCP + AudioTrack vertical slice, then test continuous output on the same hardware before adding a second Speaker or beginning codec/transport work.
+

@@ -179,6 +179,22 @@ The real capacity limit depends on router airtime, retransmissions, interference
 
 The Python M0 simulator includes a controlled shared-airtime approximation: each unicast audio segment and UDP time-sync packet traverses client-to-AP and AP-to-client hops on one half-duplex medium. Waiting clock-sync packets have priority over queued audio packets, with queue capacity reserved for control. It reports utilization, queue wait, control RTT, audio chunk latency, three-second playback-deadline misses and eight-second buffer overruns. This is a test model only; it is not a full 802.11 MAC and cannot establish capacity for a particular router.
 
+
+### 7.4 Transport and codec alternatives — gated after first physical start
+
+The current Android implementation uses one TCP audio connection per Speaker and sends 48 kHz stereo PCM16 in 20 ms, 960-frame chunks. This remains the baseline until the one-Speaker READY → ANCHOR → physical-output path passes.
+
+**Payload arithmetic:** 48,000 samples/sec × 16 bits × 2 channels = 1.536 Mbps per Speaker. Eight Speakers receive 12.288 Mbps of aggregate unicast audio payload before TCP/IP headers, ACKs, retransmissions, Wi-Fi contention and MAC overhead. This is not an estimate of actual RF airtime or a capacity guarantee.
+
+**TCP behavior:** ordered reliable delivery can hold later bytes on one connection behind a lost segment while TCP repairs it. Because each Speaker has its own TCP connection, this head-of-line stall is per Speaker rather than one shared TCP stream for the entire group. The 20-second receiver buffer can absorb only a bounded stall; it does not remove the transport property. Measure retransmission stalls, chunk age and buffer depletion before changing transport.
+
+Candidate comparisons, after the first physical start:
+- **FLAC over TCP:** lossless compression; compression ratio depends on the source signal and must be measured. Snapcast documents FLAC as its default codec and sends encoded, time-tagged chunks over TCP while clients continuously synchronize and buffer decoded chunks ([Snapcast project](https://github.com/snapcast/snapcast)). This is a proven architecture reference, not a guarantee that its performance transfers to Android.
+- **Opus over TCP:** lossy compression with low-bitrate options. Begin with 20 ms frames and sample-index decoded output. Measure encoder lookahead, packet aggregation, decoder delay, bitrate, CPU, thermal impact and audio quality. RFC 6716 permits 2.5–60 ms frames and packets up to 120 ms; longer packetization reduces packet overhead but raises latency and loss sensitivity. A 2–20 second playout lead allows encode/decode before presentation, but does not erase codec delay or permit decoded samples to be shifted from their original timeline ([RFC 6716](https://datatracker.ietf.org/doc/html/rfc6716)).
+- **UDP with selective retransmission:** later transport experiment. Include packet sequence/sample index, bounded missing-chunk requests, a playout deadline and per-Speaker retransmission state. A late repair must be discarded rather than delaying the shared timeline. UDP prevents one missing datagram from blocking later datagrams, but does not recover the missing audio by itself. Account for MTU/fragmentation and define concealment when repair misses the deadline.
+
+Compare codec changes over the same TCP transport first. Compare transport changes with one fixed codec second. Keep PCM/TCP as fallback until an alternative meets acoustic, dropout, buffer-underflow, group-airtime and resource gates. Do not assume FLAC halves bandwidth or that Opus delay is negligible without measured encode/decode and target-device results.
+
 ## 8. Protocol and compatibility requirements
 
 - TCP messages use length-prefixed framing.

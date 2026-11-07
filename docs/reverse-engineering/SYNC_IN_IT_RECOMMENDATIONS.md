@@ -122,3 +122,45 @@ This is a proposed logical model, not a claim that the current repository alread
 ## 5. Decision rule
 
 Use competitor research to generate testable hypotheses and test fixtures. Accept an implementation only when it improves repeatable device measurements without unacceptable dropouts, CPU, battery, thermal or memory costs. Synthetic results screen ideas; physical acoustic measurements validate playback claims.
+
+
+## 3.2 Additional architecture review — output, transport and process (7 November 2026)
+
+The next recommendations are ranked by confidence. They are candidate changes and test priorities, not accepted implementation decisions.
+
+### Priority 1 — Continuous output; ANCHOR selects a frame (high confidence)
+
+Keep the output stream active from Speaker join and render silence while the shared timeline is not playing. Acquire the output frame/time mapping during that silent period. When ANCHOR arrives, map its Host time to local monotonic time and invert the DAC mapping to identify the corresponding output-frame boundary; associate the ANCHOR sample index with that frame.
+
+This removes a scheduled `AudioTrack.play()` call from the media-start decision. It does **not** prove that downstream mixer/DSP, speaker transducer or acoustic-path delay disappears. Output-frame and timestamp-frame coordinate origins, already-queued frames and the writable horizon must be validated. Keep physical acoustic measurement and route-specific compensation available until repeatable evidence says otherwise. See [ADR-025](../ADR/Architecture_Decisions.md#adr-025--continuous-output-and-timeline-frame-scheduling).
+
+### Priority 2 — Reduce bandwidth and contain per-Speaker transport stalls (medium confidence)
+
+Current PCM16 stereo at 48 kHz consumes 1.536 Mbps payload per Speaker; eight concurrent unicast Speaker streams consume 12.288 Mbps before networking and Wi-Fi airtime overhead.
+
+- FLAC/TCP: test lossless compression and decode cost. Compression ratio varies by source; do not assume a 50% reduction.
+- Opus/TCP: start with 20 ms frames; record encoder lookahead, packet aggregation, decoder delay, bitrate, audio quality and CPU. Decode ahead of presentation but preserve original sample indices. Multi-second group delay does not make codec delay disappear.
+- UDP selective repair: defer until after a working start and a TCP baseline. Add sequence/sample indices, bounded NACKs, repair deadlines before playout and explicit late-loss concealment. UDP loss does not block later packets, but it still leaves a missing sample range if repair misses the deadline.
+
+The current architecture uses one TCP audio connection per Speaker. A lost segment can head-of-line block later bytes on that one connection; it does not automatically block other Speakers' independent connections. The 20-second receive buffer only absorbs a bounded stall. See [ADR-027](../ADR/Architecture_Decisions.md#adr-027--audio-transport-and-codec-alternatives).
+
+Snapcast is a relevant public reference for this option set: its project documentation describes time-tagged chunks, continuous client/server synchronization, client buffering, TCP delivery and FLAC as its default codec. Do not assume identical results on Android phones or a Wi-Fi hotspot: [Snapcast](https://github.com/snapcast/snapcast).
+
+### Priority 3 — Oboe/AAudio backend comparison (medium-low confidence)
+
+Compare the current scheduled AudioTrack path, continuous AudioTrack with `PERFORMANCE_MODE_LOW_LATENCY`, and Oboe/AAudio callback output on the same two Xiaomi phones. Capture actual selected API and sharing/performance modes, sample rate, frames per burst, timestamp availability/mapping error, underruns/XRuns, callback timing and acoustic skew.
+
+Android recommends Oboe/AAudio low-latency configuration for low-latency audio; that does not establish that AAudio timestamps are more accurate than AudioTrack timestamps on these particular devices. Make the backend choice from repeatable timestamp and acoustic measurements, not API reputation. The references and test procedure are in [Testing §8.2](../09_Testing.md#82-continuous-output-and-audiotrack-versus-oboe-experiment-m2m3).
+
+### Process constraint — one Speaker before more layers
+
+The larger project risk is advancing transport, codec, platform and product layers before one Speaker has passed the end-to-end path. Keep one primary implementation workstream:
+
+1. Current PCM/TCP + AudioTrack: one Speaker reaches READY, receives ANCHOR and produces audible, marker-verified output.
+2. Compare continuous-output start on that same setup.
+3. Add a second Speaker and prove the acoustic target.
+4. Only then test codec/transport alternatives and group scaling.
+5. Keep Oboe/AAudio as a later backend comparison after a measurable output baseline.
+
+Do not start codec, UDP, iOS, PWA, provider/queue, calibration or security implementation as a workaround for a blocked single-Speaker path. Clock algorithm work stays limited to the replay experiments already captured in ADR-026; first determine whether the failing path is clock readiness, transport/buffering or output scheduling.
+
