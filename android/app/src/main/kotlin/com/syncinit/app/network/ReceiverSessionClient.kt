@@ -278,9 +278,14 @@ class ReceiverSessionClient(
                     val request = nativeClock.makeRequest(t1Ns)
                     probeAttempts += 1
                     var measurement: com.syncinit.app.core.ClockSyncMeasurement? = null
+                    var requestPreparationUs = 0L
+                    var udpSendCallUs = 0L
 
                     try {
+                        val udpSendStartedAtNs = System.nanoTime()
+                        requestPreparationUs = (udpSendStartedAtNs - t1Ns) / 1_000L
                         udp.send(request)
+                        udpSendCallUs = (System.nanoTime() - udpSendStartedAtNs) / 1_000L
                         val received = udp.receiveTimed()
                         val probeElapsedMs = (received.receivedAtNs - t1Ns) / 1_000_000.0
                         measurement = nativeClock.acceptResponse(received.bytes, received.receivedAtNs)
@@ -305,8 +310,9 @@ class ReceiverSessionClient(
                                 onStatus(
                                     "[DIAG $attemptId] CLOCK_PROBE sequence=${probe.sequence} " +
                                         "t1Ns=${probe.t1Ns} t2Ns=${probe.t2Ns} " +
-                                        "t3Ns=${probe.t3Ns} t4Ns=${probe.t4Ns} " +
-                                        "roundTripNs=${probe.roundTripNs} rawOffsetNs=${probe.rawOffsetNs}"
+                                    "t3Ns=${probe.t3Ns} t4Ns=${probe.t4Ns} " +
+                                    "roundTripNs=${probe.roundTripNs} rawOffsetNs=${probe.rawOffsetNs} " +
+                                    "requestPreparationUs=$requestPreparationUs udpSendCallUs=$udpSendCallUs"
                                 )
                             }
                             onStatus(
