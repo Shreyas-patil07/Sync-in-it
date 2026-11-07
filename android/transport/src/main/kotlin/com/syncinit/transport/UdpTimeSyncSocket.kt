@@ -19,6 +19,27 @@ data class ReceivedTimeSyncDatagram(val bytes: ByteArray, val source: InetSocket
  */
 object UdpTimeSyncPacketMetadata {
     fun sequence(packet: ByteArray): Long {
+        validateEnvelope(packet)
+        return (packet[10].toLong() and 0xffL) or
+            ((packet[11].toLong() and 0xffL) shl 8) or
+            ((packet[12].toLong() and 0xffL) shl 16) or
+            ((packet[13].toLong() and 0xffL) shl 24)
+    }
+
+    /** Replaces the provisional T3 in a v1 response with the monotonic socket-send timestamp. */
+    fun stampResponseT3(packet: ByteArray, t3Ns: Long) {
+        validateEnvelope(packet)
+        require((packet[3].toInt() and 0xff) == RESPONSE_TYPE) {
+            "time-sync packet is not a response"
+        }
+        val t2Ns = readLongLittleEndian(packet, T2_OFFSET)
+        require(t3Ns >= t2Ns) { "response T3 must not precede T2" }
+        for (index in 0 until LONG_BYTES) {
+            packet[T3_OFFSET + index] = (t3Ns ushr (index * 8)).toByte()
+        }
+    }
+
+    private fun validateEnvelope(packet: ByteArray) {
         require(packet.size == UdpTimeSyncClient.PACKET_SIZE) {
             "time-sync packet must be exactly ${UdpTimeSyncClient.PACKET_SIZE} bytes"
         }
@@ -26,12 +47,25 @@ object UdpTimeSyncPacketMetadata {
             "invalid time-sync packet magic"
         }
         require((packet[2].toInt() and 0xff) == 1) { "unsupported time-sync packet version" }
-        return (packet[10].toLong() and 0xffL) or
-            ((packet[11].toLong() and 0xffL) shl 8) or
-            ((packet[12].toLong() and 0xffL) shl 16) or
-            ((packet[13].toLong() and 0xffL) shl 24)
+    }
+
+    private fun readLongLittleEndian(packet: ByteArray, offset: Int): Long {
+        var value = 0L
+        for (index in 0 until LONG_BYTES) {
+            value = value or ((packet[offset + index].toLong() and 0xffL) shl (index * 8))
+        }
+        return value
+    }
+
+    private companion object {
+        const val RESPONSE_TYPE = 2
+        const val T2_OFFSET = 22
+        const val T3_OFFSET = 30
+        const val LONG_BYTES = 8
     }
 }
+
+data class TimeSyncResponseSendTiming(val t3Ns: Long, val sendElapsedNs: Long)
 
 data class ReceivedTimeSyncResponse(val bytes: ByteArray, val receivedAtNs: Long)
 
@@ -139,6 +173,29 @@ class UdpTimeSyncServer(
         require(!destination.isUnresolved) { "destination must be resolved" }
         require(destination.port in 1..65_535) { "destination port must be between 1 and 65535" }
         socket.send(DatagramPacket(response, response.size, destination))
+    }
+
+    /**
+     * Stamps T3 after the datagram packet is prepared and immediately before socket.send().
+     * The provisional response must already contain valid T1/T2/session/receiver fields.
+     */
+    @Throws(IOException::class)
+    fun sendTimeSyncResponse(
+        response: ByteArray,
+        destination: InetSocketAddress
+    ): TimeSyncResponseSendTiming {
+        check(!closed.get()) { "UDP time-sync server is closed" }
+        require(response.size == UdpTimeSyncClient.PACKET_SIZE) {
+            "time-sync response must be exactly ${UdpTimeSyncClient.PACKET_SIZE} bytes"
+        }
+        require(!destination.isUnresolved) { "destination must be resolved" }
+        require(destination.port in 1..65_535) { "destination port must be between 1 and 65535" }
+
+        val packet = DatagramPacket(response, response.size, destination)
+        val t3Ns = System.nanoTime()
+        UdpTimeSyncPacketMetadata.stampResponseT3(response, t3Ns)
+        socket.send(packet)
+        return TimeSyncResponseSendTiming(t3Ns, System.nanoTime() - t3Ns)
     }
 
     override fun close() {
