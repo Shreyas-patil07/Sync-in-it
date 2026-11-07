@@ -812,8 +812,6 @@ class MasterSessionHost(context: Context, private val onStatus: (String) -> Unit
                     continue
                 }
 
-                val t3Ns = System.nanoTime()
-                val t2ToT3Us = (t3Ns - datagram.receivedAtNs) / 1_000L
                 var matchedPeer: HostReceiverPeer? = null
                 var response: ByteArray? = null
                 var newlyPinnedPeer: HostReceiverPeer? = null
@@ -825,7 +823,7 @@ class MasterSessionHost(context: Context, private val onStatus: (String) -> Unit
                     }
 
                     val candidateResponse = try {
-                        peer.session.timeSyncResponse(datagram.bytes, datagram.receivedAtNs, t3Ns)
+                        peer.session.timeSyncResponse(datagram.bytes, datagram.receivedAtNs)
                     } catch (_: IllegalStateException) {
                         // The Speaker may have disconnected after the receiver snapshot was taken.
                         null
@@ -854,30 +852,25 @@ class MasterSessionHost(context: Context, private val onStatus: (String) -> Unit
                     continue
                 }
 
-                val responseReadyAtNs = System.nanoTime()
                 val sequence = UdpTimeSyncPacketMetadata.sequence(encodedResponse)
-                val t3ToResponseReadyUs = (responseReadyAtNs - t3Ns) / 1_000L
+                val responseReadyAtNs = System.nanoTime()
+                val sendTiming = server.sendTimeSyncResponse(encodedResponse, datagram.source)
+                val t3Ns = sendTiming.t3Ns
+                val responseReadyToT3Us = (t3Ns - responseReadyAtNs) / 1_000L
+                val receiveToT3Us = (t3Ns - datagram.receivedAtNs) / 1_000L
+                val sendElapsedUs = sendTiming.sendElapsedNs / 1_000L
+
                 if (newlyPinnedPeer === target) {
                     onStatus("DIAG HOST_UDP_PEER_PINNED receiverId=${target.receiverId} source=${datagram.source}")
                 }
-                val responseStartedAt = System.nanoTime()
-                val t3ToSendStartUs = (responseStartedAt - t3Ns) / 1_000L
-                val responseReadyToSendStartUs = (responseStartedAt - responseReadyAtNs) / 1_000L
-                val receiveToSendStartUs = (responseStartedAt - datagram.receivedAtNs) / 1_000L
-                server.sendTo(encodedResponse, datagram.source)
-                val sendElapsedUs = (System.nanoTime() - responseStartedAt) / 1_000L
-
                 onStatus(
                     "DIAG HOST_UDP_PROBE sequence=$sequence receiverId=${target.receiverId} " +
-                        "source=${datagram.source} t2ToT3Us=$t2ToT3Us " +
-                        "t3ToResponseReadyUs=$t3ToResponseReadyUs " +
-                        "responseReadyToSendStartUs=$responseReadyToSendStartUs " +
-                        "t3ToSendStartUs=$t3ToSendStartUs receiveToSendStartUs=$receiveToSendStartUs " +
-                        "sendElapsedUs=$sendElapsedUs"
+                        "source=${datagram.source} receiveToT3Us=$receiveToT3Us " +
+                        "responseReadyToT3Us=$responseReadyToT3Us sendElapsedUs=$sendElapsedUs"
                 )
                 responseCount += 1
                 if (responseCount == 1 || responseCount % 20 == 0) {
-                    onStatus("DIAG HOST_UDP_RESPONSE_SENT count=$responseCount receiverId=${target.receiverId} destination=${datagram.source} bytes=${encodedResponse.size} t3ToSendStartUs=$t3ToSendStartUs receiveToSendStartUs=$receiveToSendStartUs sendElapsedUs=$sendElapsedUs")
+                    onStatus("DIAG HOST_UDP_RESPONSE_SENT count=$responseCount receiverId=${target.receiverId} destination=${datagram.source} responseReadyToT3Us=$responseReadyToT3Us receiveToT3Us=$receiveToT3Us sendElapsedUs=$sendElapsedUs")
                     onStatus("UDP time sync active · $responseCount validated requests answered across ${receivers.size} speaker(s).")
                 }
             }
