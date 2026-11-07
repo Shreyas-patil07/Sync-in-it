@@ -11,6 +11,7 @@ import android.system.StructCmsghdr
 import android.system.StructMsghdr
 import android.system.StructTimeval
 import com.syncinit.app.core.NativeCore
+import com.syncinit.transport.FrameProtocolException
 import com.syncinit.transport.KernelReceiveTimestamp
 import com.syncinit.transport.ReceivedTimeSyncDatagram
 import com.syncinit.transport.ReceivedTimeSyncResponse
@@ -260,14 +261,17 @@ private class KernelTimestampUdpSocket private constructor(
             throw IOException("kernel UDP receive failed: errno=" + error.errno, error)
         }
         val receivedAtNs = System.nanoTime()
-        if (byteCount < 0 || byteCount > payload.capacity()) {
-            throw IOException("kernel UDP receive returned invalid length: " + byteCount)
+        if (byteCount != UdpTimeSyncClient.PACKET_SIZE) {
+            throw FrameProtocolException(
+                "time-sync datagram must be exactly " + UdpTimeSyncClient.PACKET_SIZE + " bytes"
+            )
         }
 
+        val source = (message.msg_name as? InetSocketAddress) ?: peer
         val kernelTimestamp = extractKernelTimestamp(message.msg_control)
         return KernelReceivedDatagram(
             bytes = payload.array().copyOf(byteCount),
-            source = message.msg_name ?: peer,
+            source = source,
             receivedAtNs = receivedAtNs,
             kernelTimestamp = kernelTimestamp
         )
@@ -302,14 +306,12 @@ private class KernelTimestampUdpSocket private constructor(
 
     private fun setReceiveTimeout(timeoutMs: Int) {
         require(timeoutMs > 0) { "receive timeout must be positive" }
-        val seconds = timeoutMs / 1_000
-        val microseconds = (timeoutMs % 1_000) * 1_000
         try {
             Os.setsockoptTimeval(
                 descriptor,
                 OsConstants.SOL_SOCKET,
                 OsConstants.SO_RCVTIMEO,
-                StructTimeval(seconds.toLong(), microseconds.toLong())
+                StructTimeval.fromMillis(timeoutMs.toLong())
             )
         } catch (error: ErrnoException) {
             throw IOException("could not configure kernel UDP receive timeout: errno=" + error.errno, error)
