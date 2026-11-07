@@ -12,6 +12,7 @@ import com.syncinit.app.core.NativeTimeSyncClient
 import com.syncinit.transport.TcpFrameConnection
 import com.syncinit.transport.FrameProtocolException
 import com.syncinit.transport.UdpTimeSyncClient
+import com.syncinit.transport.UdpTimeSyncPacketMetadata
 import java.io.Closeable
 import java.net.DatagramSocket
 import java.net.InetAddress
@@ -280,6 +281,7 @@ class ReceiverSessionClient(
                     nativeClock.expireRequestsBefore(System.nanoTime())
                     val t1Ns = System.nanoTime()
                     val request = nativeClock.makeRequest(t1Ns)
+                    val requestSequence = UdpTimeSyncPacketMetadata.sequence(request)
                     probeAttempts += 1
                     var measurement: com.syncinit.app.core.ClockSyncMeasurement? = null
                     var requestPreparationUs = 0L
@@ -293,13 +295,15 @@ class ReceiverSessionClient(
                         val received = udp.receiveTimed()
                         val probeElapsedMs = (received.receivedAtNs - t1Ns) / 1_000_000.0
                         measurement = nativeClock.acceptResponse(received.bytes, received.receivedAtNs)
+                        val t4ToAcceptUs = (System.nanoTime() - received.receivedAtNs) / 1_000L
                         if (measurement == null) {
                             invalidResponseCount += 1
                             val rejectionStatus = nativeClock.lastResponseStatus()
                             nativeClock.expireRequestsBefore(System.nanoTime() + 1L)
                             onStatus(
                                 "[DIAG $attemptId] UDP_RESPONSE_REJECTED attempt=$probeAttempts " +
-                                    "elapsedMs=${"%.2f".format(probeElapsedMs)} invalidCount=$invalidResponseCount " +
+                                    "sequence=$requestSequence elapsedMs=${"%.2f".format(probeElapsedMs)} " +
+                                "t4ToAcceptUs=$t4ToAcceptUs invalidCount=$invalidResponseCount " +
                                     "reason=$rejectionStatus responseBytes=${received.bytes.size} " +
                                     "source=${udp.remoteAddress}:${udp.remotePort}"
                             )
@@ -316,7 +320,8 @@ class ReceiverSessionClient(
                                         "t1Ns=${probe.t1Ns} t2Ns=${probe.t2Ns} " +
                                         "t3Ns=${probe.t3Ns} t4Ns=${probe.t4Ns} " +
                                         "roundTripNs=${probe.roundTripNs} rawOffsetNs=${probe.rawOffsetNs} " +
-                                        "requestPreparationUs=$requestPreparationUs udpSendCallUs=$udpSendCallUs"
+                                        "requestPreparationUs=$requestPreparationUs udpSendCallUs=$udpSendCallUs " +
+                                        "t4ToAcceptUs=$t4ToAcceptUs"
                                 )
                             }
                             onStatus(
@@ -350,7 +355,7 @@ class ReceiverSessionClient(
                     } catch (error: PortUnreachableException) {
                         nativeClock.expireRequestsBefore(System.nanoTime() + 1L)
                         consecutiveUnreachable += 1
-                        onStatus("[DIAG $attemptId] UDP_PORT_UNREACHABLE attempt=$probeAttempts count=$consecutiveUnreachable target=${udp.remoteAddress}:${udp.remotePort} ${NetworkDiagnostics.exceptionDetails(error)}")
+                        onStatus("[DIAG $attemptId] UDP_PORT_UNREACHABLE attempt=$probeAttempts sequence=$requestSequence count=$consecutiveUnreachable target=${udp.remoteAddress}:${udp.remotePort} ${NetworkDiagnostics.exceptionDetails(error)}")
                         if (consecutiveUnreachable >= 5) {
                             throw IOException(
                                 "Master UDP time-sync port $timePort is unreachable after 5 probes. " +
@@ -366,13 +371,13 @@ class ReceiverSessionClient(
                         nativeClock.expireRequestsBefore(System.nanoTime() + 1L)
                         timeoutCount += 1
                         if (timeoutCount <= 3 || timeoutCount % 10 == 0) {
-                            onStatus("[DIAG $attemptId] UDP_PROBE_TIMEOUT attempt=$probeAttempts totalTimeouts=$timeoutCount timeoutMs=${PreviewConfig.TIME_SYNC_RECEIVE_TIMEOUT_MS} target=${udp.remoteAddress}:${udp.remotePort} ${NetworkDiagnostics.exceptionDetails(error)}")
+                            onStatus("[DIAG $attemptId] UDP_PROBE_TIMEOUT attempt=$probeAttempts sequence=$requestSequence totalTimeouts=$timeoutCount timeoutMs=${PreviewConfig.TIME_SYNC_RECEIVE_TIMEOUT_MS} target=${udp.remoteAddress}:${udp.remotePort} ${NetworkDiagnostics.exceptionDetails(error)}")
                         }
                         onStatus("UDP time-sync response timed out; retrying.")
                     } catch (error: FrameProtocolException) {
                         nativeClock.expireRequestsBefore(System.nanoTime() + 1L)
                         invalidResponseCount += 1
-                        onStatus("[DIAG $attemptId] UDP_MALFORMED_RESPONSE attempt=$probeAttempts invalidCount=$invalidResponseCount ${NetworkDiagnostics.exceptionDetails(error)}")
+                        onStatus("[DIAG $attemptId] UDP_MALFORMED_RESPONSE attempt=$probeAttempts sequence=$requestSequence invalidCount=$invalidResponseCount ${NetworkDiagnostics.exceptionDetails(error)}")
                         onStatus("Malformed UDP time-sync packet ignored.")
                     }
 
