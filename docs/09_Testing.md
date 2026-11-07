@@ -14,7 +14,7 @@ The latest two-phone test reversed Host/Speaker roles on the same pair of Xiaomi
 - Both Host sessions reached the 45-second readiness timeout. Neither run reached READY/ANCHOR or playback.
 - The paired logs contain per-probe Host/Speaker records correlated by the UDP sequence number. Reversing the roles did not eliminate the clock residual.
 
-**Verdict: FAIL — clock stability / READY.** The test does not isolate the cause. The current experiment branch `experiment/send-boundary-t3-debug-acquisition-window` stamps final response T3 in the transport send path and extends only the debug readiness observation window to 90 seconds. Release builds retain the 45-second timeout. No estimator, residual threshold, sample-selection policy or READY gate is relaxed. CI and physical validation of this branch are pending.
+**Verdict: FAIL — clock stability / READY.** The test does not isolate the cause. The current experiment branch `experiment/send-boundary-t3-debug-acquisition-window` stamps final response T3 in the transport send path and extends only the debug readiness observation window to 90 seconds. Release builds retain the 45-second timeout. No estimator, residual threshold, sample-selection policy or READY gate is relaxed. Android/JNI, Kotlin transport and M0 simulator/native-core CI all passed on the PR head; physical validation is pending.
 
 See [the paired device report](Test_Results.md#25-test-record--2026-11-07--v064-debug-paired-per-probe-run).
 
