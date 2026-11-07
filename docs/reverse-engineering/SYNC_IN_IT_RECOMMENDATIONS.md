@@ -91,6 +91,21 @@ Once end-to-end PCM scheduling and output alignment are demonstrated, consider a
 
 Do not build provider integrations as a workaround for unresolved output timing.
 
+
+## 3.1 Final upgrade decision — 7 November 2026
+
+The consolidated implementation order is now maintained in [the implementation plan](../07_Implementation.md):
+
+1. Per-probe and fit-update telemetry, matching Host delivery/queue logs, shared core/JNI readiness configuration and an offline replay harness.
+2. Controlled router/hotspot, power-lock, timestamp-capture, probe-selection and slope A/B matrix.
+3. Resolve residual-threshold disagreement in [ADR-024](../ADR/Architecture_Decisions.md#adr-024--clock-readiness-criterion-and-replay-parity), deriving clock uncertainty from the T2 acoustic budget. Do not change the current <0.25 ms device gate before evidence and an ADR amendment.
+4. Prove one Host + one Speaker through READY/ANCHOR, then measure physical acoustic skew (p95 ≤10 ms) before scaling.
+5. Pull the already-planned manual per-device/route offset earlier; then callback-safe DAC snapshot, drift correction and M5 late join/reconnect/Host approval.
+6. Defer provider/queue control, Opus, PWA, calibration and security hardening until the timing path is validated. Evaluate file-sync at M6 only if bandwidth measurements show PCM is limiting.
+
+The clock-gate discrepancy must remain visible: TRD <1 ms baseline, Testing plan historical <1 ms residual standard deviation, JNI <0.25 ms residual RMS and effectively unlimited core default are not interchangeable. The currently enforced Android gate remains unchanged. The plan does not turn hypotheses or competitor behavior into accepted performance claims.
+
+
 ## 4. Suggested session and telemetry boundaries
 
 A future control-plane model can use the research's room/event concepts while leaving PCM transport and timing in their own modules.
