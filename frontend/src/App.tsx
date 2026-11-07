@@ -78,7 +78,7 @@ function Hero() {
       <div className="hero-copy">
         <Eyebrow>OFFLINE AUDIO · ANDROID ENGINEERING PREVIEW</Eyebrow>
         <h1 id="hero-title">Many phones.<br /><span className="hero-gradient">One shared moment.</span></h1>
-        <p className="hero-lede">Sync In It is building a local-network audio system around one shared clock. The Android preview implements multi-Speaker admission, PCM16 fan-out and a coordinated playback-start path. Preview v0.5.9 adds receiver hot-path backpressure mitigation and diagnostics; post-fix physical validation is still pending, so synchronized playback is not yet a verified result.</p>
+        <p className="hero-lede">Sync In It is building a local-network audio system around one shared clock. The Android preview implements multi-Speaker admission, PCM16 fan-out and a coordinated playback-start path. Preview v0.6.1 adds persistent diagnostic text export and replayable clock-probe telemetry; physical READY and acoustic synchronization are still unverified.</p>
         <div className="hero-actions">
           <a className="button button-primary" href="/downloads">Get Android preview <Arrow /></a>
           <a className="button button-text" href={STATUS_DOC} target="_blank" rel="noreferrer">Read current engineering status <Arrow diagonal /></a>
@@ -160,7 +160,7 @@ function ProjectStatus() {
           <span className="status-milestone">M3a</span>
           <div><b>DAC output-clock diagnostics</b><small>IMPLEMENTED · DIAGNOSTIC ONLY</small></div>
         </div>
-        <div className="status-card-foot">PR #53 added the acoustic measurement path and PR #55 added PCM snapshot throttling plus receiver/Host backpressure diagnostics. Preview v0.5.9 includes both; CI passes, but post-fix physical READY and real-phone acoustic measurement are still pending.</div>
+        <div className="status-card-foot">PR #53 added the acoustic measurement path and PR #55 added PCM snapshot throttling plus receiver/Host backpressure diagnostics. Preview v0.6.1 adds persistent diagnostic export and clock-probe telemetry; CI passes, but physical READY and real-phone acoustic measurement are still pending.</div>
         <div className="status-card-links">
           <a className="inline-link" href={ANDROID_CI} target="_blank" rel="noreferrer">Android build status <Arrow diagonal /></a>
           <a className="inline-link" href={DIAGNOSTICS_PR} target="_blank" rel="noreferrer">Diagnostics changes <Arrow diagonal /></a>
