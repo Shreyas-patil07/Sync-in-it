@@ -112,7 +112,20 @@ else()
     target_compile_options(sync_in_it_audio_tests PRIVATE -Wall -Wextra -Wpedantic -Wconversion -Wsign-conversion)
 endif()
 
+add_executable(sync_in_it_clock_probe_replay ../tools/clock_probe_replay.cpp)
+target_link_libraries(sync_in_it_clock_probe_replay PRIVATE sync_in_it_core)
+if(MSVC)
+    target_compile_options(sync_in_it_clock_probe_replay PRIVATE /W4 /permissive-)
+else()
+    target_compile_options(sync_in_it_clock_probe_replay PRIVATE -Wall -Wextra -Wpedantic -Wconversion -Wsign-conversion)
+endif()
+
 enable_testing()
+add_test(
+    NAME sync_in_it_clock_probe_replay_smoke
+    COMMAND "${Python3_EXECUTABLE}" "${CMAKE_CURRENT_SOURCE_DIR}/../tools/tests/test_clock_probe_replay.py"
+            "$<TARGET_FILE:sync_in_it_clock_probe_replay>"
+)
 add_test(NAME sync_in_it_core_golden_vectors COMMAND sync_in_it_core_tests)
 add_test(NAME sync_in_it_protocol_golden_vectors COMMAND sync_in_it_protocol_tests)
 add_test(NAME sync_in_it_typed_message_vectors COMMAND sync_in_it_message_tests)

@@ -8,6 +8,7 @@ object NativeCore {
     }
 
     external fun nativeCoreVersion(): Int
+    external fun nativeClockRealtimeNs(): Long
 
     external fun nativeCreatePcmBuffer(capacityFrames: Long, channels: Int, sessionId: Long): Long
     external fun nativeInsertPcmFrame(handle: Long, encodedFrame: ByteArray): Int

@@ -13,7 +13,6 @@ import com.syncinit.app.core.ReceiverSessionResult
 import com.syncinit.transport.TcpFrameConnection
 import com.syncinit.transport.TcpFrameServer
 import com.syncinit.transport.FrameProtocolException
-import com.syncinit.transport.UdpTimeSyncServer
 import com.syncinit.transport.UdpTimeSyncPacketMetadata
 import java.io.Closeable
 import java.net.InetAddress
@@ -66,7 +65,7 @@ class MasterSessionHost(context: Context, private val onStatus: (String) -> Unit
 
     @Volatile private var controlServer: TcpFrameServer? = null
     @Volatile private var audioServer: TcpFrameServer? = null
-    @Volatile private var timeSyncServer: UdpTimeSyncServer? = null
+    @Volatile private var timeSyncServer: TimeSyncUdpServer? = null
     @Volatile private var nativeSessionConfig: ReceiverSessionConfig? = null
     @Volatile private var advertiser: LanSessionAdvertiser? = null
     @Volatile private var audioSenderThread: Thread? = null
@@ -78,7 +77,7 @@ class MasterSessionHost(context: Context, private val onStatus: (String) -> Unit
 
         var control: TcpFrameServer? = null
         var audio: TcpFrameServer? = null
-        var time: UdpTimeSyncServer? = null
+        var time: TimeSyncUdpServer? = null
         try {
             val anyAddress = InetAddress.getByName("0.0.0.0")
             val audioListener = TcpFrameServer(
@@ -91,7 +90,9 @@ class MasterSessionHost(context: Context, private val onStatus: (String) -> Unit
             val controlListener = TcpFrameServer(anyAddress, PreviewConfig.CONTROL_PORT, connectionReadTimeoutMs = PreviewConfig.AUDIO_READ_TIMEOUT_MS)
             control = controlListener
             // Bind UDP before advertising to avoid a receiver racing the time-sync listener.
-            val timeListener = UdpTimeSyncServer(anyAddress, PreviewConfig.TIME_PORT, receiveTimeoutMs = PreviewConfig.TIME_SYNC_RECEIVE_TIMEOUT_MS)
+            val timeListener = openTimeSyncUdpServer(
+                anyAddress, PreviewConfig.TIME_PORT, PreviewConfig.TIME_SYNC_RECEIVE_TIMEOUT_MS
+            )
             time = timeListener
 
             val random = SecureRandom()
@@ -110,7 +111,8 @@ class MasterSessionHost(context: Context, private val onStatus: (String) -> Unit
             check(audioListener.isListening) { "audio TCP listener did not bind" }
             onStatus(
                 "DIAG HOST_LISTENERS_BOUND control=${controlListener.localBindAddress}:${controlListener.localPort} " +
-                    "audio=${audioListener.localBindAddress}:${audioListener.localPort} udp=0.0.0.0:${PreviewConfig.TIME_PORT}"
+                    "audio=${audioListener.localBindAddress}:${audioListener.localPort} udp=0.0.0.0:${PreviewConfig.TIME_PORT} " +
+                    "udpTimestampMode=${timeListener.timestampMode}"
             )
             onStatus(NetworkDiagnostics.networkSnapshot(appContext))
             controlServer = controlListener
@@ -859,14 +861,23 @@ class MasterSessionHost(context: Context, private val onStatus: (String) -> Unit
                 val responseReadyToT3Us = (t3Ns - responseReadyAtNs) / 1_000L
                 val receiveToT3Us = (t3Ns - datagram.receivedAtNs) / 1_000L
                 val sendElapsedUs = sendTiming.sendElapsedNs / 1_000L
+                val hostSessionId = checkNotNull(nativeSessionConfig).sessionId
+                val kernelT2Fields = datagram.kernelTimestamp?.let { kernel ->
+                    " kernelT2Ns=" + kernel.monotonicNs +
+                        " kernelT2RealtimeNs=" + kernel.realtimeNs +
+                        " kernelT2MappingUncertaintyNs=" + kernel.mappingUncertaintyNs +
+                        " kernelT2CaptureLagUs=" + ((datagram.receivedAtNs - kernel.monotonicNs) / 1_000L)
+                } ?: " kernelTimestamp=unavailable"
 
                 if (newlyPinnedPeer === target) {
                     onStatus("DIAG HOST_UDP_PEER_PINNED receiverId=${target.receiverId} source=${datagram.source}")
                 }
                 onStatus(
-                    "DIAG HOST_UDP_PROBE sequence=$sequence receiverId=${target.receiverId} " +
+                    "DIAG HOST_UDP_PROBE sessionId=$hostSessionId sequence=$sequence " +
+                        "receiverId=${target.receiverId} appT2Ns=${datagram.receivedAtNs} " +
                         "source=${datagram.source} receiveToT3Us=$receiveToT3Us " +
-                        "responseReadyToT3Us=$responseReadyToT3Us sendElapsedUs=$sendElapsedUs"
+                        "responseReadyToT3Us=$responseReadyToT3Us sendElapsedUs=$sendElapsedUs" +
+                        kernelT2Fields
                 )
                 responseCount += 1
                 if (responseCount == 1 || responseCount % 20 == 0) {

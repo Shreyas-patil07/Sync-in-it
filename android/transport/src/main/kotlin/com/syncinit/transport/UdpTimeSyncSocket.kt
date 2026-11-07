@@ -11,7 +11,18 @@ import java.net.SocketTimeoutException
 import java.util.concurrent.atomic.AtomicBoolean
 
 /** UDP envelope is fixed at 38 bytes by the protocol v1 time-sync codec. */
-data class ReceivedTimeSyncDatagram(val bytes: ByteArray, val source: InetSocketAddress, val receivedAtNs: Long)
+data class KernelReceiveTimestamp(
+    val realtimeNs: Long,
+    val monotonicNs: Long,
+    val mappingUncertaintyNs: Long
+)
+
+data class ReceivedTimeSyncDatagram(
+    val bytes: ByteArray,
+    val source: InetSocketAddress,
+    val receivedAtNs: Long,
+    val kernelTimestamp: KernelReceiveTimestamp? = null
+)
 /**
  * Reads the v1 UDP time-sync sequence for cross-device diagnostic correlation.
  * The wire codec stores the unsigned 32-bit sequence at byte offset 10, little-endian.
@@ -83,7 +94,11 @@ object UdpTimeSyncPacketMetadata {
 
 data class TimeSyncResponseSendTiming(val t3Ns: Long, val sendElapsedNs: Long)
 
-data class ReceivedTimeSyncResponse(val bytes: ByteArray, val receivedAtNs: Long)
+data class ReceivedTimeSyncResponse(
+    val bytes: ByteArray,
+    val receivedAtNs: Long,
+    val kernelTimestamp: KernelReceiveTimestamp? = null
+)
 
 class UdpTimeSyncClient(
     masterAddress: InetAddress,

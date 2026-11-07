@@ -23,6 +23,7 @@
 #include <unordered_map>
 #include <utility>
 #include <vector>
+#include <time.h>
 
 namespace {
 
@@ -223,6 +224,16 @@ jdoubleArray make_double_array(JNIEnv* env, const std::array<jdouble, 8>& values
 extern "C" JNIEXPORT jint JNICALL
 Java_com_syncinit_app_core_NativeCore_nativeCoreVersion(JNIEnv*, jobject) {
     return 1;
+}
+
+extern "C" JNIEXPORT jlong JNICALL
+Java_com_syncinit_app_core_NativeCore_nativeClockRealtimeNs(JNIEnv*, jobject) {
+    timespec timestamp{};
+    if (::clock_gettime(CLOCK_REALTIME, &timestamp) != 0) return 0;
+    constexpr std::int64_t kNanosecondsPerSecond = 1000000000LL;
+    return static_cast<jlong>(
+        static_cast<std::int64_t>(timestamp.tv_sec) * kNanosecondsPerSecond +
+        static_cast<std::int64_t>(timestamp.tv_nsec));
 }
 
 extern "C" JNIEXPORT jbyteArray JNICALL

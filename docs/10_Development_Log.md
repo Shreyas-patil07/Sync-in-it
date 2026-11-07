@@ -1016,3 +1016,18 @@ Do not infer missing hardware/router metadata. Store raw recordings outside Git 
 
 **Next action:** install the branch debug build on both phones, run one Host + one Speaker for at least 75 seconds in each role direction, export both reports, correlate by sequence and compare residual RMS/hold-out prediction. Do not change the estimator or readiness threshold based on one run.
 
+
+### 8 November 2026 — Kernel UDP receive timestamp diagnostics and estimator replay
+
+**Type:** Diagnostic instrumentation / deterministic replay  
+**Status:** Implemented on `diagnostics/kernel-udp-timestamps-and-replay`; Android and physical-device validation pending.
+
+- Added API 31+ SO_TIMESTAMPNS_OLD ancillary timestamps through Os.recvmsg on both Host and Speaker, with the existing Java DatagramSocket path retained as fallback.
+- Mapped kernel CLOCK_REALTIME timestamps into each device's monotonic time domain using a native realtime clock read bracketed by System.nanoTime(); logged mapping uncertainty and app receive-capture lag.
+- Added Host session/receiver/sequence identity and application/kernel t2 fields. Added corresponding application/kernel t4 fields to Speaker probe telemetry.
+- Added a C++ replay executable linked to sync_in_it_core, the same portable estimator source used by the Android JNI bridge. It compares live-equivalent app timestamps against an offline kernel-receive-timestamp substitution and computes chronological holdout prediction error.
+- Added a deterministic paired-log replay smoke test to CTest.
+
+**Non-changes:** Kernel timestamps are not passed into the live estimator. The four-timestamp packet schema, current estimator selection, 60-second window, 0.25 ms gate, sample/span requirements, stable streak, READY/ANCHOR behavior and PCM/TCP path are unchanged.
+
+**Not yet verified:** Android Gradle/NDK build, SO_TIMESTAMPNS_OLD availability and ancillary payload format on Xiaomi Android 12 and Android 14, fallback behavior, capture-lag measurements, and whether kernel-corrected replay improves holdout prediction. Do not create a release or change estimator behavior until CI and physical validation pass.
