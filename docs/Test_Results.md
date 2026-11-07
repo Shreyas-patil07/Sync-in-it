@@ -102,6 +102,21 @@ PCM ingress and pre-roll were healthy in the captured interval, but stable clock
 6. Repeat the one-Host/one-Speaker test. Record whether READY is sent, accepted, and followed by an ANCHOR.
 7. Once the one-Speaker path passes, test multiple Speakers and record acoustic marker results for each device.
 
+
+## 2.1 Next-run capture requirements — final upgrade brief (7 November 2026)
+
+Before another acceptance attempt, capture a replayable, session-correlated evidence set:
+
+- Speaker per-probe record: attempt ID, t1, t2, t3, t4, RTT, raw offset, selected/rejected/expired status and reason.
+- Speaker fit-update record: samples seen/used, selected span, slope/skew, residual RMS, predicted offset at t4 and stable streak.
+- Matching Host record: audio delivery, slow writes, queue depth/high-water/overflow and disconnect events with the same session diagnostic ID.
+- Fresh native PCM-counter snapshot to verify whether the cached 250 ms `advances=0` diagnostic is stale.
+- Capture all run-sheet fields in section 3, including AP type/band, Wi-Fi low-latency lock, CPU wake-lock state, receive-thread priority, probe style, estimator variant, RTT p95, hold-out prediction error, offset standard error and its independence assumption, slope range, AudioTrack start latency, marker method/placement and both log filenames.
+
+Replay the physical run through the same C++ estimator and gate used by Android; check parity against Python and preserve the raw log as a real-log fixture. Expected exit gate: replay reproduces on-device residual and stable streak within documented rounding.
+
+Do not edit the current <0.25 ms residual-RMS gate, 8-sample minimum, 10-second span, three-update streak or 500 ms Host queue as part of a failing-run fix. The documented <1 ms residual baselines and effectively unlimited core default must be reconciled in ADR-024 before any threshold change. Next controlled A/B: same two phones, one variable at a time, 60 seconds per run, three repeats; compare hotspot/router, power locks, receive priority/timestamp capture, single/paired probes, lowest 25%/50%/all/robust selection and free/clamped/offset-only slope. Report hold-out prediction error by fitting the first 70% and predicting later low-RTT offsets.
+
 ## 3. Reusable template for future runs
 
 Copy this section for each new run and replace the placeholders. Preserve prior test records.
