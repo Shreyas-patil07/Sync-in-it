@@ -197,6 +197,31 @@ The repository currently contains inconsistent residual criteria: this TRD's pro
 
 Move readiness parameters into a shared core `ClockReadinessConfig` used by JNI and desktop replay, with one default configuration object. Diagnostics must preserve every t1–t4 probe, RTT, raw offset, selected/rejected/expired status and reason, plus each fit's sample count/span, slope, residual, predicted offset at t4 and stable streak. Matching Host delivery, slow-write, queue and disconnect metrics must share the Speaker session diagnostic ID. A physical log must replay through the same C++ estimator and gate and be checked against the Python reference. No threshold change is authorized by this documentation; derive any future uncertainty gate from replay evidence and the T2 acoustic budget under ADR-024.
 
+
+### 9.1 Experimental continuous output / timeline-frame scheduling
+
+**Status:** design hypothesis only; see [ADR-025](ADR/Architecture_Decisions.md#adr-025--continuous-output-and-timeline-frame-scheduling).
+
+The current Android preview creates and primes AudioTrack after ANCHOR, waits until the mapped local target and calls play(). The DAC timestamp poller is started only after play(), so the current implementation has no established output-frame-to-time mapping before the first group start.
+
+Candidate behavior:
+1. Open and start the output stream after Speaker join and format negotiation, before the group ANCHOR.
+2. Render silence while the shared timeline is not playing; acquire the DAC frame/time mapping while output is already running.
+3. Map the ANCHOR's Host time to local monotonic time using the receiver clock model, then invert the DAC frame-to-local-time mapping to obtain the output frame for the target.
+4. Associate the ANCHOR sample index with that output frame. The renderer maps requested output frames back to the shared media timeline and returns silence before the anchor or the corresponding PCM sample after it.
+5. Keep all mapping snapshots callback-safe. No allocation, locks, JNI, I/O or logging in the real-time callback.
+6. Ensure the output queue has not already committed silence past the target frame. Anchor lead time must exceed the writable/output queue horizon plus scheduling margin; the current 1-second lead is a test value, not proof.
+7. If timestamps are unavailable, stale or reset by route change, the receiver must not claim precise frame alignment.
+
+This makes output activation a join-time operation and makes ANCHOR a media-timeline boundary rather than a scheduled play() invocation. It does not prove that downstream DSP, device speaker latency or acoustic travel is eliminated. The microphone-based acoustic gate and route-specific calibration remain authoritative.
+
+**Backend selection is measurement-based.** Android recommends Oboe for lowest latency; when AudioTrack is used for latency-sensitive output, Android recommends PERFORMANCE_MODE_LOW_LATENCY. This does not establish that Oboe provides more accurate timestamps. Both APIs expose estimates with different documented semantics:
+- [AudioTrack.getTimestamp](https://developer.android.com/reference/android/media/AudioTrack#getTimestamp(android.media.AudioTimestamp)) returns a frame position and estimated time when that frame was presented or committed to be presented. Availability can vary during warm-up or route changes; application-level mapping is needed for arbitrary frame/time conversion.
+- [Oboe AudioStream.getTimestamp](https://google.github.io/oboe/classoboe_1_1_audio_stream.html) estimates when a frame entered or left the audio processing pipeline, based on best-effort system knowledge, and cannot account for unknown downstream delay.
+- [Android audio latency guidance](https://source.android.com/docs/core/audio/latency/app) recommends Oboe with low-latency performance mode and exclusive sharing where supported, and also recommends AudioTrack low-latency mode for latency-sensitive Java output.
+
+The two Xiaomi phones must be tested with the current scheduled AudioTrack path, tuned low-latency AudioTrack, and Oboe/AAudio callback output. Record the actual selected backend/modes, timestamp availability and mapping error, buffer/frames-per-burst, underruns/XRuns, callback timing and physical acoustic skew. No backend switch or claim of timestamp superiority is accepted without this A/B evidence.
+
 ## 9. Runtime and real-time requirements
 
 The receiver's audio callback runs every few milliseconds depending on hardware burst size. It must perform bounded work and remain independent of network delays.
