@@ -421,11 +421,15 @@ class MasterSessionHost(context: Context, private val onStatus: (String) -> Unit
             while (!closed.get()) {
                 val frame = peer.control.readFrame()
                 if (frame == null) {
-                    reason = "control channel reached EOF"
-                    onStatus(
-                        "DIAG HOST_CONTROL_READER_EOF receiverId=${peer.receiverId} " +
-                            "local=${peer.control.localEndpoint} remote=${peer.control.remoteEndpoint}"
-                    )
+                    if (peer.isClosed) {
+                        reason = "control channel closed after another teardown path"
+                    } else {
+                        reason = "control channel reached EOF"
+                        onStatus(
+                            "DIAG HOST_CONTROL_READER_EOF receiverId=${peer.receiverId} " +
+                                "local=${peer.control.localEndpoint} remote=${peer.control.remoteEndpoint}"
+                        )
+                    }
                     break
                 }
                 when (frame.messageType) {
@@ -455,13 +459,15 @@ class MasterSessionHost(context: Context, private val onStatus: (String) -> Unit
                 }
             }
         } catch (error: Exception) {
-            if (!closed.get()) {
+            if (!closed.get() && !peer.isClosed) {
                 reason = "control channel failed: ${error.message ?: error.javaClass.simpleName}"
                 onStatus(
                     "DIAG HOST_CONTROL_READER_FAILED receiverId=${peer.receiverId} " +
                         "local=${peer.control.localEndpoint} remote=${peer.control.remoteEndpoint} " +
                         NetworkDiagnostics.exceptionDetails(error)
                 )
+            } else if (!closed.get()) {
+                reason = "control reader stopped after another teardown path: ${error.javaClass.simpleName}"
             }
         } finally {
             onStatus(
