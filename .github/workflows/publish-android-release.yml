@@ -67,11 +67,11 @@ jobs:
 
       - name: Install Android SDK, NDK and CMake
         run: |
-          sdkmanager --install \\
-            "platform-tools" \\
-            "platforms;android-36" \\
-            "build-tools;36.0.0" \\
-            "ndk;30.0.16248370" \\
+          sdkmanager --install \
+            "platform-tools" \
+            "platforms;android-36" \
+            "build-tools;36.0.0" \
+            "ndk;30.0.16248370" \
             "cmake;3.22.1"
 
       - name: Require persistent preview signing key
@@ -86,7 +86,7 @@ jobs:
           mkdir -p android/app
           printf '%s' "$PREVIEW_KEYSTORE_BASE64" | base64 --decode > android/app/syncinit-preview.jks
           test -s android/app/syncinit-preview.jks
-          keytool -list -keystore android/app/syncinit-preview.jks \\
+          keytool -list -keystore android/app/syncinit-preview.jks \
             -storepass "$PREVIEW_KEYSTORE_PASSWORD" -alias syncinit-preview >/dev/null
 
       - name: Generate monotonic Android version code
@@ -165,11 +165,11 @@ jobs:
             echo "::error::Release $RELEASE_TAG already exists; refusing to overwrite a published release."
             exit 1
           fi
-          gh release create "$RELEASE_TAG" \\
-            "release-assets/$APK#$APK" \\
-            "release-assets/SHA256SUMS.txt#SHA256SUMS.txt" \\
-            --repo "$GITHUB_REPOSITORY" \\
-            --target "$GITHUB_SHA" \\
-            --title "Sync In It Android Preview v$VERSION" \\
-            --notes-file release-notes.md \\
+          gh release create "$RELEASE_TAG" \
+            "release-assets/$APK#$APK" \
+            "release-assets/SHA256SUMS.txt#SHA256SUMS.txt" \
+            --repo "$GITHUB_REPOSITORY" \
+            --target "$GITHUB_SHA" \
+            --title "Sync In It Android Preview v$VERSION" \
+            --notes-file release-notes.md \
             --prerelease
