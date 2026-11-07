@@ -298,7 +298,7 @@ Run both candidates against the same chronological, replayable probe logs before
 
 The documents currently state materially different residual criteria: TRD baseline <1 ms; Testing doc provisional residual standard deviation <1 ms; Android JNI `stable_fit` residual RMS <0.25 ms; and core `ReceiverSession` default effectively unlimited (`UINT32_MAX`). This is an unresolved consistency issue, not permission to change the runtime gate.
 
-Before the next acceptance run, amend ADR-018 with the T2 acoustic target (p95 ≤10 ms), explicit allocation of that budget to clock error, resulting maximum start-time offset uncertainty, minimum sample/span, uncertainty, hold-out error, bounded worst residual and streak requirements, plus golden-vector and document reconciliation. Do not change a threshold in the same patch as a failing run. No relaxation without replay evidence and an ADR.
+Before the next acceptance run, amend ADR-024 with the T2 acoustic target (p95 ≤10 ms), explicit allocation of that budget to clock error, resulting maximum start-time offset uncertainty, minimum sample/span, uncertainty, hold-out error, bounded worst residual and streak requirements, plus golden-vector and document reconciliation. Do not change a threshold in the same patch as a failing run. No relaxation without replay evidence and an ADR.
 
 
 ### WP2b — Continuous output and output-backend experiment (M2/M3 dependency)
