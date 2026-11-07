@@ -2,8 +2,8 @@
 
 **Status date:** 7 November 2026  
 **Main baseline:** PR #55 merged at `6b87eadd018e4d73c4f2d1b40aa6c9692f5d11c0`  
-**Release packaging commit:** `e6e89518d00d00b6aa911832b0740b497f43d6f1`  
-**Latest published Android preview:** [`v0.5.9-preview.1`](https://github.com/Shreyas-patil07/Sync-in-it/releases/tag/v0.5.9-preview.1)  
+**Release packaging commit:** `886bb9bcd894211f073d09ae0c571258e149ec1b`  
+**Latest published Android preview:** [`v0.6.1`](https://github.com/Shreyas-patil07/Sync-in-it/releases/tag/v0.6.1)  
 **Audience:** contributors, testers and anyone assessing what is implemented versus what is still a design target.
 
 This file is the source of truth for present-tense implementation claims. Product targets, architecture proposals and future behavior in the other design documents remain useful, but they must not be read as evidence that those features are already implemented or validated.
@@ -20,16 +20,16 @@ The earlier pre-PR #55 run remains relevant historical evidence: its Host-side 5
 
 | Item | Current state | Evidence / interpretation |
 |---|---|---|
-| Published preview | `v0.5.9-preview.1` | Public GitHub pre-release with signed APK and SHA-256 checksum |
-| APK asset | `SyncInIt-Android-preview-v0.5.9.apk` | 5,969,084 bytes; persistent preview signing key used |
-| Release scope | Cached PCM snapshots, Speaker ingress-rate diagnostics and Host slow-write diagnostics added to the v0.5.8 measurement toolchain | See the [v0.5.9 release notes](https://github.com/Shreyas-patil07/Sync-in-it/releases/tag/v0.5.9-preview.1) |
-| Current main | PR #55 merged at `6b87eadd` | Adds PCM snapshot throttling, Speaker ingress metrics, Host slow-write metrics and expanded clock diagnostics |
+| Published preview | `v0.6.1` | Public GitHub engineering pre-release with signed APK and SHA-256 checksum |
+| APK asset | `SyncInIt-Android-preview-v0.6.1.apk` | 5,986,806 bytes; persistent preview signing key used; SHA-256 `053ee227455a0b420effd81a58c9f8967179052097537604d76b1000ed80c959` |
+| Release scope | Persistent app-private diagnostic history, user-initiated `.txt` export, replayable `CLOCK_PROBE` / `CLOCK_FIT` telemetry, plus the existing acoustic markers and backpressure diagnostics | See the [v0.6.1 release notes](https://github.com/Shreyas-patil07/Sync-in-it/releases/tag/v0.6.1) |
+| Current main | PR #63 merged at `886bb9bcd894` | Adds native probe timestamp access, persistent bounded diagnostic history and Android document-picker export; clock estimator and readiness gate unchanged |
 | M0 simulator/native CI on release commit | Passed | [Workflow run 42230554383](https://github.com/Shreyas-patil07/Sync-in-it/actions/runs/42230554383) passed the Python 3.11/3.12/3.13 and C++17 matrix, vectors, simulator and queue scenarios |
 | Android/JNI CI on release commit | Passed | [Workflow run 42230554351](https://github.com/Shreyas-patil07/Sync-in-it/actions/runs/42230554351) passed build, Kotlin transport checks, signature verification and artifact upload |
 | Release publisher | Passed | [Workflow run 42230554362](https://github.com/Shreyas-patil07/Sync-in-it/actions/runs/42230554362) built the updateable APK, passed transport checks, verified its signature and uploaded the APK/checksum |
 | Physical validation | Partial post-fix device evidence; end-to-end playback not validated | 6 Nov Speaker log: ingress near 50 frames/sec, zero missing frames, buffer to ~19.94 s; clock residual 0.412–0.557 ms kept stable streak at 0 and blocked READY. Matching Host log and acoustic result absent |
 
-The published `v0.5.9-preview.1` APK is built from release commit `e6e89518d00d00b6aa911832b0740b497f43d6f1` with the persistent preview signing key. Android/JNI build and transport checks, APK signature verification, frontend build, the Python/C++ matrix and the release publisher all passed on the release commit. A post-PR #55 Speaker-side physical log is now recorded in [Test Results](Test_Results.md): it shows continuous PCM ingress in the captured interval but fails clock stability and does not demonstrate READY, ANCHOR or acoustic skew. CI and synthetic analyzer tests remain distinct from physical synchronization evidence.
+The published `v0.6.1` APK is built from release commit `886bb9bcd894211f073d09ae0c571258e149ec1b` with the persistent preview signing key. [Release workflow run 42344911347](https://github.com/Shreyas-patil07/Sync-in-it/actions/runs/42344911347) passed the Android build, transport checks, APK signature verification and GitHub asset publication; [M0 workflow run 42344911344](https://github.com/Shreyas-patil07/Sync-in-it/actions/runs/42344911344) passed the Python 3.11/3.12/3.13 and C++17 matrix. The app now exports retained diagnostics as a user-selected `.txt` file. The latest physical evidence remains the 6 November Speaker-side run, which failed clock stability and did not demonstrate READY, ANCHOR or acoustic skew. CI remains distinct from physical synchronization evidence.
 
 
 ## Final upgrade direction — 7 November 2026
@@ -86,7 +86,7 @@ Oboe/AAudio remains a lower-confidence backend experiment after an end-to-end ou
 
 **Clock algorithm scope:** do not add new clock-estimator changes beyond the existing replay-only hysteresis/two-state alternatives in ADR-026. The priority is to determine whether the single-Speaker failure is clock readiness, transport/buffer or output scheduling, using evidence rather than more parallel architecture work.
 
-**Diagnostic instrumentation in progress:** the current engineering branch adds exact accepted-probe `t1/t2/t3/t4`, sequence, corrected RTT and raw offset records (`CLOCK_PROBE`), plus one `CLOCK_FIT` record per successful fit. The fit record preserves counts/span, skew, residual, fitted offset, stable streak and the 60-second / lowest-RTT-25% policy. The Android app now persists the retained event history in an app-private rolling text file (4 MB cap) and exposes **Save diagnostic report (.txt)** through Android's document picker. Export is UTF-8, user initiated, contains no audio and redacts token/password/secret/API-key assignments. Local network addresses and device/session metadata can still be sensitive. This does not change the estimator or thresholds. The current patch still lacks explicit native rejection enums, per-fit selected-sample membership export, matching Host diagnostics and offline replay. It is not part of the published v0.5.9 APK until merged and released.
+**Diagnostic instrumentation in progress:** the current engineering branch adds exact accepted-probe `t1/t2/t3/t4`, sequence, corrected RTT and raw offset records (`CLOCK_PROBE`), plus one `CLOCK_FIT` record per successful fit. The fit record preserves counts/span, skew, residual, fitted offset, stable streak and the 60-second / lowest-RTT-25% policy. The Android app now persists the retained event history in an app-private rolling text file (4 MB cap) and exposes **Save diagnostic report (.txt)** through Android's document picker. Export is UTF-8, user initiated, contains no audio and redacts token/password/secret/API-key assignments. Local network addresses and device/session metadata can still be sensitive. This does not change the estimator or thresholds. The published v0.6.1 APK includes the probe and fit records plus persistent `.txt` export. Remaining work includes explicit native rejection enums, per-fit selected-sample membership export, matching Host diagnostics and offline replay.
 
 
 
