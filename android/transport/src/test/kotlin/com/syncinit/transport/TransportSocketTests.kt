@@ -265,6 +265,33 @@ private fun tcpRejectsOversizedAndTruncatedFrames() {
     }
 }
 
+private fun udpTimeSyncSequenceMetadata() {
+    val packet = ByteArray(UdpTimeSyncClient.PACKET_SIZE)
+    packet[0] = 'S'.code.toByte()
+    packet[1] = 'T'.code.toByte()
+    packet[2] = 1
+    packet[3] = 1
+    val expected = 0x89abcdefL
+    for (index in 0 until 4) {
+        packet[10 + index] = (expected ushr (index * 8)).toByte()
+    }
+    expect(
+        UdpTimeSyncPacketMetadata.sequence(packet) == expected,
+        "UDP time-sync sequence is decoded as an unsigned little-endian value"
+    )
+
+    var rejected = false
+    try { UdpTimeSyncPacketMetadata.sequence(packet.copyOf(packet.size - 1)) }
+    catch (_: IllegalArgumentException) { rejected = true }
+    expect(rejected, "UDP sequence metadata rejects an invalid packet size")
+
+    rejected = false
+    val invalidMagic = packet.copyOf().apply { this[0] = 0 }
+    try { UdpTimeSyncPacketMetadata.sequence(invalidMagic) }
+    catch (_: IllegalArgumentException) { rejected = true }
+    expect(rejected, "UDP sequence metadata rejects invalid packet magic")
+}
+
 private fun udpTimeSyncLoopback() {
     val loopback = InetAddress.getByName("127.0.0.1")
     UdpTimeSyncServer(loopback, 0, receiveTimeoutMs = 3_000).use { server ->
@@ -347,6 +374,7 @@ fun main() {
     tcpCoalescedFramesSingleWrite()
     tcpFragmentedRead()
     tcpRejectsOversizedAndTruncatedFrames()
+    udpTimeSyncSequenceMetadata()
     udpTimeSyncLoopback()
     udpRejectsMalformedDatagrams()
     println("Kotlin TCP/UDP transport tests: all assertions passed")

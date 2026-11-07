@@ -2,9 +2,26 @@
 
 **Document status:** Draft verification plan  
 **Version:** 1.0  
-**Last updated:** 1 November 2026
+**Last updated:** 7 November 2026
 
-## Latest physical test evidence — 6 November 2026
+## Latest physical test evidence — 7 November 2026
+
+The latest supplied v0.6.3-debug two-phone run is a **clock-acquisition / READY-gate failure**. Host and Speaker discovery, TCP admission, UDP exchanges and PCM delivery worked, but clock residual RMS remained above the strict threshold:
+
+- Host: Xiaomi 22101316I, Android 14; Speaker: Xiaomi M2010J19SI, Android 12.
+- Both devices were on Wi-Fi and the same IPv4 subnet (`192.168.1.35/24` and `192.168.1.39/24`).
+- Speaker reached 108 accepted probes, with 27 selected samples over 33.052 seconds. Median RTT was 5.5413 ms; estimated skew was −3.237 ppm; residual RMS was 0.416862 ms; stable streak remained 0.
+- Speaker PCM ingress remained near 50 frames/sec, reached 20,000 ms buffered PCM and reported zero missing frames.
+- Host queued and wrote 2,250 audio chunks. Queue depth remained 0, high-water was 1, and no queue-overflow event appeared.
+- At 45 seconds, the Host closed the receiver because READY had not been reached. The Speaker then reported that the master closed its control/audio channels.
+- No READY, ANCHOR, playback-start or acoustic marker result was demonstrated.
+
+The earlier v0.6.3 telemetry also exposed a measurement gap: Host `t3` was captured before receiver matching and JNI response preparation, while Host timing records were emitted only every twentieth response. This does not prove those delays caused the residual, but it prevented per-probe correlation. The follow-up diagnostics branch records the Host and Speaker timings for every accepted exchange using the v1 UDP sequence number. That branch has not yet been built or physically tested; do not treat its proposed instrumentation as validated.
+
+The queue false-positive correction from PR #68 was present in this run and the observed queue counters support that the earlier teardown/overflow misclassification was not reproduced.
+
+**Verdict: FAIL — clock stability / READY.** This is not a synchronized-playback pass and does not establish the clock-noise root cause. See [the chronological device report](Test_Results.md).
+## Historical physical test evidence — 6 November 2026
 
 The latest supplied three-phone LAN run is a **failure at the READY gate**, not a discovery or TCP-admission failure:
 
