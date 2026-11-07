@@ -8,7 +8,6 @@ import java.nio.charset.StandardCharsets
 import java.text.SimpleDateFormat
 import java.util.Date
 import java.util.Locale
-import java.util.TimeZone
 
 /** App-private rolling diagnostic log with a user-initiated plain-text export. */
 class DiagnosticLogStore(context: Context) {
