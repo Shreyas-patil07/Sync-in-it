@@ -854,12 +854,12 @@ class MasterSessionHost(context: Context, private val onStatus: (String) -> Unit
                     continue
                 }
 
-                if (newlyPinnedPeer === target) {
-                    onStatus("DIAG HOST_UDP_PEER_PINNED receiverId=${target.receiverId} source=${datagram.source}")
-                }
                 val responseReadyAtNs = System.nanoTime()
                 val sequence = UdpTimeSyncPacketMetadata.sequence(encodedResponse)
                 val t3ToResponseReadyUs = (responseReadyAtNs - t3Ns) / 1_000L
+                if (newlyPinnedPeer === target) {
+                    onStatus("DIAG HOST_UDP_PEER_PINNED receiverId=${target.receiverId} source=${datagram.source}")
+                }
                 val responseStartedAt = System.nanoTime()
                 val t3ToSendStartUs = (responseStartedAt - t3Ns) / 1_000L
                 val responseReadyToSendStartUs = (responseStartedAt - responseReadyAtNs) / 1_000L
