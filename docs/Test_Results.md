@@ -193,7 +193,7 @@ Do not compare combined codec/transport changes as one result. First compare cod
 
 **Hypothesis — unproven:** variable delay between captured `t1/t3` and their respective send operations may contribute to four-timestamp offset noise. The run's older Host telemetry sampled response timings only every 20 responses, so the exact Host/Speaker per-sequence relationship cannot be reconstructed from the supplied pair.
 
-**Next action:** build and test `diagnostics/per-probe-clock-boundaries-2026-11-07`. Correlate `CLOCK_PROBE` and `HOST_UDP_PROBE` by the same sequence. Replay the existing raw four-timestamp samples without changing estimator selection or readiness gates; evaluate send-boundary corrections offline only.
+**Next action:** install the PR #69 build on both phones, capture matching diagnostic reports and correlate `CLOCK_PROBE` and `HOST_UDP_PROBE` by the same sequence. Replay the existing raw four-timestamp samples without changing estimator selection or readiness gates; evaluate send-boundary corrections offline only. CI passed before this physical test.
 
 **Evidence:** `SyncInIt-diagnostics-20261107-133401.txt` (Host) and `SyncInIt-diagnostics-20261107-133357.txt` (Speaker).
 
