@@ -57,12 +57,10 @@ object UdpTimeSyncPacketMetadata {
         return value
     }
 
-    private companion object {
-        const val RESPONSE_TYPE = 2
-        const val T2_OFFSET = 22
-        const val T3_OFFSET = 30
-        const val LONG_BYTES = 8
-    }
+    private const val RESPONSE_TYPE = 2
+    private const val T2_OFFSET = 22
+    private const val T3_OFFSET = 30
+    private const val LONG_BYTES = 8
 }
 
 data class TimeSyncResponseSendTiming(val t3Ns: Long, val sendElapsedNs: Long)
