@@ -212,7 +212,7 @@ Candidate behavior:
 1. Open and start the output stream after Speaker join and format negotiation, before the group ANCHOR.
 2. Render silence while the shared timeline is not playing; acquire the DAC frame/time mapping while output is already running.
 3. Map the ANCHOR's Host time to local monotonic time using the receiver clock model, then invert the DAC frame-to-local-time mapping to obtain the output frame for the target.
-4. Associate the ANCHOR sample index with that output frame. The renderer maps requested output frames back to the shared media timeline and returns silence before the anchor or the corresponding PCM sample after it.
+4. Associate the ANCHOR sample index with that output frame. Establish a canonical stream-frame coordinate and calibrate the relationship between renderer/write counters and the timestamp framePosition; do not assume a callback's next writable frame is the same as a frame already presented or committed. Account for the queued-frame horizon. The renderer maps requested output frames back to the shared media timeline and returns silence before the anchor or the corresponding PCM sample after it.
 5. Keep all mapping snapshots callback-safe. No allocation, locks, JNI, I/O or logging in the real-time callback.
 6. Ensure the output queue has not already committed silence past the target frame. Anchor lead time must exceed the writable/output queue horizon plus scheduling margin; the current 1-second lead is a test value, not proof.
 7. If timestamps are unavailable, stale or reset by route change, the receiver must not claim precise frame alignment.
