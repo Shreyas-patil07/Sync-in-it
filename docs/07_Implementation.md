@@ -324,9 +324,28 @@ This changes the control point: play() starts a silent output stream during join
 
 **Exit gate:** the continuous path can identify and render the ANCHOR sample at the mapped output-frame boundary without underruns or missed-frame jumps; timestamp availability/fit is repeatable on both phones; the physical p95 acoustic skew is measured against T2 (≤10 ms). Do not select Oboe or continuous output solely from documentation or simulator results.
 
-### WP3 — Physical playback acceptance (M2)
+### WP3 — One-Speaker vertical slice (hard process gate; M2)
 
-Prove one Host + one Speaker first: READY sent/accepted, common ANCHOR received, playback started and marker-based acoustic output measured. Then two Speakers, then three/four. Record `AudioTrack.play()` start latency per tested model. The next decision line is p95 absolute acoustic skew ≤10 ms (T2), using the same placement, route and measurement method. T1 ≤20 ms is the minimum readable result, not a substitute for the T2 decision.
+**Do not build another product layer until one physical Speaker completes this path.** Keep the first vertical slice intentionally narrow: one Host, one Speaker, current PCM16/TCP transport and current AudioTrack backend.
+
+1. Join and establish both control/audio channels.
+2. Sustain indexed PCM ingress and at least the required contiguous pre-roll.
+3. Acquire the existing clock gate without changing thresholds.
+4. Send READY and verify Host acceptance.
+5. Receive the common ANCHOR.
+6. Produce actual output and verify that the expected sample marker appears in the physical recording.
+7. Preserve Host/Speaker logs, exact build/commit, audio route, network configuration and a machine-readable acoustic analysis.
+
+**Single-Speaker exit gate:** READY sent and accepted, ANCHOR received, playback actually audible, no unexplained missing sample range/underrun, and repeatable output-frame-to-marker timing with uncertainty stated. A single Speaker cannot establish *inter-device* acoustic skew; the p95 ≤10 ms T2 criterion is evaluated when a second Speaker is added.
+
+If this path fails, stay on this workstream. Use per-probe replay and Host/receiver correlation to isolate clock, buffer, transport or output failure. Do not add codec, UDP, iOS, PWA, calibration or provider work as a workaround.
+
+After the single-Speaker baseline passes:
+- Run the continuous-output candidate on the same phone pair and setup; compare scheduled-start AudioTrack with silence-first, output-frame-aligned timeline rendering.
+- Add a second Speaker and measure T2 p95 absolute acoustic skew ≤10 ms.
+- Only after two Speakers pass repeatably, proceed to three/four and then capacity tests.
+
+T1 ≤20 ms and T2 ≤10 ms are acoustic inter-device targets; report mean, p95 and maximum with test geometry and measurement uncertainty.
 
 ### WP4 — Manual offset and callback-safe DAC snapshot (M3)
 
@@ -340,9 +359,25 @@ Connect the DAC mapper to the drift controller. Select bounded frame slips versu
 
 Late join/rejoin from the Host history ring with a targeted ANCHOR at a future sample boundary; do not disturb already-playing Speakers. Add explicit Host approval alongside QR admission. Resolve ADR-013 capacity semantics before scale tests. Implement foreground-service and wake-lock lifecycle before screen-off/endurance testing.
 
-### WP7 — Sources and codec (M6)
+### WP7 — Audio transport and codec alternatives (after the first synchronized start)
 
-Add local-file decoding through the same PCM path. Evaluate file-sync as an alternative only if a target-group bandwidth test proves PCM distribution is limiting; current PCM is approximately 1.536 Mbps per Speaker and a 20-second buffer is approximately 18.3 MiB per Speaker. Keep Opus behind the codec interface and reject it if it regresses acoustic gates.
+The existing PCM16/TCP path remains the control. Do not replace it before one Speaker has passed READY → ANCHOR → physical output and two Speakers have produced a repeatable acoustic result.
+
+The current stream is 48 kHz × 16-bit × 2 channels = **1.536 Mbps payload per Speaker**. At the current eight-Speaker preview cap that is **12.288 Mbps aggregate audio payload**, before TCP/IP framing, ACKs, retransmissions and shared Wi-Fi airtime costs. This is payload arithmetic, not a router-capacity result.
+
+Compare one variable at a time, using identical sample-indexed content and the same network/device setup:
+- **PCM/TCP baseline:** retain the current implementation and capture per-connection retransmission/queue stalls, chunk age, buffer depletion and audio underruns.
+- **FLAC/TCP:** lossless compression, decode back to the exact PCM sample timeline. Compression ratio is content-dependent; do not assume a fixed 50% reduction. Snapcast is a useful public reference: its documented default codec is FLAC and it transports encoded chunks over TCP while clients synchronize continuously and buffer decoded chunks.
+- **Opus/TCP:** test 20 ms frames initially, sample-indexed after decoding. Measure actual encoder lookahead/packetization, decode delay, bitrate, CPU, quality and loss behavior. The multi-second playout lead lets the Host encode and the Speaker decode ahead of the target time, but does not erase codec delay; the decoded PCM must still be placed at its original sample index.
+- **PCM/UDP with selective retransmission:** later experiment only. Include per-chunk sample index/sequence, bounded NACKs, retransmission deadline, loss/late-drop metrics and per-Speaker repair queue. Request only missing chunks that can still arrive before their playout deadline. A missing UDP datagram does not block later datagrams, but the sample gap still exists until retransmitted or concealed. Keep packets below the path MTU to avoid fragmentation.
+
+Do not combine a codec and transport switch in one comparison. First compare FLAC/TCP and Opus/TCP against PCM/TCP; then assess UDP repair separately. Select by acoustic skew, dropouts, late/missing chunks, buffer underflow, aggregate airtime, CPU/thermal load and recovery behavior—not bitrate alone.
+
+Exit gate: a candidate must preserve the same decoded sample-index timeline and meet the existing acoustic acceptance criteria with no unacceptable underruns, dropouts, quality loss or device-resource regression. Keep TCP PCM as the fallback until the candidate passes.
+
+### WP7b — Local-file source (M6)
+
+Add local-file decoding through the same sample-indexed PCM source interface. Evaluate source-file distribution only if measured target-group bandwidth proves live PCM/encoded-stream delivery is the bottleneck; it is a separate architecture with file identity, versioning, integrity verification, storage and playback-position coordination. Do not assume file-sync is inherently superior.
 
 ### WP8 — Later milestones
 
@@ -353,6 +388,10 @@ Add local-file decoding through the same PCM path. Evaluate file-sync as an alte
 ### Deferred until acoustic validation
 
 Do not advance Opus, provider/queue control, PWA receiver, microphone calibration or encryption hardening ahead of the first successful physical timing path. Evaluate file-sync at M6 against measured bandwidth, not as an assumed upgrade.
+
+## 2.2 Delivery rule — prove one endpoint before adding layers
+
+The current project risk is sequencing, not a shortage of architectural options. Maintain one primary in-flight workstream. The critical path is: minimum diagnostics → one-Speaker vertical slice → continuous-output comparison → two-Speaker acoustic proof → transport/codec experiments → group scaling. No new transport, codec, platform, provider, calibration or security feature should start while the one-Speaker path is still blocked. Every stage needs a recorded exit result before the next one opens. Research and small replay experiments may run in parallel only when they directly diagnose the active gate and do not create a second implementation track.
 
 ## 3. Repository layout
 
