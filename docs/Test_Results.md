@@ -149,6 +149,54 @@ After the first one-/two-Speaker timing gates pass, transport/codec runs must ad
 
 Do not compare combined codec/transport changes as one result. First compare codecs over TCP, then transport with a fixed codec. Keep PCM/TCP as the fallback until a candidate passes acoustic and reliability gates.
 
+## 2.4 Test record — 2026-11-07 — v0.6.3-debug per-device diagnostics
+
+- **Run ID:** SIT-2026-11-07-02
+- **Build:** `0.6.3-debug (1794038210)`; the diagnostic release is `0.6.3`, but these are debug builds; no installed APK filename or source commit is recorded in the supplied logs.
+- **Devices:** Host Xiaomi 22101316I / Android 14; Speaker Xiaomi M2010J19SI / Android 12.
+- **Network:** Both devices on Wi-Fi, same `192.168.1.0/24` subnet. Router/AP model, band and channel were not recorded.
+- **Configuration:** One Host, one Speaker; 48 kHz stereo PCM16; separate TCP control/audio channels and UDP time-sync.
+- **Test duration:** Host admission at 13:32:58.695 to readiness teardown at 13:33:43.672 (local log time, +05:30).
+- **Test intent:** Validate PR #68 queue classification and new Host/Speaker close attribution while exercising clock acquisition and PCM delivery.
+
+**Observed metrics**
+
+| Metric | Result |
+|---|---:|
+| UDP probes accepted by Speaker | 108 |
+| RTT median | 5.5413 ms |
+| Selected samples / seen | 27 / 108 |
+| Selected sample span | 33,052 ms |
+| Residual RMS | 0.416862 ms |
+| Estimated receiver skew | −3.237 ppm |
+| Stable streak | 0 |
+| PCM ingress | Approximately 50 frames/sec |
+| Buffered contiguous PCM | 20,000 ms |
+| Missing frames | 0 |
+| Window advances | 1,238 |
+| Host queue queued / written | 2,250 / 2,250 |
+| Host queue depth / high-water | 0 / 1 |
+| Host queue-overflow event | None observed |
+| READY sent / accepted | Not reached |
+| ANCHOR received | No |
+| Playback start result | Not started |
+| Acoustic marker skew | Not measured |
+
+**Verdict:** FAIL — clock acquisition / READY gate.
+
+**Observed failure:**
+- The Speaker met the PCM-buffer and continuity conditions but did not meet the clock residual requirement (`0.416862 ms` versus strict `<0.25 ms`).
+- The Host fired `GROUP_START_READINESS_TIMEOUT` at 45 seconds and closed receiver 1 with `trigger=readiness-timeout`.
+- Host queue counters remained healthy; the old post-cleanup `HOST_AUDIO_QUEUE_OVERFLOW` false positive was not reproduced.
+- The Speaker then observed `master closed the control channel` and `master closed the audio channel`, followed by `SPEAKER_CLIENT_CLOSE trigger=control-reader-failure`.
+- No spontaneous TCP reset is established in this run; closure follows the Host readiness timeout.
+
+**Hypothesis — unproven:** variable delay between captured `t1/t3` and their respective send operations may contribute to four-timestamp offset noise. The run's older Host telemetry sampled response timings only every 20 responses, so the exact Host/Speaker per-sequence relationship cannot be reconstructed from the supplied pair.
+
+**Next action:** build and test `diagnostics/per-probe-clock-boundaries-2026-11-07`. Correlate `CLOCK_PROBE` and `HOST_UDP_PROBE` by the same sequence. Replay the existing raw four-timestamp samples without changing estimator selection or readiness gates; evaluate send-boundary corrections offline only.
+
+**Evidence:** `SyncInIt-diagnostics-20261107-133401.txt` (Host) and `SyncInIt-diagnostics-20261107-133357.txt` (Speaker).
+
 ## 3. Reusable template for future runs
 
 Copy this section for each new run and replace the placeholders. Preserve prior test records.
@@ -204,3 +252,4 @@ Copy this section for each new run and replace the placeholders. Preserve prior 
 ## 4. Change history
 
 - **2026-11-06:** Created this test record. Initial entry documents the v0.5.9 post-fix Speaker log and the remaining clock-stability blocker.
+- **2026-11-07:** Added the paired v0.6.3-debug Host/Speaker failure record and queue/clock findings.
