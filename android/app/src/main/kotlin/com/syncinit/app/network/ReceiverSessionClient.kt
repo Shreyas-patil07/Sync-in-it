@@ -314,9 +314,9 @@ class ReceiverSessionClient(
                                 onStatus(
                                     "[DIAG $attemptId] CLOCK_PROBE sequence=${probe.sequence} " +
                                         "t1Ns=${probe.t1Ns} t2Ns=${probe.t2Ns} " +
-                                    "t3Ns=${probe.t3Ns} t4Ns=${probe.t4Ns} " +
-                                    "roundTripNs=${probe.roundTripNs} rawOffsetNs=${probe.rawOffsetNs} " +
-                                    "requestPreparationUs=$requestPreparationUs udpSendCallUs=$udpSendCallUs"
+                                        "t3Ns=${probe.t3Ns} t4Ns=${probe.t4Ns} " +
+                                        "roundTripNs=${probe.roundTripNs} rawOffsetNs=${probe.rawOffsetNs} " +
+                                        "requestPreparationUs=$requestPreparationUs udpSendCallUs=$udpSendCallUs"
                                 )
                             }
                             onStatus(
