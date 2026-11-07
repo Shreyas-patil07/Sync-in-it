@@ -63,6 +63,30 @@ Neither candidate has been evaluated on the physical probe log. RTT does not pro
 **No runtime code or thresholds changed.** The Android preview's existing <0.25 ms residual-RMS gate, sample count/span and stable-streak requirements remain in force. Physical READY/ANCHOR and acoustic skew are still unvalidated.
 
 
+
+## Delivery gate and next priority — 7 November 2026
+
+The largest immediate risk is that multiple architecture layers are advancing before one physical Speaker has completed the existing playback path. The active vertical slice is deliberately limited to one Host + one Speaker, current PCM16/TCP and the current AudioTrack backend:
+
+1. Establish both channels and sustain sample-indexed PCM ingress.
+2. Pass the existing clock and contiguous-prebuffer gates without changing thresholds.
+3. Send/accept READY and receive the common ANCHOR.
+4. Produce audible output and verify the expected sample marker in a physical recording.
+5. Preserve correlated logs and repeatable output-frame-to-marker timing.
+
+**No codec, UDP transport, iOS, PWA, provider/queue, calibration or security implementation should start while this one-Speaker path is blocked.** Once it passes, compare scheduled-start AudioTrack against continuous-output, silence-first timeline rendering on the same phone/setup. Then add a second Speaker and establish repeatable T2 acoustic skew before testing transport alternatives or group scaling.
+
+## Transport and codec direction — gated research
+
+The baseline is 48 kHz stereo PCM16 over one TCP audio connection per Speaker: 1.536 Mbps payload per Speaker and 12.288 Mbps across the current eight-Speaker preview cap, excluding all transport and Wi-Fi overhead. TCP retransmission can hold later bytes on the affected Speaker's ordered connection; separate Speaker connections isolate that HOL stall but do not prevent buffer depletion on the affected phone.
+
+After the one-/two-Speaker timing path passes, compare PCM/TCP against FLAC/TCP and Opus/TCP with identical sample-indexed audio. Test UDP selective retransmission only after codec behavior and the TCP baseline are understood. FLAC compression is signal-dependent; Opus codec delay must be measured and decoded samples must retain original sample positions. A multi-second playout lead allows decoding before presentation but does not erase codec delay. See [ADR-027](ADR/Architecture_Decisions.md#adr-027--audio-transport-and-codec-alternatives).
+
+Oboe/AAudio remains a lower-confidence backend experiment after an end-to-end output baseline exists. Android recommends Oboe/AAudio low-latency configuration, but that is not proof of more accurate timestamps on the target Xiaomi devices. Compare actual timestamp mapping and acoustic measurements before switching.
+
+**Clock algorithm scope:** do not add new clock-estimator changes beyond the existing replay-only hysteresis/two-state alternatives in ADR-026. The priority is to determine whether the single-Speaker failure is clock readiness, transport/buffer or output scheduling, using evidence rather than more parallel architecture work.
+
+
 ## Implemented Android path
 
 ### Discovery and admission
