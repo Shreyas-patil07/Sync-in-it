@@ -1000,16 +1000,19 @@ Do not infer missing hardware/router metadata. Store raw recordings outside Git 
 ## 2026-11-07 — UDP response T3 send-boundary experiment
 
 **Type:** Android UDP time-sync transport / diagnostics  
-**Status:** Implemented on branch `experiment/send-boundary-t3-debug-acquisition-window`; CI and physical-device validation pending.
+**Status:** Implemented on branch `experiment/send-boundary-t3-debug-acquisition-window`; Android/JNI, Kotlin transport and M0 simulator/native-core CI passed on PR head `d420fb91d75f9ff16ce76adabd2aa675205ee6e4`; physical-device validation pending.
 
 - Response generation now creates a valid provisional v1 response with `T3=T2`. The UDP transport overwrites the response's existing little-endian T3 field (byte offset 30, eight bytes) with `System.nanoTime()` after `DatagramPacket` construction and immediately before `DatagramSocket.send()`.
 - The 38-byte packet layout, packet type, sequence, session ID, receiver ID, T1 and T2 fields remain unchanged. The Speaker continues to validate the normal response through the existing native correlator.
 - Host per-probe telemetry now records `receiveToT3Us`, `responseReadyToT3Us` and `sendElapsedUs`. Host status logging is performed after the datagram send rather than between response preparation and transmission.
 - Debug builds receive a 90-second Host readiness observation deadline so a diagnostic run can observe beyond the prior 45-second cutoff. Release builds retain the 45-second timeout.
+- Android's default preview version name was corrected to `0.6.4` (debug APK reports `0.6.4-debug`), avoiding a stale `0.6.1-debug` identity in diagnostic exports.
 - Diagnostic exports now show the installed app version at export time and separately preserve the original log-initialization time/version. This resolves the confusing header that continued to show an old version after app upgrades.
 - Added transport tests for T3 field replacement, packet-type/size/time-order rejection and a UDP loopback assertion that the transmitted T3 equals the transport's captured timestamp.
 
 **Non-changes:** T1 capture and native pending-request registration are unchanged; T1-related preparation/send durations remain in Speaker telemetry. No estimator, lowest-RTT selection, 60-second fit window, residual limit (<0.25 ms), stable streak, READY/ANCHOR, retry cadence, PCM/TCP behavior or queue capacity changed. The longer debug window is not a production timeout change.
 
-**Next action:** pass Android/transport CI, install the branch debug build on both phones, run one Host + one Speaker for at least 75 seconds in each role direction, export both reports, correlate by sequence and compare residual RMS/hold-out prediction. Do not change the estimator or readiness threshold based on one run.
+**CI evidence:** [Android app and JNI](https://github.com/Shreyas-patil07/Sync-in-it/actions/runs/42370740702), [Kotlin socket transport](https://github.com/Shreyas-patil07/Sync-in-it/actions/runs/42370740900), [M0 simulator and native core](https://github.com/Shreyas-patil07/Sync-in-it/actions/runs/42370740948). The signed debug APK artifact is available from the Android workflow (artifact ID `13573319276`).
+
+**Next action:** install the branch debug build on both phones, run one Host + one Speaker for at least 75 seconds in each role direction, export both reports, correlate by sequence and compare residual RMS/hold-out prediction. Do not change the estimator or readiness threshold based on one run.
 
