@@ -38,6 +38,10 @@ require(requestedVersionCode in 1..2_100_000_000) {
 }
 
 android {
+    buildFeatures {
+        buildConfig = true
+    }
+
     sourceSets.getByName("main").res.srcDir(generatedBrandResources)
     namespace = "com.syncinit.app"
     compileSdk = 36
