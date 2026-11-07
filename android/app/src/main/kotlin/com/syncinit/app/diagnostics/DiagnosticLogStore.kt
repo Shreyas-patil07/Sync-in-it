@@ -51,13 +51,13 @@ class DiagnosticLogStore(context: Context) {
 
         val events = persisted.substring(separatorIndex + separator.length)
             .trimStart('\n', '\r')
-        return buildString {
-            append(header())
-            appendLine("logInitializedAt=${storedValue("createdAt") ?: "unknown"}")
-            appendLine("logInitializedAppVersion=${storedValue("appVersion") ?: "unknown"}")
-            appendLine(separator)
-            append(events)
-        }
+        val exportHeader = header().replaceFirst(
+            separator,
+            "logInitializedAt=${storedValue("createdAt") ?: "unknown"}\\n" +
+                "logInitializedAppVersion=${storedValue("appVersion") ?: "unknown"}\\n" +
+                separator
+        )
+        return exportHeader + events
     }
 
     @Synchronized
