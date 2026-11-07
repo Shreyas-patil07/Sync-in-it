@@ -200,18 +200,18 @@ Do not compare combined codec/transport changes as one result. First compare cod
 ## 2.5. Test record — 2026-11-07 — v0.6.4-debug paired per-probe run
 
 - **Run ID:** SIT-2026-11-07-03
-- **Build:** Both devices report \`0.6.4-debug (1794040821)\` in the latest \`APP_INSTANCE\` entries. The first eight-line export header still shows the older log-initialization version \`0.6.1-debug\`; this is a persisted-header issue, not the version used by the latest session.
+- **Build:** Both devices report `0.6.4-debug (1794040821)` in the latest `APP_INSTANCE` entries. The first eight-line export header still shows the older log-initialization version `0.6.1-debug`; this is a persisted-header issue, not the version used by the latest session.
 - **Devices:** Xiaomi 22101316I / Android 14 / API 34 and Xiaomi M2010J19SI / Android 12 / API 31.
-- **Network:** Both phones used Wi-Fi on \`192.168.1.0/24\`. Router model, band and channel were not captured.
+- **Network:** Both phones used Wi-Fi on `192.168.1.0/24`. Router model, band and channel were not captured.
 - **Test intent:** Validate the per-probe Host/Speaker telemetry with the two phones in both role directions.
 - **Duration:** Run A: approximately 16:17:06–16:17:51 (+05:30). Run B: approximately 16:18:58–16:19:43 (+05:30).
-- **Evidence:** \`SyncInIt-diagnostics-20261107-162019.txt\` and \`SyncInIt-diagnostics-20261107-162018.txt\`.
+- **Evidence:** `SyncInIt-diagnostics-20261107-162019.txt` and `SyncInIt-diagnostics-20261107-162018.txt`.
 
 ### Observed results
 
 | Metric | Run A: Android 14 Host | Run B: Android 12 Host |
 |---|---:|---:|
-| Session diagnostic ID | \`38403299\` | \`511f7512\` |
+| Session diagnostic ID | `38403299` | `511f7512` |
 | Accepted probes | 107 | 108 |
 | Selected samples / seen | 27 / 107 | 27 / 108 |
 | Selected span | 32,036 ms | 43,815 ms |
@@ -229,13 +229,13 @@ Do not compare combined codec/transport changes as one result. First compare cod
 **Observed facts:**
 - Both role directions completed discovery, control/audio TCP admission and repeated UDP time-sync exchanges.
 - Both Speakers reached the full 20-second PCM buffer, with 960,000 contiguous frames and zero missing frames.
-- Neither residual met the strict \`<0.25 ms\` requirement. The stable streak remained zero.
+- Neither residual met the strict `<0.25 ms` requirement. The stable streak remained zero.
 - Both Host sessions closed the receiver at the 45-second readiness deadline. No READY/ANCHOR or playback start was demonstrated.
-- Per-probe \`HOST_UDP_PROBE\` records were present in the paired reports, and sequence values can be correlated across the two devices.
+- Per-probe `HOST_UDP_PROBE` records were present in the paired reports, and sequence values can be correlated across the two devices.
 
 **Interpretation — not a root-cause finding:** reversing the roles did not remove the residual problem. The different residuals indicate the result is sensitive to the device/role or run conditions, but this evidence does not isolate Android scheduling, network asymmetry, timestamp capture or estimator behavior. The 45-second deadline also stopped both runs before a full 60-second fit-window observation.
 
-**Next action:** test branch \`experiment/send-boundary-t3-debug-acquisition-window\` on both phones. The branch moves final T3 stamping to the UDP transport send path and gives debug builds a 90-second readiness observation window. Keep all estimator and READY thresholds unchanged. Compare the new Host send-boundary metrics with Speaker raw four-timestamp samples by sequence.
+**Next action:** test branch `experiment/send-boundary-t3-debug-acquisition-window` on both phones. The branch moves final T3 stamping to the UDP transport send path and gives debug builds a 90-second readiness observation window. Keep all estimator and READY thresholds unchanged. Compare the new Host send-boundary metrics with Speaker raw four-timestamp samples by sequence.
 
 ## 3. Reusable template for future runs
 
