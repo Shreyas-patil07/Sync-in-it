@@ -879,3 +879,29 @@ Do not infer missing hardware/router metadata. Store raw recordings outside Git 
 **Important distinction:** This is a documentation update only. No source code, runtime gate, simulator behavior, tests or physical measurements were changed. No milestone is marked complete. The latest physical evidence remains the 6 November Speaker-side run in which PCM ingress/pre-roll looked healthy but stable clock acquisition and READY/ANCHOR were not demonstrated; acoustic skew remains unmeasured.
 
 **Next engineering action:** Implement per-probe and fit-update capture plus matching Host diagnostics, then replay the same physical run through the shared C++ estimator/readiness gate. Do not change residual thresholds in that change.
+
+
+### 7 November 2026 — Continuous output and estimator alternatives documented
+
+**Type:** Documentation / architecture experiments  
+**Status:** Proposal and test-plan updates completed; implementation not started  
+**Branch:** `docs/final-upgrade-brief-2026-11-07`
+
+**Repository inspection findings:**
+- The current Android Speaker primes AudioTrack, waits for the ANCHOR-derived local monotonic time, then calls AudioTrack.play().
+- DacClockTimestampPoller is started only after play(), so the existing DAC mapper cannot currently establish the frame/time mapping needed before the first ANCHOR.
+- The JNI clock client re-sorts recent valid samples by RTT, reselects the lowest 25%, and resets stable_streak to zero when any fit fails the current gate.
+- The READY state machine accepts repeated READY idempotently; the wire protocol has no explicit READY-revocation message.
+
+**Summary:**
+- Added the continuous-output candidate: start the stream during join, emit silence, acquire the DAC mapping before ANCHOR, and align the ANCHOR sample index to the output frame corresponding to the mapped timeline time.
+- Added an AudioTrack/Oboe comparison on the same two Xiaomi phones. The test includes tuned AudioTrack low-latency mode, Oboe/AAudio callback mode, timestamp fit quality, underruns/XRuns and acoustic skew.
+- Added replay-only readiness hysteresis and two-state offset/skew tracker experiments, preserving the current batch regression as the control.
+- Added ADR-025 and ADR-026, testing procedures and physical-run capture fields.
+
+**External API check:** Android recommends Oboe for lowest latency and PERFORMANCE_MODE_LOW_LATENCY for latency-sensitive AudioTrack use. The AudioTrack and Oboe timestamp APIs both provide estimated frame/time information with route/implementation limitations; this does not prove Oboe timestamp accuracy is better on the target phones. See references in docs/02_TRD.md and docs/09_Testing.md.
+
+**Non-changes:** No Android/native code, runtime configuration, protocol, estimator, thresholds or test results were changed. No physical-device comparison was run. The continuous-output architecture and both estimator alternatives remain open hypotheses.
+
+**Next action:** Capture/replay the physical clock log for baseline/hysteresis/two-state variants, and run the scheduled-versus-continuous AudioTrack/Oboe output comparison on the two Xiaomi devices before selecting an implementation.
+
