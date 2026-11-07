@@ -43,6 +43,26 @@ The first implementation deliverable is shared evidence: complete per-probe and 
 Manual offset is an existing M3 item pulled earlier in sequence, not a new milestone. Keep it separate from network clock offset and DAC mapping, persist by endpoint + output route, and flag Bluetooth route changes. Defer Opus, provider/queue control, PWA receiver, calibration, security hardening and file-sync adoption until the timing path is measured; file-sync remains an M6 bandwidth experiment. Screen-off/endurance tests remain blocked until foreground-service and wake-lock lifecycle work exists.
 
 
+
+## Additional timing proposals under evaluation — 7 November 2026
+
+These are review proposals, not implemented behavior or accepted architecture decisions.
+
+### Output-frame-aligned start
+
+The current Speaker implementation still primes AudioTrack, waits for the ANCHOR-derived local target and calls AudioTrack.play(). Its DAC timestamp poller starts only after play(), so the current mapper is not available to schedule the first ANCHOR. ADR-025 tracks the candidate to start output during join, emit silence, acquire the frame/time mapping, and switch to the ANCHOR sample at the mapped output-frame boundary.
+
+The proposal must be tested against the current scheduled-start path on the same two Xiaomi phones. Compare tuned AudioTrack low-latency mode with Oboe/AAudio callback output. Oboe is Android's recommended low-latency route, but its timestamp is best-effort and this does not establish better timestamp accuracy. No backend or start-architecture change is approved yet. Downstream speaker/DSP/acoustic delay remains a measured quantity.
+
+### Clock estimator alternatives
+
+The current JNI path reselects the lowest-RTT 25% for each batch regression and resets the stable streak to zero on a failed update. ADR-026 records two replay-only candidates: strict-entry/wider-exit readiness hysteresis, and a continuous two-state offset/skew tracker with covariance and calibrated RTT-scaled measurement noise.
+
+Neither candidate has been evaluated on the physical probe log. RTT does not prove path symmetry, and the current wire protocol has no explicit READY-revocation message. Replay all variants against the same ordered log and check held-out prediction, time-to-ready, flap/false-ready behavior, asymmetry and covariance calibration before any implementation decision.
+
+**No runtime code or thresholds changed.** The Android preview's existing <0.25 ms residual-RMS gate, sample count/span and stable-streak requirements remain in force. Physical READY/ANCHOR and acoustic skew are still unvalidated.
+
+
 ## Implemented Android path
 
 ### Discovery and admission
