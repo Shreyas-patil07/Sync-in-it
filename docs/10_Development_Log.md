@@ -996,3 +996,20 @@ Do not infer missing hardware/router metadata. Store raw recordings outside Git 
 **Non-changes:** no four-timestamp values, clock estimator, fit selection, readiness criteria, retry cadence, wire packet layout, PCM format, TCP behavior, queue capacity or playback policy changed. The newly added diagnostics have not yet been validated in a build or on physical devices. Send-call durations are syscall-boundary measurements, not proof of actual radio transmission timestamps.
 
 **Next action:** pass Android/transport CI, install the branch on both phones, capture matching reports, join per-probe records by sequence and compare raw versus send-boundary-adjusted residuals offline. Do not apply a correction to the production clock model until the paired measurements and replay support it.
+
+## 2026-11-07 — UDP response T3 send-boundary experiment
+
+**Type:** Android UDP time-sync transport / diagnostics  
+**Status:** Implemented on branch \`experiment/send-boundary-t3-debug-acquisition-window\`; CI and physical-device validation pending.
+
+- Response generation now creates a valid provisional v1 response with \`T3=T2\`. The UDP transport overwrites the response's existing little-endian T3 field (byte offset 30, eight bytes) with \`System.nanoTime()\` after \`DatagramPacket\` construction and immediately before \`DatagramSocket.send()\`.
+- The 38-byte packet layout, packet type, sequence, session ID, receiver ID, T1 and T2 fields remain unchanged. The Speaker continues to validate the normal response through the existing native correlator.
+- Host per-probe telemetry now records \`receiveToT3Us\`, \`responseReadyToT3Us\` and \`sendElapsedUs\`. Host status logging is performed after the datagram send rather than between response preparation and transmission.
+- Debug builds receive a 90-second Host readiness observation deadline so a diagnostic run can observe beyond the prior 45-second cutoff. Release builds retain the 45-second timeout.
+- Diagnostic exports now show the installed app version at export time and separately preserve the original log-initialization time/version. This resolves the confusing header that continued to show an old version after app upgrades.
+- Added transport tests for T3 field replacement, packet-type/size/time-order rejection and a UDP loopback assertion that the transmitted T3 equals the transport's captured timestamp.
+
+**Non-changes:** T1 capture and native pending-request registration are unchanged; T1-related preparation/send durations remain in Speaker telemetry. No estimator, lowest-RTT selection, 60-second fit window, residual limit (<0.25 ms), stable streak, READY/ANCHOR, retry cadence, PCM/TCP behavior or queue capacity changed. The longer debug window is not a production timeout change.
+
+**Next action:** pass Android/transport CI, install the branch debug build on both phones, run one Host + one Speaker for at least 75 seconds in each role direction, export both reports, correlate by sequence and compare residual RMS/hold-out prediction. Do not change the estimator or readiness threshold based on one run.
+
