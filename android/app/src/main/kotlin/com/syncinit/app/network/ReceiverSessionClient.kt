@@ -11,6 +11,7 @@ import com.syncinit.app.core.NativeProtocol
 import com.syncinit.app.core.NativeTimeSyncClient
 import com.syncinit.transport.TcpFrameConnection
 import com.syncinit.transport.FrameProtocolException
+import com.syncinit.transport.UdpTimeSyncClient
 import com.syncinit.transport.UdpTimeSyncPacketMetadata
 import java.io.Closeable
 import java.net.InetAddress
