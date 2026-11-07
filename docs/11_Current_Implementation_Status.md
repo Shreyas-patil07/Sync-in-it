@@ -231,12 +231,16 @@ A successful desktop CI run verifies deterministic core behavior. A successful A
 
 ## Next engineering sequence
 
-1. Install v0.5.9-preview.1 on one Host and one Speaker using the persistent signing key; keep both apps foregrounded and screens awake on the same trusted Wi-Fi.
-2. Capture matching Host and Speaker logs from the same session through READY/ANCHOR or disconnect. The 6 Nov Speaker excerpt showed near-target ingress and zero missing frames, but no Host counters were supplied. Compare `DIAG SPEAKER_AUDIO_INGRESS`, `HOST_AUDIO_DELIVERY`, queue depth/overflow and `DIAG HOST_AUDIO_WRITE_SLOW`.
-3. Inspect `DIAG HOST_AUDIO_WRITE_SLOW`. If ingress is still slow but Host writes are fast, investigate receiver parsing/buffer insertion and Android scheduling; if Host writes stall, investigate TCP backpressure/network behavior.
-4. Add per-probe `t1/t2/t3/t4`, RTT, raw offset and selected/rejected-sample diagnostics; replay the observations offline and compare residuals with RTT percentiles and sample selection. Inspect clock residual, skew, sample span and stable streak separately. Keep the 0.25 ms threshold unchanged while investigating.
-5. Verify the cached pre-roll snapshot counter against a fresh native snapshot because the 6 Nov log showed `WindowAdvanced` inserts alongside cached `advances=0` messages. Once one Speaker reaches READY and starts from ANCHOR, repeat with two Speakers, then three/four.
-6. Only after stable group start is observed, run the short two-minute acoustic measurement. Longer/endurance tests remain blocked by the missing foreground-service/wake-lock lifecycle.
+1. Use one Host + one Speaker on the current PCM16/TCP + AudioTrack path, foregrounded and screen-on on a trusted LAN.
+2. Capture matching Host/Speaker logs and replay the exact clock probes through the same C++ estimator/gate. Include Host delivery, TCP write stalls, per-Speaker queue depth/overflow, receiver buffer, READY and disconnect reason.
+3. Keep the current clock threshold unchanged. Diagnose whether the first Speaker is blocked by clock readiness, audio transport/buffering or output scheduling; do not add another architecture layer to hide the failure.
+4. Prove READY sent/accepted → common ANCHOR received → audible marker output. Preserve a physical recording and machine-readable frame-to-marker result.
+5. Compare scheduled AudioTrack with continuous silence-first, output-frame-aligned rendering on the same device/setup. DAC timestamps must be active before ANCHOR and the renderer/timestamp frame counter relationship must be validated.
+6. Add a second Speaker and prove repeatable p95 acoustic skew ≤10 ms before group scaling.
+7. Only after that baseline passes, compare PCM/TCP against FLAC/TCP and Opus/TCP, then test UDP selective retransmission separately. Keep the current PCM/TCP path as fallback.
+8. Compare Oboe/AAudio against AudioTrack on the same Xiaomi devices only after an output baseline exists. Select from timestamp and acoustic measurements, not API claims.
+9. Keep one primary implementation workstream. Do not start iOS, PWA, provider/queue, calibration, security, codec or transport expansion while the single-Speaker path remains blocked. Long/endurance work remains blocked by the foreground-service/wake-lock dependency.
+
 
 ## Repository map
 
