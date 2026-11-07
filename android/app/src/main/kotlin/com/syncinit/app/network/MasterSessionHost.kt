@@ -37,15 +37,15 @@ data class HostInvitation(
 )
 
 private data class StreamCursor(
+    val nextSampleIndex: Long,
+    val nextChunkDueNs: Long
+)
+
 private enum class AudioOfferResult {
     QUEUED,
     CLOSED,
     FULL
 }
-
-    val nextSampleIndex: Long,
-    val nextChunkDueNs: Long
-)
 
 /** Android master that admits several independent receivers into one shared audio session. */
 class MasterSessionHost(context: Context, private val onStatus: (String) -> Unit) : Closeable {
