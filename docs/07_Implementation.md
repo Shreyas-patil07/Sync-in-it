@@ -238,6 +238,76 @@ Exit gate:
 - Include receiver count, device models, router model, band/channel, run duration, packet/RTT behavior, calibration state and failure count.
 - No tier claim without a repeatable report.
 
+
+## 2.1 Final upgrade brief — execution order (7 November 2026)
+
+This section supersedes conflicting sequencing in earlier snapshots. It does not change runtime thresholds or mark milestones complete.
+
+### WP0 — Evidence tooling (M1 diagnostics; do first)
+
+- Capture every clock probe: attempt ID, t1–t4, RTT, raw offset, selected/rejected/expired state and rejection reason.
+- Capture each fit update: samples seen/used, selected span, slope/skew, residual, predicted offset at t4 and stable streak.
+- Add a Host-side log correlated by the same session diagnostic ID: audio delivery, slow writes, queue depth/high-water/overflow and disconnects.
+- Move readiness-gate configuration out of JNI literals into a shared core `ClockReadinessConfig`, used by Android and desktop replay. Core and device defaults must be the same object.
+- Add a desktop replay command that runs the same C++ estimator and gate as the phone, with Python-reference parity and real-log golden fixtures.
+- Verify cached 250 ms PCM snapshot diagnostics against a fresh native counter read. Treat `advances=0` as potentially stale until checked.
+- Logs remain metadata/counters only; do not include audio.
+
+**Exit gate:** offline replay of one physical run reproduces the on-device residual and stable streak within documented rounding.
+
+### WP1 — Controlled clock A/B matrix
+
+Run one factor at a time on the same two phones, 60 seconds per run and three repeats:
+
+| Factor | Comparison |
+|---|---|
+| Access point | Phone hotspot vs dedicated router |
+| Power state | Wi-Fi low-latency lock and CPU wake lock on/off |
+| Capture | Default vs raised receive-thread priority; avoid logging/JNI between receive and timestamp capture |
+| Probe style | Single probes vs paired probes retaining the lower RTT |
+| Selection | Lowest 25%, lowest 50%, all samples and robust weighting |
+| Slope | Free fit, clamped/smoothed fit and offset-only |
+
+Record RTT p50/p95/range and timeouts, residual RMS, offset standard error (including its independence assumption), slope range, hold-out prediction error (fit first 70%, predict later low-RTT probes) and RTT-outlier share. Hold-out prediction error is the key scheduling metric and does not require an external clock reference.
+
+Interpretation: outliers/time-localized residual spikes point to capture or selection; uniform ~0.5 ms scatter with low hold-out error motivates (but does not adopt) an uncertainty-based gate; slope swings correlated with hold-out error motivate slope constraints; router-only pass means hotspot is prototype-only.
+
+### WP2 — Reconcile clock-readiness criterion (ADR-018)
+
+The documents currently state materially different residual criteria: TRD baseline <1 ms; Testing doc provisional residual standard deviation <1 ms; Android JNI `stable_fit` residual RMS <0.25 ms; and core `ReceiverSession` default effectively unlimited (`UINT32_MAX`). This is an unresolved consistency issue, not permission to change the runtime gate.
+
+Before the next acceptance run, amend ADR-018 with the T2 acoustic target (p95 ≤10 ms), explicit allocation of that budget to clock error, resulting maximum start-time offset uncertainty, minimum sample/span, uncertainty, hold-out error, bounded worst residual and streak requirements, plus golden-vector and document reconciliation. Do not change a threshold in the same patch as a failing run. No relaxation without replay evidence and an ADR.
+
+### WP3 — Physical playback acceptance (M2)
+
+Prove one Host + one Speaker first: READY sent/accepted, common ANCHOR received, playback started and marker-based acoustic output measured. Then two Speakers, then three/four. Record `AudioTrack.play()` start latency per tested model. The next decision line is p95 absolute acoustic skew ≤10 ms (T2), using the same placement, route and measurement method. T1 ≤20 ms is the minimum readable result, not a substitute for the T2 decision.
+
+### WP4 — Manual offset and callback-safe DAC snapshot (M3)
+
+Pull the existing M3 manual-offset item earlier; this is sequencing, not a new milestone. Apply per-Speaker trim to the scheduled local start target in 1 ms increments with a coarse control. Persist by endpoint + output route. Keep manual trim separate from network clock offset and DAC mapping. Flag Bluetooth explicitly and require re-trim after route change. Publish the DAC mapper snapshot to the audio callback without locks or allocation.
+
+### WP5 — Drift control (M4)
+
+Connect the DAC mapper to the drift controller. Select bounded frame slips versus bounded resampling only after physical skew and artifact evidence; simulator A/B alone is not a production decision. Measure at 1, 5, 30 and 60 minutes. Add injected delay/jitter/loss only after lifecycle support exists.
+
+### WP6 — Group control, late join and Host approval (M5)
+
+Late join/rejoin from the Host history ring with a targeted ANCHOR at a future sample boundary; do not disturb already-playing Speakers. Add explicit Host approval alongside QR admission. Resolve ADR-013 capacity semantics before scale tests. Implement foreground-service and wake-lock lifecycle before screen-off/endurance testing.
+
+### WP7 — Sources and codec (M6)
+
+Add local-file decoding through the same PCM path. Evaluate file-sync as an alternative only if a target-group bandwidth test proves PCM distribution is limiting; current PCM is approximately 1.536 Mbps per Speaker and a 20-second buffer is approximately 18.3 MiB per Speaker. Keep Opus behind the codec interface and reject it if it regresses acoustic gates.
+
+### WP8 — Later milestones
+
+- Security: reviewed authenticated encryption/key derivation; no custom cryptography (ADR-015). Keep the prototype on trusted networks until then.
+- iOS: native receiver on shared core; a PWA spike is optional research only.
+- Microphone calibration and scale remain after physical timing validation.
+
+### Deferred until acoustic validation
+
+Do not advance Opus, provider/queue control, PWA receiver, microphone calibration or encryption hardening ahead of the first successful physical timing path. Evaluate file-sync at M6 against measured bandwidth, not as an assumed upgrade.
+
 ## 3. Repository layout
 
 - `core/`: portable C++17 timing library, headers, source, CMake build and unit tests. The initial estimator, timeline, DAC clock and drift-policy modules are implemented.
