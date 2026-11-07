@@ -124,35 +124,22 @@ jobs:
           VERSION: ${{ steps.release.outputs.version }}
           RELEASE_TAG: ${{ steps.release.outputs.tag }}
         run: |
-          cat > release-notes.md <<EOF
-          ## Sync In It Android Preview v${VERSION}
+          NOTES_FILE="RELEASE_NOTES_${RELEASE_TAG}.md"
+          if [ -f "$NOTES_FILE" ]; then
+            cp "$NOTES_FILE" release-notes.md
+          else
+            cat > release-notes.md <<EOF
+          # Sync In It Android Preview v${VERSION}
 
-          This update adds persistent diagnostic text export and replay-oriented clock telemetry. It is an engineering preview, not a claim of verified synchronized playback.
+          This is an engineering preview. Read the release-specific notes and validation status before installing.
 
-          ### What's included
-          - App-private rolling diagnostic history, bounded to 4 MB and retained across activity recreation and app restarts.
-          - **Save diagnostic report (.txt)** using Android's system document picker; choose Downloads or another destination.
-          - Timestamped CLOCK_PROBE records with sequence, t1/t2/t3/t4, corrected RTT and raw offset.
-          - CLOCK_FIT records with fitted offset, skew, median RTT, residual RMS, sample counts/span and stable streak.
-          - Token, password, secret and API-key assignments are redacted from diagnostic output. No audio recording is included.
-          - Existing Host/Speaker discovery, PCM16/TCP path, AudioTrack output, acoustic markers and bounded buffers remain in place.
-
-          ### How to export diagnostics
-          1. Install this APK on the Host and Speaker phones using the existing persistent preview signing key.
-          2. Reproduce the issue while keeping the app open.
-          3. Open **Network debugger** and tap **Save diagnostic report (.txt)**.
-          4. Save the generated file in Downloads or another location and share the Host and Speaker reports for the same session.
-
-          ### Behavior and limitations
-          - No wire-protocol or estimator behavior change is included in this release.
-          - The existing strict clock acquisition gate remains: residual RMS <0.25 ms, at least 8 selected samples, at least 10 seconds of span and 3 consecutive stable updates.
-          - The latest supplied physical run remained above the residual threshold and did not demonstrate READY, ANCHOR or acoustic skew. This APK adds better evidence capture; it does not claim that the clock issue is fixed.
-          - Diagnostic reports can contain device model, local network addresses, session diagnostic IDs and timing data. Review the report before sharing it. Session tokens and secret assignments are redacted; raw audio is never included.
-          - The preview is for a trusted private LAN. Transport encryption, foreground playback service and wake-lock lifecycle are not yet complete.
-          - Audio source remains a generated test click; local music and system-audio capture are not implemented.
-
-          Build source commit: https://github.com/${GITHUB_REPOSITORY}/commit/${GITHUB_SHA}
+          ### Validation and limitations
+          - The release workflow builds an updateable APK with the persistent preview signing key and runs Android transport checks.
+          - Physical multi-device playback and long-duration network reliability require separate device validation.
+          - Do not treat a successful build or software scheduling logs as proof of acoustic synchronization.
+          - Diagnostic reports can contain device model, local network addresses, session IDs and timing metadata. Review before sharing.
           EOF
+          fi
 
       - name: Create GitHub pre-release and upload APK
         env:
