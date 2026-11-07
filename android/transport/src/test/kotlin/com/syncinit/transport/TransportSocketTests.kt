@@ -327,7 +327,26 @@ private fun udpTimeSyncSequenceMetadata() {
         "UDP time-sync sequence is decoded as an unsigned little-endian value"
     )
 
+    val response = packet.copyOf().apply { this[3] = 2 }
+    expect(
+        UdpTimeSyncPacketMetadata.responseSequence(response) == expected,
+        "UDP response sequence is decoded from a response envelope"
+    )
+    expect(
+        UdpTimeSyncPacketMetadata.isResponseForSequence(response, expected),
+        "matching UDP response sequence is accepted for the active request"
+    )
+    expect(
+        !UdpTimeSyncPacketMetadata.isResponseForSequence(response, (expected + 1L) and 0xffff_ffffL),
+        "stale UDP response sequence is distinguishable from the active request"
+    )
+
     var rejected = false
+    try { UdpTimeSyncPacketMetadata.responseSequence(packet) }
+    catch (_: IllegalArgumentException) { rejected = true }
+    expect(rejected, "response sequence metadata rejects request packets")
+
+    rejected = false
     try { UdpTimeSyncPacketMetadata.sequence(packet.copyOf(packet.size - 1)) }
     catch (_: IllegalArgumentException) { rejected = true }
     expect(rejected, "UDP sequence metadata rejects an invalid packet size")
