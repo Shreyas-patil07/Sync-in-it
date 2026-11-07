@@ -11,10 +11,8 @@ import com.syncinit.app.core.NativeProtocol
 import com.syncinit.app.core.NativeTimeSyncClient
 import com.syncinit.transport.TcpFrameConnection
 import com.syncinit.transport.FrameProtocolException
-import com.syncinit.transport.UdpTimeSyncClient
 import com.syncinit.transport.UdpTimeSyncPacketMetadata
 import java.io.Closeable
-import java.net.DatagramSocket
 import java.net.InetAddress
 import java.net.PortUnreachableException
 import java.io.IOException
@@ -253,18 +251,11 @@ class ReceiverSessionClient(
     ) {
         val address = InetAddress.getByName(masterHost)
         NativeTimeSyncClient.create(sessionId, receiverId).use { nativeClock ->
-            val networkBoundDatagram = DatagramSocket(null)
-            try {
-                network.bindSocket(networkBoundDatagram)
-            } catch (error: Exception) {
-                networkBoundDatagram.close()
-                throw IOException("Could not bind UDP time-sync socket to selected Wi-Fi network $network", error)
-            }
-            UdpTimeSyncClient(
+            openTimeSyncUdpClient(
                 masterAddress = address,
                 masterPort = timePort,
                 receiveTimeoutMs = PreviewConfig.TIME_SYNC_RECEIVE_TIMEOUT_MS,
-                datagramSocket = networkBoundDatagram
+                network = network
             ).use { udp ->
                 var probeAttempts = 0
                 var lastMeasurement: com.syncinit.app.core.ClockSyncMeasurement? = null
@@ -275,7 +266,7 @@ class ReceiverSessionClient(
                 onStatus(
                     "[DIAG $attemptId] UDP_TIME_SYNC_SOCKET_READY local=${udp.localAddress}:${udp.localPort} " +
                         "remote=${udp.remoteAddress}:${udp.remotePort} connected=${udp.isConnected} " +
-                        "receiveTimeoutMs=${PreviewConfig.TIME_SYNC_RECEIVE_TIMEOUT_MS} packetBytes=${UdpTimeSyncClient.PACKET_SIZE}"
+                        "receiveTimeoutMs=${PreviewConfig.TIME_SYNC_RECEIVE_TIMEOUT_MS} packetBytes=${UdpTimeSyncClient.PACKET_SIZE} timestampMode=${udp.timestampMode}"
                 )
 
                 while (!closed.get()) {
@@ -377,7 +368,13 @@ class ReceiverSessionClient(
                                         "t3Ns=${probe.t3Ns} t4Ns=${probe.t4Ns} " +
                                         "roundTripNs=${probe.roundTripNs} rawOffsetNs=${probe.rawOffsetNs} " +
                                         "requestPreparationUs=$requestPreparationUs udpSendCallUs=$udpSendCallUs " +
-                                        "t4ToAcceptUs=$t4ToAcceptUs"
+                                        "t4ToAcceptUs=$t4ToAcceptUs" +
+                                        received.kernelTimestamp?.let { kernel ->
+                                            " kernelT4Ns=" + kernel.monotonicNs +
+                                                " kernelT4RealtimeNs=" + kernel.realtimeNs +
+                                                " kernelT4MappingUncertaintyNs=" + kernel.mappingUncertaintyNs +
+                                                " kernelT4CaptureLagUs=" + ((received.receivedAtNs - kernel.monotonicNs) / 1_000L)
+                                        }.orEmpty()
                                 )
                             }
                             onStatus(
