@@ -26,7 +26,7 @@ def main() -> int:
         host_lines = []
         base_ns = 100_000_000_000
 
-        host_lags = (100_000, 500_000, 200_000, 800_000)
+        host_lags = (100_000, 3_000_000, 100_000, 4_000_000)
         speaker_lags = (100_000, 300_000, 200_000, 400_000)
         for index in range(40):
             sequence = index + 1
@@ -85,8 +85,20 @@ def main() -> int:
             raise AssertionError(
                 f"fixture must expose app capture delay above the unchanged 0.25 ms gate:\n{output}"
             )
-        if "kernelReceiveHoldout count=" not in output:
-            raise AssertionError(f"kernel holdout metric missing:\n{output}")
+        def holdout_rms(label: str) -> float:
+            line = next((line for line in output.splitlines() if line.startswith(label + " ")), "")
+            value = next(
+                (part.split("=", 1)[1] for part in line.split() if part.startswith("rmsAbsOffsetErrorMs=")),
+                "0",
+            )
+            return float(value)
+
+        application_holdout_rms = holdout_rms("applicationHoldout")
+        kernel_holdout_rms = holdout_rms("kernelReceiveHoldout")
+        if kernel_holdout_rms >= application_holdout_rms:
+            raise AssertionError(
+                "kernel receive timestamps must improve future-offset holdout error:\n" + output
+            )
     return 0
 
 
