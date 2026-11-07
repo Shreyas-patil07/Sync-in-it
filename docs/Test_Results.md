@@ -95,7 +95,7 @@ PCM ingress and pre-roll were healthy in the captured interval, but stable clock
 ### Next actions
 
 1. Capture the matching Host log for the same session and time window. Include `HOST_AUDIO_DELIVERY`, `HOST_AUDIO_WRITE_SLOW`, queue depth/overflow, and disconnect events.
-2. Add or enable per-probe diagnostic capture for the four timestamps (`t1`, `t2`, `t3`, `t4`), individual RTT, raw offset, selected/rejected status, and estimator residual. Preserve enough data to replay the exact estimator offline.
+2. Install the diagnostic build on Host and Speaker. In **Network debugger**, tap **Save diagnostic report (.txt)** and save each device's report in Downloads. The file preserves the retained app-private event history, including every accepted `CLOCK_PROBE` and `CLOCK_FIT` line. Preserve exact `t1/t2/t3/t4`, sequence, corrected RTT, raw offset and selection-policy metadata so sample selection can be reconstructed offline. The diagnostic build does not yet export a per-fit selection bitmap or native rejection enum.
 3. Compare residual behavior against RTT and sample-window selection. Investigate timestamp capture and network scheduling before changing estimator policy.
 4. Verify the pre-roll rolling-window counter against a fresh native snapshot; distinguish stale cached diagnostics from the actual counter.
 5. Keep the existing residual threshold (<0.25 ms), 3-second PCM requirement and bounded Host queue unchanged until the cause is supported by evidence.

@@ -114,11 +114,12 @@ Camera access is required only for QR scanning. Provide a manual connection alte
 ### Diagnostics
 - Do not include audio recordings by default.
 - Avoid storing names or contacts.
-- Treat device model, network address and timestamps as potentially sensitive diagnostic metadata.
-- Make exports user-initiated.
-- Explain what is included before export.
-- Apply retention limits to temporary logs.
-- Redact tokens, secrets and private media paths.
+- Treat device model, network address, session diagnostic IDs and timestamps as potentially sensitive diagnostic metadata.
+- Keep the rolling app-private diagnostic text log bounded; the Android implementation caps it at 4 MB and retains the newest entries when trimming.
+- Make exports user-initiated through Android's document picker; do not request broad storage permissions.
+- Explain what is included before export and tell users to review the report before sharing it.
+- Redact token, password, secret and API-key assignments. Never log the session token.
+- Do not silently export to a public/shared directory or include audio recordings.
 
 ## 8. Local storage
 

@@ -15,6 +15,12 @@ The earlier pre-PR #55 run still records the separate Host-side 500 ms audio-que
 
 See [Test Results](../docs/Test_Results.md) for the complete dated test record, measured values, verdict and next actions. See [Current Implementation Status](../docs/11_Current_Implementation_Status.md) for the overall engineering state.
 
+## Diagnostic text export
+
+The Android app keeps a rolling diagnostic history in app-private storage at `files/diagnostics/sync-in-it-diagnostics.txt` (bounded to 4 MB). The on-screen debugger still shows only the latest 240 events; the saved report contains the retained file history across activity recreation and app restarts.
+
+Use **Network debugger → Save diagnostic report (.txt)**. Android's document picker lets the user save the report in Downloads or another location without granting broad storage permissions. The report includes app/device metadata and timestamped events such as `CLOCK_PROBE` and `CLOCK_FIT`; it does not include audio. Token, password, secret and API-key assignments are redacted. Local network addresses, device model, session diagnostic IDs and timing data may still be present, so review the report before sharing it.
+
 ## Toolchain
 
 Pinned versions:

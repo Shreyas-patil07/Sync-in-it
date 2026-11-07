@@ -8,7 +8,7 @@
 
 ## Current UI implementation boundary — 6 November 2026
 
-The live Android app does **not** yet implement the complete screen inventory in this design brief. The current app is an engineering diagnostics surface with Host start/stop, nearby mDNS sessions, join actions, connected Speaker state, admission status and network-debug capture. The richer lobby, QR pairing, source picker, playback controls, per-Speaker health management, calibration screens and settings remain future UI work.
+The live Android app does **not** yet implement the complete screen inventory in this design brief. The current app is an engineering diagnostics surface with Host start/stop, nearby mDNS sessions, join actions, connected Speaker state, admission status and network-debug capture. The diagnostic surface keeps a bounded app-private text log and lets the user export the retained history as a `.txt` file through Android's system document picker. The richer lobby, QR pairing, source picker, playback controls, per-Speaker health management, calibration screens and settings remain future UI work.
 
 Keep the UI truthful: TCP connected is not READY; READY is not proof of acoustic synchronization; and the current physical run did not reach READY. The website and release notes must not imply that all screens or user-media playback exist. For the exact source/build/physical-test boundary, see [Current Implementation Status](11_Current_Implementation_Status.md).
 
@@ -40,7 +40,7 @@ The interface is a control surface for a real-time system. Accuracy and clear fa
 | Preparing | Buffer and clock readiness per Speaker | Wait or remove unready Speaker |
 | Player | Playback controls, group health, session delay | Play/Pause/Resume |
 | Calibration | Placement instructions, measurement progress, result table | Start calibration |
-| Diagnostics | Timing, network, buffer and event data | Export diagnostics |
+| Diagnostics | Timing, network, buffer and event data | Save diagnostic report (.txt) |
 
 ### 3.2 Android and iOS Speaker
 

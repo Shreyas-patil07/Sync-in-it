@@ -4,8 +4,7 @@ package com.syncinit.app
 import android.app.Activity
 import android.graphics.Color
 import android.graphics.Typeface
-import android.content.ClipData
-import android.content.ClipboardManager
+import android.content.Intent
 import android.graphics.drawable.GradientDrawable
 import android.os.Bundle
 import android.widget.Toast
@@ -17,6 +16,7 @@ import android.widget.LinearLayout
 import android.widget.ScrollView
 import android.widget.TextView
 import com.syncinit.app.core.NativeCore
+import com.syncinit.app.diagnostics.DiagnosticLogStore
 import com.syncinit.app.core.NativeSessionSmokeTest
 import com.syncinit.app.core.NetworkHandshakeSmokeTest
 import com.syncinit.app.audio.PcmAudioSmokeTest
@@ -34,7 +34,12 @@ class MainActivity : Activity() {
     private lateinit var discoveryStatus: TextView
     private lateinit var nearbySessionsContainer: LinearLayout
     private lateinit var debugLog: TextView
+    private lateinit var diagnosticLogStore: DiagnosticLogStore
     private val diagnosticEvents = ArrayDeque<String>()
+
+    companion object {
+        private const val REQUEST_EXPORT_DIAGNOSTICS = 4102
+    }
 
     @Volatile private var masterHost: MasterSessionHost? = null
     @Volatile private var receiverClient: ReceiverSessionClient? = null
@@ -44,6 +49,7 @@ class MainActivity : Activity() {
 
     override fun onCreate(savedInstanceState: Bundle?) {
         super.onCreate(savedInstanceState)
+        diagnosticLogStore = DiagnosticLogStore(applicationContext)
         window.statusBarColor = Color.rgb(6, 9, 19)
         window.navigationBarColor = Color.rgb(6, 9, 19)
         window.decorView.systemUiVisibility = 0
@@ -195,13 +201,13 @@ class MainActivity : Activity() {
             parent = content,
             eyebrow = "04 / DIAGNOSTICS",
             title = "Network debugger",
-            description = "Capture the active network and connection stages when troubleshooting a hotspot or join issue."
+            description = "Capture network, clock and session events. Save the full app-private diagnostic history as a plain-text report."
         )
         val diagnosticActions = LinearLayout(this).apply {
             orientation = LinearLayout.VERTICAL
         }
         diagnosticActions.addView(actionButton("Capture local network state") { captureNetworkSnapshot() })
-        diagnosticActions.addView(actionButton("Copy full diagnostic log") { copyDiagnosticLog() }, sectionMargins(top = 7))
+        diagnosticActions.addView(actionButton("Save diagnostic report (.txt)") { exportDiagnosticLog() }, sectionMargins(top = 7))
         diagnosticActions.addView(actionButton("Clear diagnostic log") { clearDiagnosticLog() }, sectionMargins(top = 7))
         diagnosticsCard.addView(diagnosticActions, sectionMargins(top = 12, bottom = 10))
         debugLog = TextView(this).apply {
@@ -236,6 +242,39 @@ class MainActivity : Activity() {
     override fun onStop() {
         stopDiscovery()
         super.onStop()
+    }
+
+    @Deprecated("Deprecated in Android API")
+    override fun onActivityResult(requestCode: Int, resultCode: Int, data: Intent?) {
+        super.onActivityResult(requestCode, resultCode, data)
+        if (requestCode != REQUEST_EXPORT_DIAGNOSTICS || resultCode != RESULT_OK) return
+        val destination = data?.data ?: return
+        Thread({
+            try {
+                val report = diagnosticLogStore.snapshot()
+                contentResolver.openOutputStream(destination, "w")?.use { output ->
+                    output.write(report.toByteArray(Charsets.UTF_8))
+                    output.flush()
+                } ?: throw IllegalStateException("Could not open the selected diagnostic file.")
+                runOnUiThread {
+                    if (!isFinishing && !isDestroyed) {
+                        Toast.makeText(this, "Diagnostic report saved as a .txt file.", Toast.LENGTH_LONG).show()
+                        appendDiagnostic("EXPORT", "Diagnostic report saved through Android document picker.")
+                    }
+                }
+            } catch (error: Exception) {
+                runOnUiThread {
+                    if (!isFinishing && !isDestroyed) {
+                        Toast.makeText(
+                            this,
+                            "Could not save diagnostic report: ${error.message ?: error.javaClass.simpleName}",
+                            Toast.LENGTH_LONG
+                        ).show()
+                        appendDiagnostic("EXPORT_FAILED", error.message ?: error.javaClass.simpleName)
+                    }
+                }
+            }
+        }, "syncinit-diagnostic-export").apply { isDaemon = true }.start()
     }
 
     private fun startHosting() {
@@ -414,23 +453,34 @@ class MainActivity : Activity() {
         }, "syncinit-network-diagnostics").apply { isDaemon = true }.start()
     }
 
-    private fun copyDiagnosticLog() {
-        val clipboard = getSystemService(CLIPBOARD_SERVICE) as ClipboardManager
-        val content = synchronized(diagnosticEvents) { diagnosticEvents.joinToString("\n") }
-        if (content.isBlank()) {
-            Toast.makeText(this, "No diagnostic events to copy.", Toast.LENGTH_SHORT).show()
-            return
+    private fun exportDiagnosticLog() {
+        appendDiagnostic("ACTION", "User requested a diagnostic text export.")
+        val intent = Intent(Intent.ACTION_CREATE_DOCUMENT).apply {
+            addCategory(Intent.CATEGORY_OPENABLE)
+            type = "text/plain"
+            putExtra(Intent.EXTRA_TITLE, diagnosticLogStore.suggestedFileName())
         }
-        clipboard.setPrimaryClip(ClipData.newPlainText("Sync In It diagnostics", content))
-        Toast.makeText(this, "Diagnostic log copied. Share it for analysis.", Toast.LENGTH_LONG).show()
+        try {
+            startActivityForResult(intent, REQUEST_EXPORT_DIAGNOSTICS)
+        } catch (error: Exception) {
+            appendDiagnostic("EXPORT_FAILED", error.message ?: error.javaClass.simpleName)
+            Toast.makeText(
+                this,
+                "No compatible document provider is available.",
+                Toast.LENGTH_LONG
+            ).show()
+        }
     }
 
     private fun clearDiagnosticLog() {
-        diagnosticEvents.clear()
+        synchronized(diagnosticEvents) { diagnosticEvents.clear() }
+        diagnosticLogStore.clear()
         if (::debugLog.isInitialized) debugLog.text = "Diagnostic log cleared."
+        appendDiagnostic("ACTION", "Diagnostic history cleared by the user.")
     }
 
     private fun appendDiagnostic(category: String, message: String) {
+        if (::diagnosticLogStore.isInitialized) diagnosticLogStore.append(category, message)
         if (!::debugLog.isInitialized) return
         val timestamp = java.text.SimpleDateFormat("HH:mm:ss.SSS", java.util.Locale.US)
             .format(java.util.Date())

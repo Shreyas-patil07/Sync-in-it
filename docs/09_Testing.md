@@ -210,9 +210,20 @@ For each run record RTT p50/p95/range and timeouts, residual RMS, sample count/s
 
 Decision rules: localized outliers → inspect capture and selection; uniform ~0.5 ms scatter with low hold-out error → propose, but do not adopt, an uncertainty-based gate through ADR-024; slope swings correlated with hold-out error → test slope constraints; router-only pass → label hotspot prototype-only.
 
-**Probe evidence schema:** attempt ID; t1, t2, t3, t4; RTT; raw offset; selected/rejected/expired flag and reason. Each fit update includes samples seen/used, sample span, slope, residual, predicted offset at t4 and stable streak. Correlate Host audio delivery, slow writes, queue depth/high-water/overflow and disconnects under the same session diagnostic ID.
+**Probe evidence schema:** attempt ID and probe sequence; exact receiver/master timestamps `t1`, `t2`, `t3`, `t4`; corrected RTT; raw four-timestamp offset; accepted/rejected/timeout/malformed event; and the reason where the native correlator exposes one. The Android diagnostic branch now emits `CLOCK_PROBE` for every accepted exchange and `CLOCK_FIT` for every successful fit update. `CLOCK_FIT` records samples seen/used, selected span, skew, residual RMS, fitted offset, stable streak and the active `lowest-rtt-25pct` / 60-second policy. Reconstruct selected membership offline from the raw accepted probes and this policy; the client does not yet export a per-fit selection bitmap or native rejection enum.
+
+Correlate Host audio delivery, slow writes, queue depth/high-water/overflow and disconnects under the same session diagnostic ID. Those matching Host diagnostics and the replay fixture remain outstanding.
 
 Replay must run the same C++ estimator and readiness gate as Android and compare against the Python reference. A captured physical run must replay to the on-device residual and streak within rounding. Verify cached PCM snapshot counters using a fresh native read.
+
+**Diagnostic text export checks:**
+1. Generate more than 240 diagnostic events, including several `CLOCK_PROBE` and `CLOCK_FIT` records. Confirm the on-screen preview remains limited while the exported text report contains the retained full file history.
+2. Recreate the Activity and restart the app; confirm previously written events remain in the app-private log.
+3. Export through **Save diagnostic report (.txt)**, choose Downloads in Android's document picker, and verify a readable UTF-8 `.txt` file is created.
+4. Confirm timestamps, app version, device/API metadata, multiline network snapshots and clock-probe nanosecond values survive export.
+5. Inject token/password/secret/API-key assignments into test log messages and verify the exported report contains `[REDACTED]`, not their values.
+6. Confirm no audio is included, export cancellation creates no file, clear-log clears retained history, and log rollover stays within the 4 MB cap.
+7. Confirm the export works without broad external-storage permissions.
 
 **Threshold integrity:** the current device gate (<0.25 ms residual RMS, minimum 8 samples, 10 s span, three consecutive stable updates) remains unchanged until an ADR-backed decision. The TRD's <1 ms baseline, Testing doc's <1 ms residual standard deviation, JNI <0.25 ms residual RMS, and effectively unlimited core default are inconsistent; resolve definitions and defaults before changing behavior. Do not mix threshold changes with a failing-test fix.
 
