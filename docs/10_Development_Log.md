@@ -982,7 +982,7 @@ Do not infer missing hardware/router metadata. Store raw recordings outside Git 
 ## 2026-11-07 — Per-probe Host/Speaker clock-boundary correlation
 
 **Type:** Android diagnostics / transport metadata  
-**Status:** Implemented on branch `diagnostics/per-probe-clock-boundaries-2026-11-07`; CI and physical-device validation pending.
+**Status:** Merged via PR #69; Android/JNI, Kotlin transport and M0 simulator/native CI passed. Physical-device validation pending.
 
 - Added a shared transport-side extractor for the v1 UDP time-sync packet's unsigned 32-bit little-endian sequence field. It validates packet size, magic and version; the shared C++ protocol remains responsible for full packet validation.
 - Added a Host `HOST_UDP_PROBE` event for every accepted response, carrying the same sequence as the Speaker request/response pair.
