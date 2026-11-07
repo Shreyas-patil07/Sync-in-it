@@ -6,12 +6,12 @@ const REPO = 'https://github.com/Shreyas-patil07/Sync-in-it';
 const DOCS = REPO + '/tree/main/docs';
 const STATUS_DOC = REPO + '/blob/main/docs/11_Current_Implementation_Status.md';
 const RELEASES = REPO + '/releases';
-const VERSION = 'v0.5.9-preview.1';
-const LATEST_RELEASE = REPO + '/releases/tag/v0.5.9-preview.1';
-const ANDROID_APK = REPO + '/releases/download/v0.5.9-preview.1/SyncInIt-Android-preview-v0.5.9.apk';
-const ANDROID_CHECKSUMS = REPO + '/releases/download/v0.5.9-preview.1/SHA256SUMS.txt';
+const VERSION = 'v0.6.1';
+const LATEST_RELEASE = REPO + '/releases/tag/v0.6.1';
+const ANDROID_APK = REPO + '/releases/download/v0.6.1/SyncInIt-Android-preview-v0.6.1.apk';
+const ANDROID_CHECKSUMS = REPO + '/releases/download/v0.6.1/SHA256SUMS.txt';
 const ANDROID_CI = REPO + '/actions/workflows/publish-android-release.yml';
-const DIAGNOSTICS_PR = REPO + '/pull/55';
+const DIAGNOSTICS_PR = REPO + '/pull/63';
 const MEASUREMENT_DOC = REPO + '/blob/main/tools/README.md';
 
 type Page = 'home' | 'downloads' | 'not-found';
@@ -78,7 +78,7 @@ function Hero() {
       <div className="hero-copy">
         <Eyebrow>OFFLINE AUDIO · ANDROID ENGINEERING PREVIEW</Eyebrow>
         <h1 id="hero-title">Many phones.<br /><span className="hero-gradient">One shared moment.</span></h1>
-        <p className="hero-lede">Sync In It is building a local-network audio system around one shared clock. The Android preview implements multi-Speaker admission, PCM16 fan-out and a coordinated playback-start path. Preview v0.5.9 adds receiver hot-path backpressure mitigation and diagnostics; post-fix physical validation is still pending, so synchronized playback is not yet a verified result.</p>
+        <p className="hero-lede">Sync In It is building a local-network audio system around one shared clock. The Android preview implements multi-Speaker admission, PCM16 fan-out and a coordinated playback-start path. Preview v0.6.1 adds persistent diagnostic text export and replayable clock-probe telemetry; physical READY and acoustic synchronization are still unverified.</p>
         <div className="hero-actions">
           <a className="button button-primary" href="/downloads">Get Android preview <Arrow /></a>
           <a className="button button-text" href={STATUS_DOC} target="_blank" rel="noreferrer">Read current engineering status <Arrow diagonal /></a>
@@ -160,7 +160,7 @@ function ProjectStatus() {
           <span className="status-milestone">M3a</span>
           <div><b>DAC output-clock diagnostics</b><small>IMPLEMENTED · DIAGNOSTIC ONLY</small></div>
         </div>
-        <div className="status-card-foot">PR #53 added the acoustic measurement path and PR #55 added PCM snapshot throttling plus receiver/Host backpressure diagnostics. Preview v0.5.9 includes both; CI passes, but post-fix physical READY and real-phone acoustic measurement are still pending.</div>
+        <div className="status-card-foot">PR #53 added the acoustic measurement path and PR #55 added PCM snapshot throttling plus receiver/Host backpressure diagnostics. Preview v0.6.1 adds persistent diagnostic export and clock-probe telemetry; CI passes, but physical READY and real-phone acoustic measurement are still pending.</div>
         <div className="status-card-links">
           <a className="inline-link" href={ANDROID_CI} target="_blank" rel="noreferrer">Android build status <Arrow diagonal /></a>
           <a className="inline-link" href={DIAGNOSTICS_PR} target="_blank" rel="noreferrer">Diagnostics changes <Arrow diagonal /></a>
@@ -217,13 +217,13 @@ function ValidationSnapshot() {
 const questions = [
   { question: 'Does Sync In It need internet?', answer: 'No. Session discovery and audio transport are designed for a private local Wi-Fi network. The router must allow multicast discovery and client-to-client traffic; internet access is not required.' },
   { question: 'Which platforms work today?', answer: 'The current app is Android-only for both Host and Speaker roles. An iOS Speaker is a future milestone; no iOS client is implemented.' },
-  { question: 'Can I install the current preview?', answer: 'Yes. v0.5.9-preview.1 is the current signed Android engineering pre-release, with an APK and SHA-256 checksum. It includes the merged READY/audio diagnostics and acoustic markers. Install it over an earlier preview signed with the same persistent key; synchronized playback still has not been physically verified.' },
+  { question: 'Can I install the current preview?', answer: 'Yes. v0.6.1 is the current signed Android engineering pre-release, with an APK and SHA-256 checksum. It includes persistent diagnostic text export, replayable clock-probe telemetry, READY/audio diagnostics and acoustic markers. Install it over an earlier preview signed with the same persistent key; synchronized playback still has not been physically verified.' },
   { question: 'Does multi-Speaker playback work?', answer: 'The code implements admission for up to eight Speakers, PCM fan-out, a 20-second rolling pre-ANCHOR buffer and a common future playback anchor. The latest physical test connected multiple Speakers and exchanged UDP packets, but none reached READY. Do not treat synchronized group playback as verified.' },
   { question: 'Can I play Spotify or local music?', answer: 'Not in the current preview. The Host generates a 1 kHz timing-click test stream. User-selected music, local-file decoding and Android playback capture are not implemented in this preview.' },
   { question: 'What does DAC clock mapping mean?', answer: 'The app polls Android AudioTrack presentation timestamps and fits a rolling frame-position/time regression. This currently reports diagnostics only; it does not correct drift, compensate device output latency or measure sound arrival through a microphone.' },
   { question: 'Is the session secure on public Wi-Fi?', answer: 'No. The session token is currently advertised in DNS-SD metadata and can be visible to other devices on the same LAN. The token is not transport encryption. Use a trusted private network only.' },
   { question: 'Have the phones been measured yet?', answer: 'No. The latest supplied physical run failed before READY, so it never reached the common ANCHOR and cannot be used as an acoustic-skew measurement. This branch adds receiver-specific markers and a WAV analyzer; the synthetic analyzer tests pass, but PHONE-SKEW-001 is still pending.' },
-  { question: 'Which APK contains the acoustic markers?', answer: 'The public v0.5.9-preview.1 APK includes the receiver-specific markers and analyzer toolchain. Both Speakers still need to reach READY and receive the common ANCHOR before a recording can measure skew. Keep the apps foregrounded and screens awake; no real-phone skew result is available yet.' },
+  { question: 'Which APK contains the acoustic markers?', answer: 'The public v0.6.1 APK includes receiver-specific markers, the analyzer toolchain and the new diagnostic text export. Both Speakers still need to reach READY and receive the common ANCHOR before a recording can measure skew. Keep the apps foregrounded and screens awake; no real-phone skew result is available yet.' },
   { question: 'What is the next engineering focus?', answer: 'Resolve the READY gate without loosening clock thresholds, install the marker-enabled measurement build, then record about two minutes with two Speakers at equal distance from a laptop microphone. Do not run long tests until a foreground playback service and wake-lock lifecycle exist.' },
 ];
 
@@ -299,7 +299,7 @@ function Downloads({ navigate }: { navigate: (page: NavigablePage) => void }) {
       <div className="downloads-primary">
         <span className="downloads-label">ANDROID PREVIEW / {VERSION}</span>
         <h2>Download the signed engineering preview.</h2>
-        <p>Use the measurement-branch APK, not the public v0.5.7 release: the latter does not include READY_GATE_BLOCKED/HOST_AUDIO_DELIVERY or receiver-specific acoustic markers.</p>
+        <p>Use the current v0.6.1 APK. It includes READY_GATE_BLOCKED/HOST_AUDIO_DELIVERY, receiver-specific acoustic markers and the persistent .txt diagnostic export.</p>
         <a className="button button-primary" href={ANDROID_APK} target="_blank" rel="noreferrer">Download Android APK <Arrow diagonal /></a>
         <a className="inline-link" href={ANDROID_CHECKSUMS} target="_blank" rel="noreferrer">Verify SHA-256 checksum <Arrow diagonal /></a>
         <a className="inline-link" href={LATEST_RELEASE} target="_blank" rel="noreferrer">Read release notes <Arrow diagonal /></a>

@@ -962,3 +962,19 @@ Do not infer missing hardware/router metadata. Store raw recordings outside Git 
 - Removed the clipboard-copy diagnostic action. Clear-log now clears the app-private log and visible event preview.
 
 **Non-changes:** no estimator, readiness threshold, protocol, transport, audio backend or playback behavior changed. Physical READY/ANCHOR and acoustic validation remain open.
+
+
+## 2026-11-07 — v0.6.1 Android preview published
+
+**Type:** Android release  \
+**Status:** Published as a GitHub pre-release  \
+**Tag:** [`v0.6.1`](https://github.com/Shreyas-patil07/Sync-in-it/releases/tag/v0.6.1)  \
+**Source commit:** `886bb9bcd894211f073d09ae0c571258e149ec1b`
+
+- Published signed APK `SyncInIt-Android-preview-v0.6.1.apk` (5,986,806 bytes).
+- SHA-256: `053ee227455a0b420effd81a58c9f8967179052097537604d76b1000ed80c959`.
+- Added app-private diagnostic history with a 4 MB rolling cap and user-initiated **Save diagnostic report (.txt)** export through Android's document picker.
+- Export includes retained `CLOCK_PROBE` / `CLOCK_FIT` events, redacts token/password/secret/API-key assignments, and excludes audio.
+- Release workflow [42344911347](https://github.com/Shreyas-patil07/Sync-in-it/actions/runs/42344911347) passed APK build, transport checks, signature verification and asset publication. M0 workflow [42344911344](https://github.com/Shreyas-patil07/Sync-in-it/actions/runs/42344911344) passed all supported Python/C++ matrix jobs.
+
+**Validation boundary:** The release does not change estimator behavior or the <0.25 ms clock readiness gate. Physical READY/ANCHOR and acoustic synchronization remain unverified; this is an engineering pre-release.
