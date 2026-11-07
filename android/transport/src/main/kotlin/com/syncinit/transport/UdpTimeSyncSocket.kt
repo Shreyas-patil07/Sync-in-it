@@ -20,11 +20,29 @@ data class ReceivedTimeSyncDatagram(val bytes: ByteArray, val source: InetSocket
 object UdpTimeSyncPacketMetadata {
     fun sequence(packet: ByteArray): Long {
         validateEnvelope(packet)
-        return (packet[10].toLong() and 0xffL) or
+        return readSequence(packet)
+    }
+
+    /** Reads the sequence only from a valid v1 response packet. */
+    fun responseSequence(packet: ByteArray): Long {
+        validateEnvelope(packet)
+        require((packet[3].toInt() and 0xff) == RESPONSE_TYPE) {
+            "time-sync packet is not a response"
+        }
+        return readSequence(packet)
+    }
+
+    /** True only when this response belongs to the currently outstanding request. */
+    fun isResponseForSequence(packet: ByteArray, expectedSequence: Long): Boolean {
+        require(expectedSequence in 0L..0xffff_ffffL) { "expected sequence is outside uint32 range" }
+        return responseSequence(packet) == expectedSequence
+    }
+
+    private fun readSequence(packet: ByteArray): Long =
+        (packet[10].toLong() and 0xffL) or
             ((packet[11].toLong() and 0xffL) shl 8) or
             ((packet[12].toLong() and 0xffL) shl 16) or
             ((packet[13].toLong() and 0xffL) shl 24)
-    }
 
     /** Replaces the provisional T3 in a v1 response with the monotonic socket-send timestamp. */
     fun stampResponseT3(packet: ByteArray, t3Ns: Long) {
@@ -108,8 +126,14 @@ class UdpTimeSyncClient(
 
     /** Captures t4 immediately after DatagramSocket.receive returns. */
     @Throws(IOException::class, SocketTimeoutException::class)
-    fun receiveTimed(): ReceivedTimeSyncResponse {
+    fun receiveTimed(): ReceivedTimeSyncResponse = receiveTimed(socket.soTimeout)
+
+    /** Receives with a per-call deadline so stale datagrams cannot extend one probe indefinitely. */
+    @Throws(IOException::class, SocketTimeoutException::class)
+    fun receiveTimed(timeoutMs: Int): ReceivedTimeSyncResponse {
         check(!closed.get()) { "UDP time-sync client is closed" }
+        require(timeoutMs > 0) { "timeoutMs must be positive" }
+        socket.soTimeout = timeoutMs
         val buffer = ByteArray(PACKET_SIZE + 1)
         val packet = DatagramPacket(buffer, buffer.size)
         socket.receive(packet)
