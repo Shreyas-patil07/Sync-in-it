@@ -97,9 +97,13 @@ class ReceiverSessionClient(
                         onStatus = onStatus,
                         onFailure = { error ->
                             if (!closed.get()) {
-                                onStatus("[DIAG $attemptId] AUDIO_PIPELINE_FAILURE ${NetworkDiagnostics.exceptionDetails(error)}")
+                                onStatus(
+                                    "[DIAG $attemptId] AUDIO_PIPELINE_FAILURE " +
+                                        "audioLocal=${audio.localEndpoint} audioRemote=${audio.remoteEndpoint} " +
+                                        NetworkDiagnostics.exceptionDetails(error)
+                                )
                                 onStatus("Audio receiver failed: ${error.message ?: error.javaClass.simpleName}")
-                                close()
+                                closeWithReason("audio-pipeline-failure", attemptId)
                             }
                         }
                     )
@@ -127,7 +131,7 @@ class ReceiverSessionClient(
                     onStatus("Join failed: ${error.message ?: error.javaClass.simpleName}")
                 }
             } finally {
-                closeResources()
+                closeWithReason("join-worker-exit", attemptId)
             }
         }
     }
@@ -172,7 +176,7 @@ class ReceiverSessionClient(
                             NetworkDiagnostics.exceptionDetails(error)
                     )
                     onStatus("Control channel failed: ${error.message ?: error.javaClass.simpleName}")
-                    close()
+                    closeWithReason("control-reader-failure", attemptId)
                 }
             }
         }, "syncinit-control-reader").apply {
@@ -394,11 +398,19 @@ class ReceiverSessionClient(
         }
     }
 
-    override fun close() {
-        if (closed.compareAndSet(false, true)) {
-            closeResources()
-            executor.shutdownNow()
-        }
+    override fun close() = closeWithReason("external-close")
+
+    private fun closeWithReason(trigger: String, attemptId: String = "external") {
+        if (!closed.compareAndSet(false, true)) return
+        onStatus(
+            "[DIAG $attemptId] SPEAKER_CLIENT_CLOSE trigger=$trigger " +
+                "controlLocal=${controlConnection?.localEndpoint ?: "unknown"} " +
+                "controlRemote=${controlConnection?.remoteEndpoint ?: "unknown"} " +
+                "audioLocal=${audioConnection?.localEndpoint ?: "unknown"} " +
+                "audioRemote=${audioConnection?.remoteEndpoint ?: "unknown"}"
+        )
+        closeResources()
+        executor.shutdownNow()
     }
 
     private fun closeResources() {
