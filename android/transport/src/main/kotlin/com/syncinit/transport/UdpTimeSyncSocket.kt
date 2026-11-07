@@ -12,6 +12,27 @@ import java.util.concurrent.atomic.AtomicBoolean
 
 /** UDP envelope is fixed at 38 bytes by the protocol v1 time-sync codec. */
 data class ReceivedTimeSyncDatagram(val bytes: ByteArray, val source: InetSocketAddress, val receivedAtNs: Long)
+/**
+ * Reads the v1 UDP time-sync sequence for cross-device diagnostic correlation.
+ * The wire codec stores the unsigned 32-bit sequence at byte offset 10, little-endian.
+ * Packet validation remains owned by the shared protocol core.
+ */
+object UdpTimeSyncPacketMetadata {
+    fun sequence(packet: ByteArray): Long {
+        require(packet.size == UdpTimeSyncClient.PACKET_SIZE) {
+            "time-sync packet must be exactly ${UdpTimeSyncClient.PACKET_SIZE} bytes"
+        }
+        require(packet[0] == 'S'.code.toByte() && packet[1] == 'T'.code.toByte()) {
+            "invalid time-sync packet magic"
+        }
+        require(packet[2].toInt() and 0xff == 1) { "unsupported time-sync packet version" }
+        return (packet[10].toLong() and 0xffL) or
+            ((packet[11].toLong() and 0xffL) shl 8) or
+            ((packet[12].toLong() and 0xffL) shl 16) or
+            ((packet[13].toLong() and 0xffL) shl 24)
+    }
+}
+
 data class ReceivedTimeSyncResponse(val bytes: ByteArray, val receivedAtNs: Long)
 
 class UdpTimeSyncClient(
