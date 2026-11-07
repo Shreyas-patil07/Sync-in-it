@@ -25,7 +25,6 @@ import java.io.IOException
 import java.net.DatagramSocket
 import java.net.InetAddress
 import java.net.InetSocketAddress
-import java.net.SocketAddress
 import java.net.SocketTimeoutException
 import java.nio.ByteBuffer
 import java.nio.ByteOrder
@@ -206,7 +205,7 @@ private class KernelTimeSyncUdpServer(
 
 private data class KernelReceivedDatagram(
     val bytes: ByteArray,
-    val source: SocketAddress?,
+    val source: InetSocketAddress?,
     val receivedAtNs: Long,
     val kernelTimestamp: KernelReceiveTimestamp?
 )
