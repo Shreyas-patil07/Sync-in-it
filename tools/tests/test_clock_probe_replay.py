@@ -32,7 +32,7 @@ def main() -> int:
             sequence = index + 1
             t1 = base_ns + index * 1_000_000_000
             forward_delay = 5_800_000 if index % 4 == 0 else 6_400_000 + (index % 3) * 300_000
-            host_lag = host_lags[index % len(host_lags)]
+            host_lag = host_lags[(index // 4) % len(host_lags)]
             speaker_lag = speaker_lags[index % len(speaker_lags)]
             kernel_t2 = t1 + forward_delay
             app_t2 = kernel_t2 + host_lag
@@ -71,8 +71,20 @@ def main() -> int:
             raise AssertionError(output)
         if "kernelReceiveFit residualRmsMs=0.000000" not in output:
             raise AssertionError(f"kernel replay did not recover the fixed offset:\n{output}")
-        if "stableStreak=3" not in output:
+        if "kernelReceiveFit" not in output or "stableStreak=3" not in output:
             raise AssertionError(f"kernel replay did not reproduce the readiness streak:\n{output}")
+        application_fit = next(
+            (line for line in output.splitlines() if line.startswith("applicationFit ")),
+            "",
+        )
+        residual_text = next(
+            (part.split("=", 1)[1] for part in application_fit.split() if part.startswith("residualRmsMs=")),
+            "0",
+        )
+        if float(residual_text) <= 0.25:
+            raise AssertionError(
+                f"fixture must expose app capture delay above the unchanged 0.25 ms gate:\n{output}"
+            )
         if "kernelReceiveHoldout count=" not in output:
             raise AssertionError(f"kernel holdout metric missing:\n{output}")
     return 0
