@@ -932,3 +932,17 @@ Do not infer missing hardware/router metadata. Store raw recordings outside Git 
 
 **Next action:** Complete the one-Speaker PCM/TCP + AudioTrack vertical slice, then test continuous output on the same hardware before adding a second Speaker or beginning codec/transport work.
 
+
+
+## 2026-11-07 — Replayable Android clock-probe telemetry
+
+**Type:** Android/JNI diagnostics  \
+**Status:** Implemented on branch `fix/clock-probe-replay-diagnostics-2026-11-07`; CI and physical-device validation pending.
+
+- Retained the last accepted four-timestamp exchange in the native time-sync client and exposed its exact integer timestamps through a JNI `LongArray`; nanosecond values are not passed through floating-point fields.
+- Added a `CLOCK_PROBE` record for every accepted response: sequence, `t1/t2/t3/t4`, corrected RTT and raw four-timestamp offset.
+- Added a `CLOCK_FIT` record for every successful estimator update: fitted offset, skew, median RTT, residual RMS, samples seen/used, selected span, stable streak and the current 60-second / lowest-RTT-25% selection policy.
+- Preserved the existing lower-frequency `UDP_PROBE_OK` summary and all current retry behavior.
+- No estimator, clock threshold, stable-streak rule, READY gate, transport, output backend or wire format changed.
+
+**Known gaps:** native rejection enum and per-fit selected-sample membership are not exported yet; matching Host-side session diagnostics and offline replay are still required. No physical log has been captured from this diagnostic build. Tests have not yet been run for this branch.
