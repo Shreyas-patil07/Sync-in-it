@@ -190,7 +190,31 @@ Procedure:
 5. Repeat under idle and loaded Wi-Fi conditions.
 6. Compare offset estimates with the test's independent reference method where available.
 
-Provisional gate: offset estimator residual standard deviation below 1 ms under a stable, controlled setup. A pass does not prove acoustic synchronization.
+Historical provisional gate: offset-estimator residual standard deviation below 1 ms under a stable, controlled setup. This conflicts with the Android preview's enforced <0.25 ms residual-RMS gate and must be reconciled in ADR-018. Do not weaken or silently reinterpret the device gate. A clock pass does not prove acoustic synchronization.
+
+
+## 7.1 Clock-readiness diagnostic A/B matrix (7 November 2026)
+
+Run on the same two phones, one factor at a time, 60 seconds per run and three repeats. Keep placement, build and source constant.
+
+| Factor | Conditions |
+|---|---|
+| AP | Phone hotspot / dedicated router |
+| Power | Wi-Fi low-latency lock and CPU wake lock enabled / disabled |
+| Receive-thread capture | Default / raised priority; no logging or JNI between receive and timestamp |
+| Probe policy | Single / paired probes retaining lower RTT |
+| Sample selection | Lowest 25% / lowest 50% / all / robust weighting |
+| Regression | Free slope / clamped or smoothed slope / offset-only |
+
+For each run record RTT p50/p95/range and timeouts, residual RMS, sample count/span, offset standard error (state the independence assumption), slope range, hold-out prediction error and outlier share. Calculate hold-out error by fitting the first 70% of probes and predicting later low-RTT probe offsets.
+
+Decision rules: localized outliers → inspect capture and selection; uniform ~0.5 ms scatter with low hold-out error → propose, but do not adopt, an uncertainty-based gate through ADR-018; slope swings correlated with hold-out error → test slope constraints; router-only pass → label hotspot prototype-only.
+
+**Probe evidence schema:** attempt ID; t1, t2, t3, t4; RTT; raw offset; selected/rejected/expired flag and reason. Each fit update includes samples seen/used, sample span, slope, residual, predicted offset at t4 and stable streak. Correlate Host audio delivery, slow writes, queue depth/high-water/overflow and disconnects under the same session diagnostic ID.
+
+Replay must run the same C++ estimator and readiness gate as Android and compare against the Python reference. A captured physical run must replay to the on-device residual and streak within rounding. Verify cached PCM snapshot counters using a fresh native read.
+
+**Threshold integrity:** the current device gate (<0.25 ms residual RMS, minimum 8 samples, 10 s span, three consecutive stable updates) remains unchanged until an ADR-backed decision. The TRD's <1 ms baseline, Testing doc's <1 ms residual standard deviation, JNI <0.25 ms residual RMS, and effectively unlimited core default are inconsistent; resolve definitions and defaults before changing behavior. Do not mix threshold changes with a failing-test fix.
 
 ## 8. Scheduled playback and acoustic measurement (M2–M3)
 
