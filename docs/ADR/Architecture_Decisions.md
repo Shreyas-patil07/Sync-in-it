@@ -278,3 +278,27 @@ These records consolidate decisions and open questions from [docs/System Structu
 
 **Consequences:** These are alternatives to measure, not committed algorithm changes. Batch regression remains the production baseline until replay evidence supports a replacement.
 
+
+
+## ADR-027 — Audio transport and codec alternatives
+
+**Status:** Open — gated experiment; PCM16/TCP remains the baseline  
+**Date:** 7 November 2026
+
+**Context:** The current Android preview sends 48 kHz stereo PCM16 over a separate TCP audio connection per Speaker. Payload is 1.536 Mbps per Speaker and 12.288 Mbps aggregate at the eight-Speaker preview cap, before protocol, TCP/IP, retransmission and Wi-Fi airtime overhead. TCP provides ordered reliable delivery but a lost segment can delay later bytes on that same Speaker connection until retransmission. Other Speakers use independent connections, so this is not one shared TCP head-of-line queue. The existing 20-second receive buffer can absorb only bounded stalls.
+
+**Decision for current implementation:** Do not replace PCM/TCP before one Speaker passes READY → ANCHOR → audible physical output and two Speakers establish a repeatable acoustic baseline. No new transport or codec is authorized as a workaround for the current readiness/start blocker.
+
+**Candidates to compare after the baseline:**
+1. **FLAC/TCP:** lossless sample recovery; measure source-dependent compression ratio, encoder/decoder delay and CPU. Do not assume a fixed 50% bandwidth reduction. Snapcast publicly documents FLAC as its default codec and TCP chunk delivery with continuous client synchronization and buffering; this is a reference architecture, not a performance guarantee on Android.
+2. **Opus/TCP:** initially test 20 ms frames and sample-indexed decode. Measure encoder lookahead, packet aggregation, decode delay, bitrate, quality, CPU and thermal impact. A multi-second playout lead permits encoding/decoding ahead of presentation but does not erase algorithmic delay.
+3. **UDP with selective retransmission:** later experiment. Require sequence/sample indices, bounded per-Speaker NACK/retransmission state, repair deadlines before playout, MTU-safe packetization, explicit concealment for unrepaired late chunks and proof that one receiver's repair work cannot stall others.
+
+**Experiment isolation:** First vary codec while TCP is fixed (PCM/TCP vs FLAC/TCP vs Opus/TCP). Then vary transport while codec is fixed (PCM/TCP vs PCM/UDP repair). A combined Opus/UDP experiment is optional only after both dimensions are understood.
+
+**Acceptance:** Preserve the exact decoded sample-index timeline and meet the existing acoustic acceptance gates. Compare bitrate/airtime, retransmissions, TCP stall durations, UDP loss/reorder/repair success, buffer depletion, missing sample spans, dropouts, acoustic skew, decoder latency, CPU, thermal and battery. Keep PCM/TCP as fallback until a candidate is repeatably better without unacceptable regressions.
+
+**References:** [Snapcast](https://github.com/snapcast/snapcast), [RFC 6716 — Opus](https://datatracker.ietf.org/doc/html/rfc6716), [Android audio latency and performance guidance](https://developer.android.com/games/sdk/oboe/low-latency-audio).
+
+**Consequences:** Transport/codec design becomes a measured optimization after synchronization correctness, not an additional parallel project layer.
+
