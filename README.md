@@ -204,7 +204,7 @@ See [tools/README.md](tools/README.md) for setup and interpretation. Synthetic a
 The current Android preview implements one Host and admission for up to 8 Speakers. It sends a generated 1 kHz timing-click stream and contains a shared ANCHOR/AudioTrack path; physical group start is not currently verified because the latest run did not reach READY. Synchronized user-selected music is not implemented.
 
 1. **Set up the local network.** Enable the Host phone's mobile hotspot, then connect the Speaker phones to it. No internet/mobile data is required for local traffic. A trusted Wi-Fi router also works when client-to-client traffic is allowed.
-2. **Install the published measurement preview.** Download `v0.5.9-preview.1` from [GitHub Releases](https://github.com/Shreyas-patil07/Sync-in-it/releases/tag/v0.5.9-preview.1). It includes the receiver-specific acoustic markers. Preserve the same package/signing key when updating an existing install.
+2. **Install the published measurement preview.** Download `v0.6.1` from [GitHub Releases](https://github.com/Shreyas-patil07/Sync-in-it/releases/tag/v0.6.1). It includes receiver-specific acoustic markers, replayable clock telemetry and diagnostic `.txt` export. Preserve the same package/signing key when updating an existing install.
 3. **Start the Host.** Open Sync In It on the Host phone and tap **Start hosting**.
 4. **Join each Speaker.** Open Sync In It on each Speaker phone, tap **Refresh nearby sessions**, then select the Host.
 5. **Check the Host count.** The Host should show the number of connected Speakers (for example, `2/8 connected`). Each Speaker independently acquires the Host clock and buffers PCM16.
