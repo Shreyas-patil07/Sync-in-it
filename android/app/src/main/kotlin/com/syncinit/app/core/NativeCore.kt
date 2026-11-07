@@ -69,6 +69,7 @@ object NativeCore {
         packet: ByteArray,
         t4Ns: Long
     ): DoubleArray?
+    external fun nativeLastTimeSyncExchange(handle: Long): LongArray?
     external fun nativeCloseTimeSyncClient(handle: Long)
 
     external fun nativeCreateSession(
