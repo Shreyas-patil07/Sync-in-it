@@ -234,3 +234,46 @@ These records consolidate decisions and open questions from [docs/System Structu
 **Consequences:** Until this decision is completed, the strict Android gate remains authoritative for device readiness; TRD/testing references to <1 ms are historical/provisional baselines, not permission to bypass it. Core and JNI defaults must ultimately share one explicit `ClockReadinessConfig` object.
 
 **Open questions:** What clock-error budget is appropriate within the 10 ms acoustic target? Is residual RMS an adequate readiness statistic, or should start-time uncertainty and hold-out prediction error be the principal criteria? How should correlation between probes affect standard-error calculations?
+
+## ADR-025 — Continuous output and timeline-frame scheduling
+
+**Status:** Open — output-backend and physical-device experiment required  
+**Date:** 7 November 2026
+
+**Context:** The current Speaker output path primes AudioTrack, waits until the ANCHOR-derived local time and invokes AudioTrack.play(). The DAC timestamp poller starts only after play(), so it does not provide an established frame-to-time mapping before the first group start. The existing design therefore relies on scheduled stream start even though the shared media timeline and DAC mapping are intended to describe presentation timing.
+
+**Proposal under test:** Start the output stream after join/format negotiation and keep it running with silence before playback. Acquire the DAC frame/time mapping during this silent period. When ANCHOR arrives, map its Host time to receiver-local monotonic time, invert the DAC mapping to obtain the output-frame boundary, and associate ANCHOR.sampleIndex with that output frame. The renderer then maps each requested output frame to the shared media timeline and emits silence or the corresponding PCM sample.
+
+**Hard constraints:**
+- Callback-safe clock/DAC snapshots; no allocation, lock, JNI, I/O or logging in the audio callback.
+- Never commit silence beyond the target frame; the output queue/writable-frame horizon and ANCHOR lead must be accounted for.
+- Treat absent, stale or route-reset timestamps as a readiness/degraded condition, not as a precise scheduling basis.
+- This does not prove that downstream DSP, speaker transducer latency or acoustic-path delay disappears. Preserve acoustic measurement and route-specific calibration until measurements justify changing them.
+
+**Backend experiment:** Compare current scheduled AudioTrack; continuous AudioTrack with PERFORMANCE_MODE_LOW_LATENCY; and continuous Oboe/AAudio callback output with LowLatency and Exclusive requested where supported. Record actual backend/mode, rate, frames per burst, buffer size, timestamp availability and mapping error, callback timing, underruns/XRuns and microphone-measured skew on the same two Xiaomi phones. Android recommends Oboe for low latency and low-latency mode for AudioTrack, but those recommendations do not establish timestamp accuracy superiority. Both timestamp APIs are best-effort and have different documented frame/pipeline semantics. See the references in [TRD §9.1](../02_TRD.md).
+
+**Decision rule:** Do not replace the current output path until continuous timeline rendering places the ANCHOR sample at the mapped output frame repeatably on both test phones and achieves the T2 acoustic gate (p95 absolute skew ≤10 ms) without added underruns/XRuns or transition artifacts. This ADR is not an implementation approval.
+
+**Consequences:** If validated, output activation becomes a join-time operation and ANCHOR becomes a media-timeline boundary rather than a scheduled play() call. Start-call latency is no longer the media-start event, but output-path and acoustic latency remain measured quantities.
+
+## ADR-026 — Clock-estimator hysteresis and two-state tracker experiments
+
+**Status:** Open — replay experiment only; current runtime estimator remains unchanged  
+**Date:** 7 November 2026
+
+**Context:** The current C++ estimator sorts all recent valid samples by RTT and reselects the lowest 25% on every update before fitting offset and skew with batch regression. The JNI bridge increments the stable streak when the fit meets its criteria and resets the streak to zero on any failed update. This can make acquisition sensitive to one transient miss or changes in the selected subset. The available physical logs have not yet shown that this is the cause of the READY failure.
+
+**Candidate A — hysteresis:** Retain the existing strict entry conditions initially (≥8 selected samples, ≥10 s span, residual RMS <0.25 ms, three consecutive passing updates). After acquisition, use a wider exit residual boundary and configurable exit dwell before dropping the stable state. Derive the exit threshold/dwell by replay, not by choosing a value that makes a failed phone run pass. Invalid/stale samples, clock discontinuities and loss of the timestamp basis must remain hard failures.
+
+**Protocol constraint:** The current protocol has no explicit READY-revocation message. The Speaker checks its latest acquisition state when ANCHOR arrives, while the Host accepts repeated READY idempotently. Decide whether hysteresis is only a local pre-ANCHOR acquisition latch or whether a future protocol change is required for Host-visible readiness revocation/lease semantics. Do not imply a full enter/leave handshake exists today.
+
+**Candidate B — two-state offset/skew tracker:** Maintain offset and skew as a continuously updated state with covariance. Propagate offset using elapsed time and use four-timestamp exchange offset as the measurement. Evaluate RTT-scaled measurement noise with calibrated floor/cap bounds, innovation/outlier checks and explicit process-noise assumptions.
+
+**Known limitation:** RTT is only a proxy for measurement noise. A low RTT does not prove forward/reverse path symmetry, and a systematic offset bias from directional asymmetry may remain. The covariance is useful as a readiness metric only after calibration and coverage checks against simulator ground truth.
+
+**Evaluation:** Replay the same chronological physical logs with the current batch regression, hysteresis alone, the two-state tracker alone and the combined variant. Predict each held-out low-RTT measurement before assimilating it. Compare hold-out prediction error, offset-at-ANCHOR prediction, time-to-ready, stable-streak flapping, false-ready/blocked transitions, skew stability and outlier handling. Check covariance calibration/coverage in ground-truth simulation cases. Do not leak future samples into replay predictions.
+
+**Decision rule:** Keep the current estimator and <0.25 ms entry gate until a candidate improves predictive performance without increasing false-ready risk or masking asymmetry. Any production change must be reconciled with ADR-024 and include updated core/JNI configuration, fixtures and test reporting.
+
+**Consequences:** These are alternatives to measure, not committed algorithm changes. Batch regression remains the production baseline until replay evidence supports a replacement.
+
