@@ -350,7 +350,7 @@ private fun udpTimeSyncLoopback() {
         response[1] = 'T'.code.toByte()
         response[2] = 1
         response[3] = 2
-        val responseT2Ns = System.nanoTime() - 1_000_000L
+        val responseT2Ns = 123_456_789L
         writeLongLittleEndian(response, 22, responseT2Ns)
         writeLongLittleEndian(response, 30, responseT2Ns)
         val received = ArrayBlockingQueue<Boolean>(1)
