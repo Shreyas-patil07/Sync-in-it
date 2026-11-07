@@ -978,3 +978,21 @@ Do not infer missing hardware/router metadata. Store raw recordings outside Git 
 - Release workflow [42344911347](https://github.com/Shreyas-patil07/Sync-in-it/actions/runs/42344911347) passed APK build, transport checks, signature verification and asset publication. M0 workflow [42344911344](https://github.com/Shreyas-patil07/Sync-in-it/actions/runs/42344911344) passed all supported Python/C++ matrix jobs.
 
 **Validation boundary:** The release does not change estimator behavior or the <0.25 ms clock readiness gate. Physical READY/ANCHOR and acoustic synchronization remain unverified; this is an engineering pre-release.
+
+## 2026-11-07 — Per-probe Host/Speaker clock-boundary correlation
+
+**Type:** Android diagnostics / transport metadata  
+**Status:** Implemented on branch `diagnostics/per-probe-clock-boundaries-2026-11-07`; CI and physical-device validation pending.
+
+- Added a shared transport-side extractor for the v1 UDP time-sync packet's unsigned 32-bit little-endian sequence field. It validates packet size, magic and version; the shared C++ protocol remains responsible for full packet validation.
+- Added a Host `HOST_UDP_PROBE` event for every accepted response, carrying the same sequence as the Speaker request/response pair.
+- Host measurements now include receive-to-`t3`, `t3`-to-response-ready (including receiver selection and JNI/native response construction), response-ready-to-send-call, `t3`-to-send-call, receive-to-send-call and UDP send-call duration.
+- Speaker `CLOCK_PROBE` records now include `t4`-to-native-accept processing duration. Rejected, malformed, timeout and unreachable probe records also include the outgoing request sequence where available.
+- Added a transport unit test for unsigned sequence decoding, invalid packet size and invalid magic.
+- The existing periodic `HOST_UDP_RESPONSE_SENT` summary remains; per-probe events are additional diagnostic records.
+
+**Physical evidence motivating this change:** the 7 November v0.6.3-debug run on Android 14 Host / Android 12 Speaker received 108 accepted probes; 27 were selected over 33.052 seconds, median RTT was 5.5413 ms and residual RMS was 0.416862 ms. PCM ingress and pre-roll were healthy (20 seconds buffered, zero missing frames). The Host wrote all 2,250 queued chunks with queue depth 0/high-water 1, then closed the receiver at the 45-second readiness timeout. No READY or ANCHOR was observed. See `docs/Test_Results.md`.
+
+**Non-changes:** no four-timestamp values, clock estimator, fit selection, readiness criteria, retry cadence, wire packet layout, PCM format, TCP behavior, queue capacity or playback policy changed. The newly added diagnostics have not yet been validated in a build or on physical devices. Send-call durations are syscall-boundary measurements, not proof of actual radio transmission timestamps.
+
+**Next action:** pass Android/transport CI, install the branch on both phones, capture matching reports, join per-probe records by sequence and compare raw versus send-boundary-adjusted residuals offline. Do not apply a correction to the production clock model until the paired measurements and replay support it.
