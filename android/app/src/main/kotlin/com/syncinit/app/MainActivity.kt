@@ -201,7 +201,7 @@ class MainActivity : Activity() {
             parent = content,
             eyebrow = "04 / DIAGNOSTICS",
             title = "Network debugger",
-            description = "Capture the active network and connection stages when troubleshooting a hotspot or join issue."
+            description = "Capture network, clock and session events. Save the full app-private diagnostic history as a plain-text report."
         )
         val diagnosticActions = LinearLayout(this).apply {
             orientation = LinearLayout.VERTICAL
