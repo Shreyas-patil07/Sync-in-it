@@ -245,6 +245,10 @@ This section supersedes conflicting sequencing in earlier snapshots. It does not
 
 ### WP0 — Evidence tooling (M1 diagnostics; do first)
 
+**Implementation update — 7 November 2026:** The Android receiver now emits a `CLOCK_PROBE` record for every accepted UDP exchange with sequence, exact `t1/t2/t3/t4`, corrected RTT and raw offset, followed by a `CLOCK_FIT` record for every successful fit update. The fit record includes offset, skew, median RTT, residual RMS, sample counts/span, stable streak and the active 60-second / lowest-RTT-25% selection policy. This is diagnostic-only; no estimator or readiness behavior changed.
+
+Still outstanding: explicit native rejection-reason codes, exported per-fit selected-sample membership, Host-side session-correlated audio queue/write diagnostics, and the offline replay fixture. The raw accepted exchanges plus the logged selection policy provide the input needed to reconstruct sample selection, but do not by themselves prove that replay is already implemented.
+
 - Capture every clock probe: attempt ID, t1–t4, RTT, raw offset, selected/rejected/expired state and rejection reason.
 - Capture each fit update: samples seen/used, selected span, slope/skew, residual, predicted offset at t4 and stable streak.
 - Add a Host-side log correlated by the same session diagnostic ID: audio delivery, slow writes, queue depth/high-water/overflow and disconnects.
