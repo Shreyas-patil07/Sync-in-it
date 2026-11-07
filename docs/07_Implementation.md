@@ -301,29 +301,6 @@ The documents currently state materially different residual criteria: TRD baseli
 Before the next acceptance run, amend ADR-024 with the T2 acoustic target (p95 ≤10 ms), explicit allocation of that budget to clock error, resulting maximum start-time offset uncertainty, minimum sample/span, uncertainty, hold-out error, bounded worst residual and streak requirements, plus golden-vector and document reconciliation. Do not change a threshold in the same patch as a failing run. No relaxation without replay evidence and an ADR.
 
 
-### WP2b — Continuous output and output-backend experiment (M2/M3 dependency)
-
-The current Android Speaker primes AudioTrack, waits for the local time derived from ANCHOR, then calls AudioTrack.play(). The DAC timestamp poller starts only after that call. The current DAC map therefore cannot schedule the first ANCHOR.
-
-**Candidate — continuous timeline-driven rendering**
-- Start the output stream after join/format negotiation, before the group ANCHOR. Emit silence while the session timeline is not yet playing.
-- Start DAC timestamp acquisition while this silent stream is already running.
-- Map ANCHOR.masterTime through the receiver's current Host-to-local clock mapping. Use the inverse DAC frame-to-local-time mapping to find the output-frame boundary corresponding to that local target time.
-- Associate ANCHOR.sampleIndex with that output frame. Establish one canonical stream-frame coordinate and explicitly relate callback/write counters to the timestamp framePosition; do not assume the callback's next writable frame equals the last presented/committed timestamp frame. Account for queued frames before the target. For each output frame requested by the renderer, map its presentation time onto the shared session timeline and render the corresponding PCM sample; render silence before the anchor and while the timeline is paused.
-- Publish clock/DAC mapping snapshots to the renderer safely. The callback must not allocate, lock, call JNI, perform I/O or log.
-- Do not submit silence beyond the target frame if it is already committed to the platform output queue. The anchor lead time and writable-frame horizon must leave enough time to switch to source PCM without missing the boundary.
-- If timestamp mapping is unavailable, stale, reset by a route change or outside its validated uncertainty, keep the receiver not-ready/degraded instead of claiming a precise frame start.
-
-This changes the control point: play() starts a silent output stream during join; the ANCHOR chooses the first media frame on the already-running output timeline. It removes the scheduled play() invocation from the group-start decision, but does **not** prove that all downstream DAC, DSP, speaker or acoustic-path latency disappears. Route-specific output delay and physical acoustic skew still require measurement; manual trim/calibration are not automatically obsolete.
-
-**Backend comparison on the two Xiaomi phones**
-- Compare the current scheduled-start AudioTrack path, a continuously running AudioTrack path using PERFORMANCE_MODE_LOW_LATENCY, and Oboe/AAudio low-latency callback output (request exclusive sharing where supported and record whether it was actually granted).
-- Record actual Oboe API (AAudio/fallback), sample rate, frames per burst, buffer size, timestamp availability/rate, frame/time regression residual and prediction error, reported latency, underruns/XRuns, callback timing and acoustic marker skew.
-- Use the same two phones, built-in speaker route, negotiated/native-rate strategy, router, volume and microphone geometry. Repeat each variant; compare measured acoustic output, not API claims alone.
-- Android's guidance recommends Oboe for lowest latency and low-latency performance mode for AudioTrack. That is a latency recommendation, not evidence that Oboe timestamps are more accurate on these phones. See the Android audio latency guide and both API timestamp references in the TRD.
-
-**Exit gate:** the continuous path can identify and render the ANCHOR sample at the mapped output-frame boundary without underruns or missed-frame jumps; timestamp availability/fit is repeatable on both phones; the physical p95 acoustic skew is measured against T2 (≤10 ms). Do not select Oboe or continuous output solely from documentation or simulator results.
-
 ### WP3 — One-Speaker vertical slice (hard process gate; M2)
 
 **Do not build another product layer until one physical Speaker completes this path.** Keep the first vertical slice intentionally narrow: one Host, one Speaker, current PCM16/TCP transport and current AudioTrack backend.
@@ -346,6 +323,29 @@ After the single-Speaker baseline passes:
 - Only after two Speakers pass repeatably, proceed to three/four and then capacity tests.
 
 T1 ≤20 ms and T2 ≤10 ms are acoustic inter-device targets; report mean, p95 and maximum with test geometry and measurement uncertainty.
+
+### WP3b — Continuous output and output-backend experiment (M2/M3 dependency)
+
+The current Android Speaker primes AudioTrack, waits for the local time derived from ANCHOR, then calls AudioTrack.play(). The DAC timestamp poller starts only after that call. The current DAC map therefore cannot schedule the first ANCHOR.
+
+**Candidate — continuous timeline-driven rendering**
+- Start the output stream after join/format negotiation, before the group ANCHOR. Emit silence while the session timeline is not yet playing.
+- Start DAC timestamp acquisition while this silent stream is already running.
+- Map ANCHOR.masterTime through the receiver's current Host-to-local clock mapping. Use the inverse DAC frame-to-local-time mapping to find the output-frame boundary corresponding to that local target time.
+- Associate ANCHOR.sampleIndex with that output frame. Establish one canonical stream-frame coordinate and explicitly relate callback/write counters to the timestamp framePosition; do not assume the callback's next writable frame equals the last presented/committed timestamp frame. Account for queued frames before the target. For each output frame requested by the renderer, map its presentation time onto the shared session timeline and render the corresponding PCM sample; render silence before the anchor and while the timeline is paused.
+- Publish clock/DAC mapping snapshots to the renderer safely. The callback must not allocate, lock, call JNI, perform I/O or log.
+- Do not submit silence beyond the target frame if it is already committed to the platform output queue. The anchor lead time and writable-frame horizon must leave enough time to switch to source PCM without missing the boundary.
+- If timestamp mapping is unavailable, stale, reset by a route change or outside its validated uncertainty, keep the receiver not-ready/degraded instead of claiming a precise frame start.
+
+This changes the control point: play() starts a silent output stream during join; the ANCHOR chooses the first media frame on the already-running output timeline. It removes the scheduled play() invocation from the group-start decision, but does **not** prove that all downstream DAC, DSP, speaker or acoustic-path latency disappears. Route-specific output delay and physical acoustic skew still require measurement; manual trim/calibration are not automatically obsolete.
+
+**Backend comparison on the two Xiaomi phones**
+- Compare the current scheduled-start AudioTrack path, a continuously running AudioTrack path using PERFORMANCE_MODE_LOW_LATENCY, and Oboe/AAudio low-latency callback output (request exclusive sharing where supported and record whether it was actually granted).
+- Record actual Oboe API (AAudio/fallback), sample rate, frames per burst, buffer size, timestamp availability/rate, frame/time regression residual and prediction error, reported latency, underruns/XRuns, callback timing and acoustic marker skew.
+- Use the same two phones, built-in speaker route, negotiated/native-rate strategy, router, volume and microphone geometry. Repeat each variant; compare measured acoustic output, not API claims alone.
+- Android's guidance recommends Oboe for lowest latency and low-latency performance mode for AudioTrack. That is a latency recommendation, not evidence that Oboe timestamps are more accurate on these phones. See the Android audio latency guide and both API timestamp references in the TRD.
+
+**Exit gate:** the continuous path can identify and render the ANCHOR sample at the mapped output-frame boundary without underruns or missed-frame jumps; timestamp availability/fit is repeatable on both phones; the physical p95 acoustic skew is measured against T2 (≤10 ms). Do not select Oboe or continuous output solely from documentation or simulator results.
 
 ### WP4 — Manual offset and callback-safe DAC snapshot (M3)
 
