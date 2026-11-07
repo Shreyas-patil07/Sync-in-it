@@ -4,13 +4,20 @@ name: Publish Android Preview Release
 on:
   push:
     branches:
-      - main
-    paths:
-      - ".github/workflows/publish-android-release.yml"
+      - "release/v*"
   workflow_dispatch:
+    inputs:
+      release_tag:
+        description: "Semantic version tag to publish (for example v0.6.1)"
+        required: true
+        type: string
 
 permissions:
   contents: write
+
+concurrency:
+  group: android-release-\${{ github.ref }}
+  cancel-in-progress: false
 
 jobs:
   publish-android-preview:
@@ -18,8 +25,31 @@ jobs:
     runs-on: ubuntu-latest
     timeout-minutes: 30
     steps:
-      - name: Check out main
+      - name: Check out release source
         uses: actions/checkout@v4
+        with:
+          ref: \${{ github.sha }}
+
+      - name: Derive release tag and app version
+        id: release
+        env:
+          INPUT_RELEASE_TAG: \${{ inputs.release_tag }}
+          REF_NAME: \${{ github.ref_name }}
+        shell: bash
+        run: |
+          RELEASE_TAG="$INPUT_RELEASE_TAG"
+          if [ -z "$RELEASE_TAG" ]; then
+            RELEASE_TAG="\${REF_NAME#release/}"
+          fi
+          if [[ "$RELEASE_TAG" =~ ^v([0-9]+\\.[0-9]+\\.[0-9]+)$ ]]; then
+            VERSION="\${BASH_REMATCH[1]}"
+          else
+            echo "::error::Expected a semantic version tag such as v0.6.1; received '$RELEASE_TAG'."
+            exit 1
+          fi
+          echo "tag=$RELEASE_TAG" >> "$GITHUB_OUTPUT"
+          echo "version=$VERSION" >> "$GITHUB_OUTPUT"
+          echo "Publishing $RELEASE_TAG from $GITHUB_SHA"
 
       - name: Set up JDK 17
         uses: actions/setup-java@v4
@@ -37,17 +67,17 @@ jobs:
 
       - name: Install Android SDK, NDK and CMake
         run: |
-          sdkmanager --install \
-            "platform-tools" \
-            "platforms;android-36" \
-            "build-tools;36.0.0" \
-            "ndk;30.0.16248370" \
+          sdkmanager --install \\
+            "platform-tools" \\
+            "platforms;android-36" \\
+            "build-tools;36.0.0" \\
+            "ndk;30.0.16248370" \\
             "cmake;3.22.1"
 
       - name: Require persistent preview signing key
         env:
-          PREVIEW_KEYSTORE_BASE64: ${{ secrets.SYNCINIT_PREVIEW_KEYSTORE_BASE64 }}
-          PREVIEW_KEYSTORE_PASSWORD: ${{ secrets.SYNCINIT_PREVIEW_KEYSTORE_PASSWORD }}
+          PREVIEW_KEYSTORE_BASE64: \${{ secrets.SYNCINIT_PREVIEW_KEYSTORE_BASE64 }}
+          PREVIEW_KEYSTORE_PASSWORD: \${{ secrets.SYNCINIT_PREVIEW_KEYSTORE_PASSWORD }}
         run: |
           if [ -z "$PREVIEW_KEYSTORE_BASE64" ] || [ -z "$PREVIEW_KEYSTORE_PASSWORD" ]; then
             echo "::error::Configure SYNCINIT_PREVIEW_KEYSTORE_BASE64 and SYNCINIT_PREVIEW_KEYSTORE_PASSWORD before publishing an updateable APK."
@@ -56,7 +86,7 @@ jobs:
           mkdir -p android/app
           printf '%s' "$PREVIEW_KEYSTORE_BASE64" | base64 --decode > android/app/syncinit-preview.jks
           test -s android/app/syncinit-preview.jks
-          keytool -list -keystore android/app/syncinit-preview.jks \
+          keytool -list -keystore android/app/syncinit-preview.jks \\
             -storepass "$PREVIEW_KEYSTORE_PASSWORD" -alias syncinit-preview >/dev/null
 
       - name: Generate monotonic Android version code
@@ -65,11 +95,11 @@ jobs:
 
       - name: Build updateable APK and run transport tests
         env:
-          ORG_GRADLE_PROJECT_syncinitVersionCode: ${{ steps.apk_version.outputs.code }}
-          ORG_GRADLE_PROJECT_syncinitVersionName: "0.5.9-preview"
-          ORG_GRADLE_PROJECT_previewKeystorePath: ${{ github.workspace }}/android/app/syncinit-preview.jks
-          ORG_GRADLE_PROJECT_previewStorePassword: ${{ secrets.SYNCINIT_PREVIEW_KEYSTORE_PASSWORD }}
-          ORG_GRADLE_PROJECT_previewKeyPassword: ${{ secrets.SYNCINIT_PREVIEW_KEYSTORE_PASSWORD }}
+          ORG_GRADLE_PROJECT_syncinitVersionCode: \${{ steps.apk_version.outputs.code }}
+          ORG_GRADLE_PROJECT_syncinitVersionName: \${{ steps.release.outputs.version }}
+          ORG_GRADLE_PROJECT_previewKeystorePath: \${{ github.workspace }}/android/app/syncinit-preview.jks
+          ORG_GRADLE_PROJECT_previewStorePassword: \${{ secrets.SYNCINIT_PREVIEW_KEYSTORE_PASSWORD }}
+          ORG_GRADLE_PROJECT_previewKeyPassword: \${{ secrets.SYNCINIT_PREVIEW_KEYSTORE_PASSWORD }}
           ORG_GRADLE_PROJECT_previewKeyAlias: syncinit-preview
         run: gradle -p android :app:assembleDebug :transport:check --stacktrace
 
@@ -79,68 +109,67 @@ jobs:
           "$ANDROID_HOME/build-tools/36.0.0/apksigner" verify --print-certs android/app/build/outputs/apk/debug/app-debug.apk
 
       - name: Prepare release assets
+        env:
+          VERSION: \${{ steps.release.outputs.version }}
         run: |
           mkdir -p release-assets
-          cp android/app/build/outputs/apk/debug/app-debug.apk \
-            release-assets/SyncInIt-Android-preview-v0.5.9.apk
-          sha256sum release-assets/SyncInIt-Android-preview-v0.5.9.apk \
-            | awk '{print $1}' > release-assets/SHA256SUMS.txt
+          APK="SyncInIt-Android-preview-v\${VERSION}.apk"
+          cp android/app/build/outputs/apk/debug/app-debug.apk "release-assets/$APK"
+          sha256sum "release-assets/$APK" | awk '{print $1}' > release-assets/SHA256SUMS.txt
+          echo "apk=$APK" >> "$GITHUB_OUTPUT"
+        id: assets
+
+      - name: Prepare release notes
+        env:
+          VERSION: \${{ steps.release.outputs.version }}
+          RELEASE_TAG: \${{ steps.release.outputs.tag }}
+        run: |
+          cat > release-notes.md <<EOF
+          ## Sync In It Android Preview v\${VERSION}
+
+          This update adds persistent diagnostic text export and replay-oriented clock telemetry. It is an engineering preview, not a claim of verified synchronized playback.
+
+          ### What's included
+          - App-private rolling diagnostic history, bounded to 4 MB and retained across activity recreation and app restarts.
+          - **Save diagnostic report (.txt)** using Android's system document picker; choose Downloads or another destination.
+          - Timestamped CLOCK_PROBE records with sequence, t1/t2/t3/t4, corrected RTT and raw offset.
+          - CLOCK_FIT records with fitted offset, skew, median RTT, residual RMS, sample counts/span and stable streak.
+          - Token, password, secret and API-key assignments are redacted from diagnostic output. No audio recording is included.
+          - Existing Host/Speaker discovery, PCM16/TCP path, AudioTrack output, acoustic markers and bounded buffers remain in place.
+
+          ### How to export diagnostics
+          1. Install this APK on the Host and Speaker phones using the existing persistent preview signing key.
+          2. Reproduce the issue while keeping the app open.
+          3. Open **Network debugger** and tap **Save diagnostic report (.txt)**.
+          4. Save the generated file in Downloads or another location and share the Host and Speaker reports for the same session.
+
+          ### Behavior and limitations
+          - No wire-protocol or estimator behavior change is included in this release.
+          - The existing strict clock acquisition gate remains: residual RMS <0.25 ms, at least 8 selected samples, at least 10 seconds of span and 3 consecutive stable updates.
+          - The latest supplied physical run remained above the residual threshold and did not demonstrate READY, ANCHOR or acoustic skew. This APK adds better evidence capture; it does not claim that the clock issue is fixed.
+          - Diagnostic reports can contain device model, local network addresses, session diagnostic IDs and timing data. Review the report before sharing it. Session tokens and secret assignments are redacted; raw audio is never included.
+          - The preview is for a trusted private LAN. Transport encryption, foreground playback service and wake-lock lifecycle are not yet complete.
+          - Audio source remains a generated test click; local music and system-audio capture are not implemented.
+
+          Build source commit: https://github.com/\${GITHUB_REPOSITORY}/commit/\${GITHUB_SHA}
+          EOF
 
       - name: Create GitHub pre-release and upload APK
         env:
-          GH_TOKEN: ${{ secrets.GITHUB_TOKEN }}
+          GH_TOKEN: \${{ secrets.GITHUB_TOKEN }}
+          RELEASE_TAG: \${{ steps.release.outputs.tag }}
+          VERSION: \${{ steps.release.outputs.version }}
+          APK: \${{ steps.assets.outputs.apk }}
         run: |
-          {
-            cat <<'EOF'
-          ## Sync In It Android Preview v0.5.9
-
-          Backpressure-focused diagnostic update based on the changes merged in PR #55, building on the v0.5.8 acoustic measurement toolchain.
-
-          ### What's included
-          - Multi-Speaker Host/Speaker admission, separate control/audio TCP channels, UDP clock acquisition, shared PCM16 test-stream fan-out and coordinated playback ANCHOR path.
-          - Receiver-specific acoustic markers, reference WAV generation and PCM16/48 kHz acoustic-skew analysis.
-          - Throttled PCM jitter-buffer snapshots: the receiver now reuses a cached contiguous-buffer snapshot for up to 250 ms instead of repeatedly scanning the 20-second ring buffer for every incoming frame.
-          - One-second Speaker ingress diagnostics (`DIAG SPEAKER_AUDIO_INGRESS`) reporting frame receive rate, buffered duration, missing frames and rolling-window advances.
-          - Host audio-delivery counters and rate-limited slow TCP write diagnostics (`DIAG HOST_AUDIO_DELIVERY`, `DIAG HOST_AUDIO_WRITE_SLOW`).
-          - Expanded READY-gate diagnostics including receiver skew and the exact clock-stability criteria.
-
-          ### First validation run
-          1. Install this APK on one Host and one Speaker using the same persistent preview signing key. Install over an existing preview; do not uninstall first.
-          2. Keep both apps foregrounded and screens awake on the same trusted Wi-Fi network.
-          3. Start the Host and join one Speaker. Let the run continue until READY/ANCHOR or a failure is reported.
-          4. Export both devices' logs. Check whether Speaker ingress remains near 50 frames per second, whether Host queued/written counts stay close, and whether slow Host writes are reported.
-          5. Only after one Speaker reaches READY and starts from ANCHOR, repeat with two Speakers and collect the two-minute 48 kHz PCM16 acoustic measurement described in the measurement guide.
-
-          ### Behavior and limitations
-          - No wire-protocol changes were made. The 3-second READY PCM requirement, 0.25 ms clock residual threshold, three-update stability streak and bounded 500 ms Host queue remain unchanged.
-          - The latest supplied physical run before this fix filled the 20-second Speaker PCM buffer but remained blocked by `CLOCK_UNSTABLE`; residual RMS stayed around 0.308–0.522 ms, above the 0.25 ms threshold. The Host later disconnected the Speaker after its audio queue overflowed.
-          - This release reduces repeated buffer-scan work and adds measurements to isolate remaining receive/transport bottlenecks. It has not yet been validated by a post-PR #55 physical-device run and does not claim synchronized-speaker performance.
-          - Android output remains AudioTrack with a writer thread. Oboe/AAudio, DAC drift correction and manual per-device output offsets are not implemented.
-          - The Host admits up to 8 Speakers (9 devices including Host); the 6–10 total-phone target is not capacity validated.
-          - There is no foreground playback service or explicit wake-lock lifecycle. Keep testing short, foregrounded and screen-on; do not run background or endurance tests.
-          - The session token remains visible in LAN DNS-SD TXT metadata. Use a trusted private network.
-          - The audio source is a generated timing-click test signal, not user-selected music or system audio capture.
-          EOF
-            printf '\nBuild source commit: [%s](https://github.com/%s/commit/%s)\n' "${GITHUB_SHA:0:12}" "$GITHUB_REPOSITORY" "$GITHUB_SHA"
-          } > release-notes.md
-
-          if gh release view "v0.5.9-preview.1" --repo "$GITHUB_REPOSITORY" >/dev/null 2>&1; then
-            gh release edit "v0.5.9-preview.1" \
-              --repo "$GITHUB_REPOSITORY" \
-              --title "Sync In It Android Preview v0.5.9" \
-              --notes-file release-notes.md \
-              --prerelease
-            gh release upload "v0.5.9-preview.1" \
-              "release-assets/SyncInIt-Android-preview-v0.5.9.apk" \
-              "release-assets/SHA256SUMS.txt" \
-              --repo "$GITHUB_REPOSITORY" --clobber
-          else
-            gh release create "v0.5.9-preview.1" \
-              "release-assets/SyncInIt-Android-preview-v0.5.9.apk#SyncInIt-Android-preview-v0.5.9.apk" \
-              "release-assets/SHA256SUMS.txt#SHA256SUMS.txt" \
-              --repo "$GITHUB_REPOSITORY" \
-              --target "$GITHUB_SHA" \
-              --title "Sync In It Android Preview v0.5.9" \
-              --notes-file release-notes.md \
-              --prerelease
+          if gh release view "$RELEASE_TAG" --repo "$GITHUB_REPOSITORY" >/dev/null 2>&1; then
+            echo "::error::Release $RELEASE_TAG already exists; refusing to overwrite a published release."
+            exit 1
           fi
+          gh release create "$RELEASE_TAG" \\
+            "release-assets/$APK#$APK" \\
+            "release-assets/SHA256SUMS.txt#SHA256SUMS.txt" \\
+            --repo "$GITHUB_REPOSITORY" \\
+            --target "$GITHUB_SHA" \\
+            --title "Sync In It Android Preview v$VERSION" \\
+            --notes-file release-notes.md \\
+            --prerelease
