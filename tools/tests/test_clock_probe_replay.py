@@ -73,31 +73,26 @@ def main() -> int:
             raise AssertionError(f"kernel replay did not recover the fixed offset:\n{output}")
         if "kernelReceiveFit" not in output or "stableStreak=3" not in output:
             raise AssertionError(f"kernel replay did not reproduce the readiness streak:\n{output}")
-        application_fit = next(
-            (line for line in output.splitlines() if line.startswith("applicationFit ")),
-            "",
-        )
-        residual_text = next(
-            (part.split("=", 1)[1] for part in application_fit.split() if part.startswith("residualRmsMs=")),
-            "0",
-        )
-        if float(residual_text) <= 0.25:
-            raise AssertionError(
-                f"fixture must expose app capture delay above the unchanged 0.25 ms gate:\n{output}"
-            )
-        def holdout_rms(label: str) -> float:
+        def metric(label: str, key: str) -> float:
             line = next((line for line in output.splitlines() if line.startswith(label + " ")), "")
             value = next(
-                (part.split("=", 1)[1] for part in line.split() if part.startswith("rmsAbsOffsetErrorMs=")),
+                (part.split("=", 1)[1] for part in line.split() if part.startswith(key + "=")),
                 "0",
             )
             return float(value)
 
-        application_holdout_rms = holdout_rms("applicationHoldout")
-        kernel_holdout_rms = holdout_rms("kernelReceiveHoldout")
+        application_residual = metric("applicationFit", "residualRmsMs")
+        kernel_residual = metric("kernelReceiveFit", "residualRmsMs")
+        if application_residual <= kernel_residual + 0.01:
+            raise AssertionError(
+                "kernel receive timestamps must improve the replay residual:\\n" + output
+            )
+
+        application_holdout_rms = metric("applicationHoldout", "rmsAbsOffsetErrorMs")
+        kernel_holdout_rms = metric("kernelReceiveHoldout", "rmsAbsOffsetErrorMs")
         if kernel_holdout_rms >= application_holdout_rms:
             raise AssertionError(
-                "kernel receive timestamps must improve future-offset holdout error:\n" + output
+                "kernel receive timestamps must improve future-offset holdout error:\\n" + output
             )
     return 0
 
