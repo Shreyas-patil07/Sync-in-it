@@ -738,7 +738,6 @@ class MasterSessionHost(context: Context, private val onStatus: (String) -> Unit
                             }
                         }
                     }
-                    }
 
                     sequence = (sequence + 1L) and 0xffff_ffffL
                     sampleIndex += PreviewConfig.CHUNK_FRAMES
