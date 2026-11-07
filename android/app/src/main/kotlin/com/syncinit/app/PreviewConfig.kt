@@ -26,7 +26,14 @@ internal object PreviewConfig {
     const val READY_RETRY_INTERVAL_NS = 1_000_000_000L
     const val GROUP_START_LEAD_NS = 1_000_000_000L
     const val GROUP_ADMISSION_WINDOW_NS = 15_000_000_000L
-    const val GROUP_READINESS_TIMEOUT_NS = 45_000_000_000L
+    const val RELEASE_GROUP_READINESS_TIMEOUT_NS = 45_000_000_000L
+    const val DEBUG_GROUP_READINESS_TIMEOUT_NS = 90_000_000_000L
+    val GROUP_READINESS_TIMEOUT_NS: Long
+        get() = if (BuildConfig.DEBUG) {
+            DEBUG_GROUP_READINESS_TIMEOUT_NS
+        } else {
+            RELEASE_GROUP_READINESS_TIMEOUT_NS
+        }
     const val GROUP_START_BUFFER_MS = 2_000L
     const val STARTUP_LEAD_MS = 1_000
 

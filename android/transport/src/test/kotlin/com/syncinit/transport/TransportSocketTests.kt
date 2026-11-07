@@ -265,6 +265,53 @@ private fun tcpRejectsOversizedAndTruncatedFrames() {
     }
 }
 
+private fun writeLongLittleEndian(bytes: ByteArray, offset: Int, value: Long) {
+    for (index in 0 until 8) bytes[offset + index] = (value ushr (index * 8)).toByte()
+}
+
+private fun readLongLittleEndian(bytes: ByteArray, offset: Int): Long {
+    var value = 0L
+    for (index in 0 until 8) {
+        value = value or ((bytes[offset + index].toLong() and 0xffL) shl (index * 8))
+    }
+    return value
+}
+
+private fun udpTimeSyncResponseT3Stamping() {
+    val packet = ByteArray(UdpTimeSyncClient.PACKET_SIZE)
+    packet[0] = 'S'.code.toByte()
+    packet[1] = 'T'.code.toByte()
+    packet[2] = 1
+    packet[3] = 2
+    packet[10] = 9
+    val t2Ns = 123_456_789L
+    writeLongLittleEndian(packet, 22, t2Ns)
+    writeLongLittleEndian(packet, 30, t2Ns)
+    val before = packet.copyOf()
+    val expectedT3Ns = 234_567_890L
+
+    UdpTimeSyncPacketMetadata.stampResponseT3(packet, expectedT3Ns)
+    expect(readLongLittleEndian(packet, 30) == expectedT3Ns, "response T3 is overwritten with the send-boundary timestamp")
+    expect(readLongLittleEndian(packet, 22) == t2Ns, "response T2 remains unchanged")
+    expect(packet.sliceArray(0 until 30).contentEquals(before.sliceArray(0 until 30)), "T3 stamping preserves the response header and T1/T2 fields")
+
+    var rejected = false
+    try { UdpTimeSyncPacketMetadata.stampResponseT3(packet.copyOf(packet.size - 1), expectedT3Ns) }
+    catch (_: IllegalArgumentException) { rejected = true }
+    expect(rejected, "T3 stamping rejects an invalid packet size")
+
+    rejected = false
+    val request = packet.copyOf().apply { this[3] = 1 }
+    try { UdpTimeSyncPacketMetadata.stampResponseT3(request, expectedT3Ns) }
+    catch (_: IllegalArgumentException) { rejected = true }
+    expect(rejected, "T3 stamping rejects request packets")
+
+    rejected = false
+    try { UdpTimeSyncPacketMetadata.stampResponseT3(packet.copyOf(), t2Ns - 1L) }
+    catch (_: IllegalArgumentException) { rejected = true }
+    expect(rejected, "T3 stamping rejects a timestamp preceding T2")
+}
+
 private fun udpTimeSyncSequenceMetadata() {
     val packet = ByteArray(UdpTimeSyncClient.PACKET_SIZE)
     packet[0] = 'S'.code.toByte()
@@ -298,14 +345,22 @@ private fun udpTimeSyncLoopback() {
         expect(server.isBound, "UDP diagnostics expose bound server state")
         expect(server.localAddress == "127.0.0.1", "UDP diagnostics expose bound server address")
         val request = ByteArray(UdpTimeSyncClient.PACKET_SIZE) { it.toByte() }
-        val response = ByteArray(UdpTimeSyncClient.PACKET_SIZE) { (255 - it).toByte() }
+        val response = ByteArray(UdpTimeSyncClient.PACKET_SIZE)
+        response[0] = 'S'.code.toByte()
+        response[1] = 'T'.code.toByte()
+        response[2] = 1
+        response[3] = 2
+        val responseT2Ns = 123_456_789L
+        writeLongLittleEndian(response, 22, responseT2Ns)
+        writeLongLittleEndian(response, 30, responseT2Ns)
         val received = ArrayBlockingQueue<Boolean>(1)
+        val sendTimings = ArrayBlockingQueue<TimeSyncResponseSendTiming>(1)
         val failure = ArrayBlockingQueue<Throwable>(1)
         val worker = Thread {
             try {
                 val incoming = server.receive()
                 val matches = incoming.bytes.contentEquals(request) && incoming.receivedAtNs != 0L
-                server.sendTo(response, incoming.source)
+                sendTimings.offer(server.sendTimeSyncResponse(response, incoming.source))
                 received.offer(matches)
             } catch (t: Throwable) { failure.offer(t) }
         }
@@ -326,6 +381,14 @@ private fun udpTimeSyncLoopback() {
             val timedResponse = client.receiveTimed()
             expect(timedResponse.bytes.contentEquals(response), "UDP time-sync response round-trips")
             expect(timedResponse.receivedAtNs != 0L, "UDP client captures a monotonic receive timestamp")
+            val sendTiming = sendTimings.poll(1, TimeUnit.SECONDS)
+                ?: throw AssertionError("UDP response send timing was not returned")
+            expect(
+                readLongLittleEndian(timedResponse.bytes, 30) == sendTiming.t3Ns,
+                "transmitted response T3 equals the timestamp captured by the transport send path"
+            )
+            expect(readLongLittleEndian(timedResponse.bytes, 22) <= sendTiming.t3Ns, "transmitted response T3 is not earlier than T2")
+            expect(sendTiming.sendElapsedNs >= 0L, "UDP response send duration is non-negative")
         }
         worker.join(4_000)
         failure.poll()?.let { throw it }
@@ -375,6 +438,7 @@ fun main() {
     tcpFragmentedRead()
     tcpRejectsOversizedAndTruncatedFrames()
     udpTimeSyncSequenceMetadata()
+    udpTimeSyncResponseT3Stamping()
     udpTimeSyncLoopback()
     udpRejectsMalformedDatagrams()
     println("Kotlin TCP/UDP transport tests: all assertions passed")

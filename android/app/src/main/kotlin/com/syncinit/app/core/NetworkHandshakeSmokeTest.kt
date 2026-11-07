@@ -93,11 +93,10 @@ object NetworkHandshakeSmokeTest {
                                 val response = checkNotNull(
                                     nativeSession.timeSyncResponse(
                                         incoming.bytes,
-                                        incoming.receivedAtNs,
-                                        System.nanoTime()
+                                        incoming.receivedAtNs
                                     )
                                 ) { "native UDP responder rejected the loopback request" }
-                                timeServer.sendTo(response, incoming.source)
+                                timeServer.sendTimeSyncResponse(response, incoming.source)
 
                                 val received = timeClient.receiveTimed()
                                 val measurement = checkNotNull(

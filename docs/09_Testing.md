@@ -4,7 +4,21 @@
 **Version:** 1.0  
 **Last updated:** 7 November 2026
 
-## Latest physical test evidence — 7 November 2026
+## Latest physical test evidence — 7 November 2026 (v0.6.4-debug)
+
+The latest two-phone test reversed Host/Speaker roles on the same pair of Xiaomi phones. Both runs reached UDP time-sync and full PCM pre-roll, but both failed the clock residual gate:
+
+- Run A: Android 14 Xiaomi 22101316I as Host; Android 12 Xiaomi M2010J19SI as Speaker. 107 accepted probes; 27 selected over 32.036 seconds; median RTT 4.9288 ms; residual RMS 0.324341 ms; stable streak 0.
+- Run B: Android 12 Xiaomi M2010J19SI as Host; Android 14 Xiaomi 22101316I as Speaker. 108 accepted probes; 27 selected over 43.815 seconds; median RTT 5.6278 ms; residual RMS 0.500333 ms; stable streak 0.
+- Both Speakers reached 20,000 ms buffered PCM, 960,000 contiguous frames and zero missing frames. Host queue depth/high-water remained 0/1.
+- Both Host sessions reached the 45-second readiness timeout. Neither run reached READY/ANCHOR or playback.
+- The paired logs contain per-probe Host/Speaker records correlated by the UDP sequence number. Reversing the roles did not eliminate the clock residual.
+
+**Verdict: FAIL — clock stability / READY.** The test does not isolate the cause. The current experiment branch `experiment/send-boundary-t3-debug-acquisition-window` stamps final response T3 in the transport send path and extends only the debug readiness observation window to 90 seconds. Release builds retain the 45-second timeout. No estimator, residual threshold, sample-selection policy or READY gate is relaxed. Android/JNI, Kotlin transport and M0 simulator/native-core CI all passed on the PR head; physical validation is pending.
+
+See [the paired device report](Test_Results.md#25-test-record--2026-11-07--v064-debug-paired-per-probe-run).
+
+## Previous physical test evidence — 7 November 2026 (v0.6.3-debug)
 
 The latest supplied v0.6.3-debug two-phone run is a **clock-acquisition / READY-gate failure**. Host and Speaker discovery, TCP admission, UDP exchanges and PCM delivery worked, but clock residual RMS remained above the strict threshold:
 
