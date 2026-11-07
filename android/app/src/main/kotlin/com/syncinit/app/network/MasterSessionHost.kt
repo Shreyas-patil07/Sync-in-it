@@ -14,6 +14,7 @@ import com.syncinit.transport.TcpFrameConnection
 import com.syncinit.transport.TcpFrameServer
 import com.syncinit.transport.FrameProtocolException
 import com.syncinit.transport.UdpTimeSyncServer
+import com.syncinit.transport.UdpTimeSyncPacketMetadata
 import java.io.Closeable
 import java.net.InetAddress
 import java.net.InetSocketAddress
@@ -812,6 +813,7 @@ class MasterSessionHost(context: Context, private val onStatus: (String) -> Unit
                 }
 
                 val t3Ns = System.nanoTime()
+                val t2ToT3Us = (t3Ns - datagram.receivedAtNs) / 1_000L
                 var matchedPeer: HostReceiverPeer? = null
                 var response: ByteArray? = null
                 var newlyPinnedPeer: HostReceiverPeer? = null
@@ -855,12 +857,24 @@ class MasterSessionHost(context: Context, private val onStatus: (String) -> Unit
                 if (newlyPinnedPeer === target) {
                     onStatus("DIAG HOST_UDP_PEER_PINNED receiverId=${target.receiverId} source=${datagram.source}")
                 }
+                val responseReadyAtNs = System.nanoTime()
+                val sequence = UdpTimeSyncPacketMetadata.sequence(encodedResponse)
+                val t3ToResponseReadyUs = (responseReadyAtNs - t3Ns) / 1_000L
                 val responseStartedAt = System.nanoTime()
                 val t3ToSendStartUs = (responseStartedAt - t3Ns) / 1_000L
+                val responseReadyToSendStartUs = (responseStartedAt - responseReadyAtNs) / 1_000L
                 val receiveToSendStartUs = (responseStartedAt - datagram.receivedAtNs) / 1_000L
                 server.sendTo(encodedResponse, datagram.source)
                 val sendElapsedUs = (System.nanoTime() - responseStartedAt) / 1_000L
 
+                onStatus(
+                    "DIAG HOST_UDP_PROBE sequence=$sequence receiverId=${target.receiverId} " +
+                        "source=${datagram.source} t2ToT3Us=$t2ToT3Us " +
+                        "t3ToResponseReadyUs=$t3ToResponseReadyUs " +
+                        "responseReadyToSendStartUs=$responseReadyToSendStartUs " +
+                        "t3ToSendStartUs=$t3ToSendStartUs receiveToSendStartUs=$receiveToSendStartUs " +
+                        "sendElapsedUs=$sendElapsedUs"
+                )
                 responseCount += 1
                 if (responseCount == 1 || responseCount % 20 == 0) {
                     onStatus("DIAG HOST_UDP_RESPONSE_SENT count=$responseCount receiverId=${target.receiverId} destination=${datagram.source} bytes=${encodedResponse.size} t3ToSendStartUs=$t3ToSendStartUs receiveToSendStartUs=$receiveToSendStartUs sendElapsedUs=$sendElapsedUs")
