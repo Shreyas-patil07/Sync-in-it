@@ -87,6 +87,15 @@ Oboe/AAudio remains a lower-confidence backend experiment after an end-to-end ou
 **Clock algorithm scope:** do not add new clock-estimator changes beyond the existing replay-only hysteresis/two-state alternatives in ADR-026. The priority is to determine whether the single-Speaker failure is clock readiness, transport/buffer or output scheduling, using evidence rather than more parallel architecture work.
 
 
+### Transport and backend sequencing
+
+The current PCM/TCP stream is 1.536 Mbps payload per Speaker; eight preview Speakers receive 12.288 Mbps aggregate payload before network overhead. Each Speaker has its own TCP audio connection. TCP retransmission can stall later bytes on the affected Speaker connection, while other Speaker connections remain independent; the affected receiver's buffer can still drain during the stall.
+
+FLAC/TCP, Opus/TCP and UDP selective repair are explicitly deferred until one Speaker passes the current path and two Speakers establish an acoustic baseline. FLAC compression is source-dependent; Opus encode/decode delay must be measured even with a multi-second playback lead; UDP repair needs bounded requests that can complete before the sample's playout deadline. See [ADR-027](ADR/Architecture_Decisions.md#adr-027--audio-transport-and-codec-alternatives).
+
+Oboe/AAudio is a lower-confidence backend experiment. Android recommends Oboe/AAudio low-latency configuration, but that is not evidence of more accurate timestamps on the Xiaomi test devices. Compare it with current and continuous AudioTrack on identical hardware and geometry only after a working output baseline exists.
+
+
 ## Implemented Android path
 
 ### Discovery and admission
