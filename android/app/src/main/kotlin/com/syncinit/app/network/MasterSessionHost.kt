@@ -41,6 +41,12 @@ private data class StreamCursor(
     val nextChunkDueNs: Long
 )
 
+private enum class AudioOfferResult {
+    QUEUED,
+    CLOSED,
+    FULL
+}
+
 /** Android master that admits several independent receivers into one shared audio session. */
 class MasterSessionHost(context: Context, private val onStatus: (String) -> Unit) : Closeable {
     private val appContext = context.applicationContext
@@ -290,6 +296,7 @@ class MasterSessionHost(context: Context, private val onStatus: (String) -> Unit
         val audio: TcpFrameConnection
     ) : Closeable {
         private val peerClosed = AtomicBoolean(false)
+        private val audioQueueLock = Any()
         private val audioQueue = ArrayBlockingQueue<ByteArray>(PreviewConfig.AUDIO_QUEUE_CHUNKS)
         private val audioFramesQueued = AtomicLong(0L)
         private val audioFramesWritten = AtomicLong(0L)
@@ -377,27 +384,31 @@ class MasterSessionHost(context: Context, private val onStatus: (String) -> Unit
             writer.start()
         }
 
-        fun offerAudio(frame: ByteArray): Boolean {
-            if (peerClosed.get() || !audioQueue.offer(frame)) return false
+        fun offerAudio(frame: ByteArray): AudioOfferResult = synchronized(audioQueueLock) {
+            if (peerClosed.get()) return@synchronized AudioOfferResult.CLOSED
+            if (!audioQueue.offer(frame)) return@synchronized AudioOfferResult.FULL
             audioFramesQueued.incrementAndGet()
             val depth = audioQueue.size
             audioQueueHighWater.updateAndGet { previous -> maxOf(previous, depth) }
-            return true
+            AudioOfferResult.QUEUED
         }
 
         fun close(trigger: String, reason: String) {
-            if (!peerClosed.compareAndSet(false, true)) return
-            val nowNs = System.nanoTime()
-            onStatus(
-                "DIAG HOST_RECEIVER_CLOSE receiverId=$receiverId trigger=$trigger reason=$reason " +
-                    "uptimeMs=${(nowNs - admittedAtNs) / 1_000_000L} " +
-                    "queued=${audioFramesQueued.get()} written=${audioFramesWritten.get()} " +
-                    "queueDepth=${audioQueue.size} queueHighWater=${audioQueueHighWater.get()} " +
-                    "lastWriteDurationMs=${"%.2f".format(lastAudioWriteDurationNs.get() / 1_000_000.0)} " +
-                    "controlLocal=${control.localEndpoint} controlRemote=${control.remoteEndpoint} " +
-                    "audioLocal=${audio.localEndpoint} audioRemote=${audio.remoteEndpoint}"
-            )
-            audioQueue.clear()
+            val closeDiagnostic = synchronized(audioQueueLock) {
+                if (!peerClosed.compareAndSet(false, true)) return
+                val nowNs = System.nanoTime()
+                val diagnostic =
+                    "DIAG HOST_RECEIVER_CLOSE receiverId=$receiverId trigger=$trigger reason=$reason " +
+                        "uptimeMs=${(nowNs - admittedAtNs) / 1_000_000L} " +
+                        "queued=${audioFramesQueued.get()} written=${audioFramesWritten.get()} " +
+                        "queueDepth=${audioQueue.size} queueHighWater=${audioQueueHighWater.get()} " +
+                        "lastWriteDurationMs=${"%.2f".format(lastAudioWriteDurationNs.get() / 1_000_000.0)} " +
+                        "controlLocal=${control.localEndpoint} controlRemote=${control.remoteEndpoint} " +
+                        "audioLocal=${audio.localEndpoint} audioRemote=${audio.remoteEndpoint}"
+                audioQueue.clear()
+                diagnostic
+            }
+            onStatus(closeDiagnostic)
             audioWriter?.interrupt()
             audioWriter = null
             closeQuietly(audio)
@@ -718,9 +729,13 @@ class MasterSessionHost(context: Context, private val onStatus: (String) -> Unit
                         pcm16LittleEndian = pcm
                     )
                     peers.forEach { peer ->
-                        if (!peer.offerAudio(encoded)) {
-                            onStatus("DIAG HOST_AUDIO_QUEUE_OVERFLOW receiverId=${peer.receiverId} limitChunks=${PreviewConfig.AUDIO_QUEUE_CHUNKS} limitMs=${PreviewConfig.AUDIO_QUEUE_CHUNKS * PreviewConfig.CHUNK_PERIOD_NS / 1_000_000L}")
-                            removeReceiver(peer, "audio send queue exceeded ${PreviewConfig.AUDIO_QUEUE_CHUNKS * PreviewConfig.CHUNK_PERIOD_NS / 1_000_000L} ms of backlog", trigger = "audio-queue-overflow")
+                        when (peer.offerAudio(encoded)) {
+                            AudioOfferResult.QUEUED,
+                            AudioOfferResult.CLOSED -> Unit
+                            AudioOfferResult.FULL -> {
+                                onStatus("DIAG HOST_AUDIO_QUEUE_OVERFLOW receiverId=${peer.receiverId} limitChunks=${PreviewConfig.AUDIO_QUEUE_CHUNKS} limitMs=${PreviewConfig.AUDIO_QUEUE_CHUNKS * PreviewConfig.CHUNK_PERIOD_NS / 1_000_000L}")
+                                removeReceiver(peer, "audio send queue exceeded ${PreviewConfig.AUDIO_QUEUE_CHUNKS * PreviewConfig.CHUNK_PERIOD_NS / 1_000_000L} ms of backlog", trigger = "audio-queue-overflow")
+                            }
                         }
                     }
 
@@ -841,12 +856,14 @@ class MasterSessionHost(context: Context, private val onStatus: (String) -> Unit
                     onStatus("DIAG HOST_UDP_PEER_PINNED receiverId=${target.receiverId} source=${datagram.source}")
                 }
                 val responseStartedAt = System.nanoTime()
+                val t3ToSendStartUs = (responseStartedAt - t3Ns) / 1_000L
+                val receiveToSendStartUs = (responseStartedAt - datagram.receivedAtNs) / 1_000L
                 server.sendTo(encodedResponse, datagram.source)
                 val sendElapsedUs = (System.nanoTime() - responseStartedAt) / 1_000L
 
                 responseCount += 1
                 if (responseCount == 1 || responseCount % 20 == 0) {
-                    onStatus("DIAG HOST_UDP_RESPONSE_SENT count=$responseCount receiverId=${target.receiverId} destination=${datagram.source} bytes=${encodedResponse.size} sendElapsedUs=$sendElapsedUs")
+                    onStatus("DIAG HOST_UDP_RESPONSE_SENT count=$responseCount receiverId=${target.receiverId} destination=${datagram.source} bytes=${encodedResponse.size} t3ToSendStartUs=$t3ToSendStartUs receiveToSendStartUs=$receiveToSendStartUs sendElapsedUs=$sendElapsedUs")
                     onStatus("UDP time sync active · $responseCount validated requests answered across ${receivers.size} speaker(s).")
                 }
             }
