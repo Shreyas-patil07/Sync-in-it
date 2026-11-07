@@ -504,12 +504,13 @@ Android and iOS CI may be expanded after native project skeletons exist. Physica
 
 ## 10. Immediate next engineering actions
 
-1. **Implemented:** define and enforce scenario-level acceptance thresholds for nominal, degraded/asymmetric, late-join and ten-receiver simulator cases. CI runs the deterministic acceptance gate.
-2. Review the frame-slip versus bounded-resampling results; do not select a production policy until PCM artifacts, callback safety and physical-device output timestamps are tested.
-3. Extend cross-language vectors when estimator or timing behavior changes.
-4. Calibrate the shared-airtime model against packet captures and real AP/device measurements; it omits full CSMA/CA, TCP retransmission and router-specific scheduling.
-5. Validate retry traffic and acquisition behavior under measured shared-Wi-Fi contention before carrying this cadence into the Android runtime.
-6. Complete the M0 exit gate before beginning M1 Android networking.
+1. Capture the minimum complete Speaker/Host evidence needed to diagnose the active physical failure: per-probe t1–t4/RTT/offset/selection, fit updates, Host audio delivery/queue/slow-write and disconnect counters under one session ID.
+2. Replay the same physical log through the current C++ estimator/gate and compare with the Python reference. Do not change the <0.25 ms runtime gate.
+3. Run one Host + one Speaker using the existing PCM16/TCP + AudioTrack path. Reach READY, receive ANCHOR and record audible marker output. This is the hard vertical-slice gate.
+4. Only after that baseline passes, compare scheduled output with continuous silence-first/timeline-frame output on the same phone and setup.
+5. Add a second Speaker and record repeatable p95 acoustic skew before expanding the group.
+6. After the two-Speaker baseline passes, run the FLAC/TCP and Opus/TCP codec comparisons; then assess UDP selective retransmission separately. Oboe/AAudio remains a later measured backend comparison.
+7. Maintain one primary implementation workstream. Do not begin unrelated platform, provider, calibration, security or codec layers while the single-Speaker path is blocked.
 
 ## 11. Source documents
 
