@@ -14,6 +14,16 @@ data class ClockSyncMeasurement(
     val acquisitionStable: Boolean get() = stableStreak >= 3
 }
 
+data class ClockSyncProbe(
+    val sequence: Long,
+    val t1Ns: Long,
+    val t2Ns: Long,
+    val t3Ns: Long,
+    val t4Ns: Long,
+    val roundTripNs: Long,
+    val rawOffsetNs: Long
+)
+
 /** Thread-confined wrapper over the shared C++ time-sync correlator and clock estimator. */
 class NativeTimeSyncClient private constructor(private var handle: Long) : AutoCloseable {
     @Synchronized
@@ -47,6 +57,22 @@ class NativeTimeSyncClient private constructor(private var handle: Long) : AutoC
             samplesSeen = values[5].toInt(),
             selectedSampleSpanNs = values[6].toLong(),
             stableStreak = values[7].toInt()
+        )
+    }
+
+    @Synchronized
+    fun lastAcceptedProbe(): ClockSyncProbe? {
+        checkOpen()
+        val values = NativeCore.nativeLastTimeSyncExchange(handle) ?: return null
+        check(values.size == 7) { "native clock probe returned an invalid field count" }
+        return ClockSyncProbe(
+            sequence = values[0],
+            t1Ns = values[1],
+            t2Ns = values[2],
+            t3Ns = values[3],
+            t4Ns = values[4],
+            roundTripNs = values[5],
+            rawOffsetNs = values[6]
         )
     }
 
