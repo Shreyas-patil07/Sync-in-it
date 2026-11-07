@@ -292,6 +292,28 @@ class ReceiverSessionClient(
                         } else {
                             consecutiveUnreachable = 0
                             lastMeasurement = measurement
+                            val probe = nativeClock.lastAcceptedProbe()
+                            if (probe == null) {
+                                onStatus("[DIAG $attemptId] CLOCK_PROBE_METADATA_UNAVAILABLE attempt=$probeAttempts")
+                            } else {
+                                onStatus(
+                                    "[DIAG $attemptId] CLOCK_PROBE sequence=${probe.sequence} " +
+                                        "t1Ns=${probe.t1Ns} t2Ns=${probe.t2Ns} " +
+                                        "t3Ns=${probe.t3Ns} t4Ns=${probe.t4Ns} " +
+                                        "roundTripNs=${probe.roundTripNs} rawOffsetNs=${probe.rawOffsetNs}"
+                                )
+                            }
+                            onStatus(
+                                "[DIAG $attemptId] CLOCK_FIT offsetMs=${"%.6f".format(measurement.offsetNs / 1_000_000.0)} " +
+                                    "skewPpm=${measurement.receiverSkewPpm?.let { "%.3f".format(it) } ?: "unavailable"} " +
+                                    "rttMedianMs=${"%.4f".format(measurement.rttMedianMs)} " +
+                                    "residualRmsMs=${"%.6f".format(measurement.residualRmsMs)} " +
+                                    "samplesUsed=${measurement.samplesUsed} samplesSeen=${measurement.samplesSeen} " +
+                                    "selectedSpanMs=${measurement.selectedSampleSpanNs / 1_000_000L} " +
+                                    "stableStreak=${measurement.stableStreak} " +
+                                    "acquisitionStable=${measurement.acquisitionStable} " +
+                                    "selection=lowest-rtt-25pct windowMs=60000"
+                            )
                             if (probeAttempts <= PreviewConfig.JOIN_BURST_PROBES || probeAttempts % 10 == 0) {
                                 onStatus("[DIAG $attemptId] UDP_PROBE_OK attempt=$probeAttempts elapsedMs=${"%.2f".format(probeElapsedMs)} rttMedianMs=${"%.2f".format(measurement.rttMedianMs)} offsetMs=${"%.3f".format(measurement.offsetNs / 1_000_000.0)}")
                             }
