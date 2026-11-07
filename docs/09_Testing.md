@@ -16,11 +16,12 @@ The latest supplied v0.6.3-debug two-phone run is a **clock-acquisition / READY-
 - At 45 seconds, the Host closed the receiver because READY had not been reached. The Speaker then reported that the master closed its control/audio channels.
 - No READY, ANCHOR, playback-start or acoustic marker result was demonstrated.
 
-The earlier v0.6.3 telemetry also exposed a measurement gap: Host `t3` was captured before receiver matching and JNI response preparation, while Host timing records were emitted only every twentieth response. This does not prove those delays caused the residual, but it prevented per-probe correlation. The follow-up diagnostics branch records the Host and Speaker timings for every accepted exchange using the v1 UDP sequence number. That branch has not yet been built or physically tested; do not treat its proposed instrumentation as validated.
+The earlier v0.6.3 telemetry also exposed a measurement gap: Host `t3` was captured before receiver matching and JNI response preparation, while Host timing records were emitted only every twentieth response. This does not prove those delays caused the residual, but it prevented per-probe correlation. The follow-up diagnostics branch now records Host and Speaker timings for every accepted exchange using the v1 UDP sequence number. Its Android build, transport checks, signature verification and the M0 matrix passed CI in runs 42355711409, 42355711400 and 42355711433. Physical-device validation remains pending; do not treat the instrumentation as physically validated.
 
 The queue false-positive correction from PR #68 was present in this run and the observed queue counters support that the earlier teardown/overflow misclassification was not reproduced.
 
 **Verdict: FAIL — clock stability / READY.** This is not a synchronized-playback pass and does not establish the clock-noise root cause. See [the chronological device report](Test_Results.md).
+
 ## Historical physical test evidence — 6 November 2026
 
 The latest supplied three-phone LAN run is a **failure at the READY gate**, not a discovery or TCP-admission failure:
