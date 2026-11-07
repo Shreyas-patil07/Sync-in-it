@@ -861,3 +861,21 @@ Do not infer missing hardware/router metadata. Store raw recordings outside Git 
 - Added Sync In It-specific recommendations and a repeatable benchmark matrix, prioritizing per-probe clock observability, matched Host/Speaker evidence, READY/ANCHOR proof and acoustic measurement.
 - Linked the research index from the root README and current implementation status.
 - The integration is a concise public-surface summary of the supplied bundle. Proprietary internals remain unknown; marketing performance claims are not treated as measurements. No application code, thresholds, protocol or release assets changed.
+
+
+### 7 November 2026 — Final engineering upgrade brief consolidated into canonical docs
+
+**Type:** Documentation / planning / decision register  
+**Status:** Completed on documentation branch; engineering work remains pending  
+**Branch:** `docs/final-upgrade-brief-2026-11-07`  
+**Source:** Final Upgrade Brief and Implementation Plan (7 November 2026)
+
+**Summary:**
+- Added WP0–WP8 to the implementation plan: probe/fit evidence, Host-correlated logs, shared core readiness configuration, offline replay, controlled clock A/B, readiness criterion reconciliation, physical acoustic acceptance, earlier M3 manual trim, drift, late join/Host approval, source/codec evaluation and later security/platform work.
+- Expanded the testing strategy with a repeated, one-factor-at-a-time clock A/B matrix, required telemetry schema, hold-out prediction error and explicit threshold-integrity rules.
+- Added ADR-024 to track inconsistent clock-readiness definitions without changing the currently enforced Android <0.25 ms residual-RMS gate.
+- Updated current implementation status and reverse-engineering research index/recommendations to point to the canonical execution order.
+
+**Important distinction:** This is a documentation update only. No source code, runtime gate, simulator behavior, tests or physical measurements were changed. No milestone is marked complete. The latest physical evidence remains the 6 November Speaker-side run in which PCM ingress/pre-roll looked healthy but stable clock acquisition and READY/ANCHOR were not demonstrated; acoustic skew remains unmeasured.
+
+**Next engineering action:** Implement per-probe and fit-update capture plus matching Host diagnostics, then replay the same physical run through the shared C++ estimator/readiness gate. Do not change residual thresholds in that change.
