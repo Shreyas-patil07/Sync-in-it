@@ -31,6 +31,38 @@ The earlier pre-PR #55 run remains relevant historical evidence: its Host-side 5
 
 The published `v0.5.9-preview.1` APK is built from release commit `e6e89518d00d00b6aa911832b0740b497f43d6f1` with the persistent preview signing key. Android/JNI build and transport checks, APK signature verification, frontend build, the Python/C++ matrix and the release publisher all passed on the release commit. A post-PR #55 Speaker-side physical log is now recorded in [Test Results](Test_Results.md): it shows continuous PCM ingress in the captured interval but fails clock stability and does not demonstrate READY, ANCHOR or acoustic skew. CI and synthetic analyzer tests remain distinct from physical synchronization evidence.
 
+
+## Final upgrade direction — 7 November 2026
+
+The active work order is evidence tooling → controlled clock A/B → readiness criterion reconciliation → physical READY/ANCHOR and acoustic proof → manual offset/DAC snapshot → drift correction → group recovery/approval → source/codec expansion. See [Implementation Plan](07_Implementation.md) for work packages and [ADR-024](ADR/Architecture_Decisions.md#adr-024--clock-readiness-criterion-and-replay-parity) for the unresolved gate definition.
+
+**Do not change the current device readiness gate yet.** Keep the Android preview's <0.25 ms residual-RMS, ≥8 selected samples, ≥10 s span and three consecutive stable updates. The TRD's <1 ms baseline, Testing plan's <1 ms residual standard deviation and core's effectively unlimited default are inconsistent with that runtime gate. ADR-024 records the issue as open and requires replay/A-B evidence plus an explicit clock-error allocation from the T2 acoustic target before any threshold change.
+
+The first implementation deliverable is shared evidence: complete per-probe and fit-update logs, matching Host-side delivery/queue/slow-write diagnostics keyed by session ID, one shared core readiness configuration for JNI and desktop replay, and a replay fixture that reproduces the physical run. The next physical gate remains one Host + one Speaker through READY and common ANCHOR, followed by receiver-specific acoustic measurement at p95 ≤10 ms. Do not treat software readiness or successful transport as acoustic validation.
+
+Manual offset is an existing M3 item pulled earlier in sequence, not a new milestone. Keep it separate from network clock offset and DAC mapping, persist by endpoint + output route, and flag Bluetooth route changes. Defer Opus, provider/queue control, PWA receiver, calibration, security hardening and file-sync adoption until the timing path is measured; file-sync remains an M6 bandwidth experiment. Screen-off/endurance tests remain blocked until foreground-service and wake-lock lifecycle work exists.
+
+
+
+## Additional timing proposals under evaluation — 7 November 2026
+
+These are review proposals, not implemented behavior or accepted architecture decisions.
+
+### Output-frame-aligned start
+
+The current Speaker implementation still primes AudioTrack, waits for the ANCHOR-derived local target and calls AudioTrack.play(). Its DAC timestamp poller starts only after play(), so the current mapper is not available to schedule the first ANCHOR. ADR-025 tracks the candidate to start output during join, emit silence, acquire the frame/time mapping, and switch to the ANCHOR sample at the mapped output-frame boundary.
+
+The proposal must be tested against the current scheduled-start path on the same two Xiaomi phones. Compare tuned AudioTrack low-latency mode with Oboe/AAudio callback output. Oboe is Android's recommended low-latency route, but its timestamp is best-effort and this does not establish better timestamp accuracy. No backend or start-architecture change is approved yet. Downstream speaker/DSP/acoustic delay remains a measured quantity.
+
+### Clock estimator alternatives
+
+The current JNI path reselects the lowest-RTT 25% for each batch regression and resets the stable streak to zero on a failed update. ADR-026 records two replay-only candidates: strict-entry/wider-exit readiness hysteresis, and a continuous two-state offset/skew tracker with covariance and calibrated RTT-scaled measurement noise.
+
+Neither candidate has been evaluated on the physical probe log. RTT does not prove path symmetry, and the current wire protocol has no explicit READY-revocation message. Replay all variants against the same ordered log and check held-out prediction, time-to-ready, flap/false-ready behavior, asymmetry and covariance calibration before any implementation decision.
+
+**No runtime code or thresholds changed.** The Android preview's existing <0.25 ms residual-RMS gate, sample count/span and stable-streak requirements remain in force. Physical READY/ANCHOR and acoustic skew are still unvalidated.
+
+
 ## Implemented Android path
 
 ### Discovery and admission

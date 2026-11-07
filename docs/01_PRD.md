@@ -137,6 +137,13 @@ Timing, timeline and drift logic must remain platform-neutral. Platform-specific
 
 No cloud account or server is required. Core operation remains on the private LAN. Audio is not included in diagnostic exports by default.
 
+
+## 7.2 Product-level validation boundary — 7 November 2026
+
+The near-term product proof is not another feature layer: it is one Host and one Speaker reaching READY, receiving the same future ANCHOR, and producing a repeatable acoustic measurement. The next acceptance decision uses T2 (p95 absolute acoustic skew ≤10 ms) on a declared device mix and fixed measurement setup. The current post-PR #55 physical evidence does not yet satisfy this: the Speaker-side log shows PCM ingress/pre-roll but clock residual above the strict runtime gate, no demonstrated READY/ANCHOR and no acoustic result. See [Current Implementation Status](11_Current_Implementation_Status.md) and [Test Results](Test_Results.md).
+
+Manual per-Speaker offset is already a product requirement (FR-18) and remains an M3 capability; it may be scheduled earlier after the first acoustic start rather than treated as a new scope item. Calibration remains route-specific and distinct from network clock offset. Keep provider/queue coordination, PWA receiver, Opus and microphone calibration outside the critical path until the PCM timing path is physically validated.
+
 ## 8. Product acceptance criteria
 
 The product is not considered complete merely because several phones play audio. The following evidence is required:

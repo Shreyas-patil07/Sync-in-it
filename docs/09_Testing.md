@@ -190,7 +190,52 @@ Procedure:
 5. Repeat under idle and loaded Wi-Fi conditions.
 6. Compare offset estimates with the test's independent reference method where available.
 
-Provisional gate: offset estimator residual standard deviation below 1 ms under a stable, controlled setup. A pass does not prove acoustic synchronization.
+Historical provisional gate: offset-estimator residual standard deviation below 1 ms under a stable, controlled setup. This conflicts with the Android preview's enforced <0.25 ms residual-RMS gate and must be reconciled in ADR-024. Do not weaken or silently reinterpret the device gate. A clock pass does not prove acoustic synchronization.
+
+
+## 7.1 Clock-readiness diagnostic A/B matrix (7 November 2026)
+
+Run on the same two phones, one factor at a time, 60 seconds per run and three repeats. Keep placement, build and source constant.
+
+| Factor | Conditions |
+|---|---|
+| AP | Phone hotspot / dedicated router |
+| Power | Wi-Fi low-latency lock and CPU wake lock enabled / disabled |
+| Receive-thread capture | Default / raised priority; no logging or JNI between receive and timestamp |
+| Probe policy | Single / paired probes retaining lower RTT |
+| Sample selection | Lowest 25% / lowest 50% / all / robust weighting |
+| Regression | Free slope / clamped or smoothed slope / offset-only |
+
+For each run record RTT p50/p95/range and timeouts, residual RMS, sample count/span, offset standard error (state the independence assumption), slope range, hold-out prediction error and outlier share. Calculate hold-out error by fitting the first 70% of probes and predicting later low-RTT probe offsets.
+
+Decision rules: localized outliers → inspect capture and selection; uniform ~0.5 ms scatter with low hold-out error → propose, but do not adopt, an uncertainty-based gate through ADR-024; slope swings correlated with hold-out error → test slope constraints; router-only pass → label hotspot prototype-only.
+
+**Probe evidence schema:** attempt ID; t1, t2, t3, t4; RTT; raw offset; selected/rejected/expired flag and reason. Each fit update includes samples seen/used, sample span, slope, residual, predicted offset at t4 and stable streak. Correlate Host audio delivery, slow writes, queue depth/high-water/overflow and disconnects under the same session diagnostic ID.
+
+Replay must run the same C++ estimator and readiness gate as Android and compare against the Python reference. A captured physical run must replay to the on-device residual and streak within rounding. Verify cached PCM snapshot counters using a fresh native read.
+
+**Threshold integrity:** the current device gate (<0.25 ms residual RMS, minimum 8 samples, 10 s span, three consecutive stable updates) remains unchanged until an ADR-backed decision. The TRD's <1 ms baseline, Testing doc's <1 ms residual standard deviation, JNI <0.25 ms residual RMS, and effectively unlimited core default are inconsistent; resolve definitions and defaults before changing behavior. Do not mix threshold changes with a failing-test fix.
+
+
+
+## 7.2 Estimator replay comparisons — hysteresis and two-state tracker (ADR-026)
+
+Use the exact same time-ordered physical probe log for every variant. Keep the current lowest-RTT-25% batch regression as the control.
+
+| Variant | Change under test |
+|---|---|
+| Baseline | Current RTT sort, lowest 25% re-selection and batch regression |
+| Hysteresis | Strict entry gate, wider exit residual boundary and configurable exit dwell |
+| Two-state tracker | Continuous offset/skew state with covariance; RTT-scaled measurement noise |
+| Combined | Two-state tracker plus readiness hysteresis |
+
+For hysteresis, keep current entry requirements unchanged initially: at least 8 selected samples, at least 10 seconds of span, residual RMS <0.25 ms, and three consecutive qualifying updates. Sweep exit threshold and dwell in replay; do not select values from one physical failure. Invalid/stale samples, clock discontinuities and loss of timestamp basis must still invalidate readiness. The current protocol has no explicit READY-revocation message, so state whether the hysteresis is only a local acquisition latch or needs a Host-visible revoke/lease transition.
+
+For the two-state tracker, use four-timestamp offset as the measurement and propagate offset using elapsed time and estimated skew. Scale measurement noise by RTT only after calibrating the mapping and applying sensible floor/cap bounds. RTT is not a measure of directional symmetry: a low-RTT exchange can still have persistent forward/reverse delay bias. Include innovation/outlier checks and test asymmetric-delay scenarios.
+
+Replay chronologically. For every held-out low-RTT sample, calculate the prediction before assimilating that sample; do not leak later observations into earlier estimates. Report hold-out prediction error, offset prediction at ANCHOR, time-to-ready, stable-streak resets/flaps, false-ready and blocked transitions, skew stability and outlier rejection. Use simulator ground truth to check covariance coverage/calibration; a covariance value is not useful unless it is calibrated.
+
+Adopt neither candidate unless it improves future-offset prediction without increasing false-ready risk or hiding asymmetric-delay bias. Do not change runtime behavior or the <0.25 ms entry gate in this experiment.
 
 ## 8. Scheduled playback and acoustic measurement (M2–M3)
 
@@ -218,6 +263,37 @@ The sign convention is Speaker B minus Speaker A; positive means B arrived later
 Synthetic tests inject known ±5–8 ms offsets and validate the analyzer only. They are not phone measurements. A successful build, a stable clock residual or a READY event is not an acoustic-skew pass.
 
 **Long-test restriction:** the app currently has no foreground playback service or explicit wake-lock lifecycle. Keep the initial approximately two-minute run foregrounded and the screen awake. Do not run endurance, screen-off, background or train tests until the foreground service/wake-lock work is implemented and validated.
+
+
+## 8.2 Continuous output and AudioTrack-versus-Oboe experiment (M2/M3)
+
+Run on the same two Xiaomi phones with the same built-in speaker route, source, router, volume, geometry and test build. Record exact phone models, Android versions and selected audio APIs. Repeat each variant at least three times.
+
+| Variant | Output behavior |
+|---|---|
+| A — current baseline | Scheduled AudioTrack.play() from the ANCHOR-derived local time |
+| B — continuous AudioTrack | Start output during join, render silence, then switch to PCM at the mapped output-frame boundary; request PERFORMANCE_MODE_LOW_LATENCY |
+| C — continuous Oboe | Oboe/AAudio output callback, start during join, render silence, then switch to PCM at the mapped output-frame boundary; request LowLatency and Exclusive where supported, and record actual granted modes |
+
+For each variant capture:
+- Actual output API/backend (including Oboe's selected AAudio or fallback path), sample rate, channel format, frames per burst and buffer size.
+- Timestamp availability during warm-up and steady state; frame position/time pairs; timebase; mapper residual, sample span, rejected points and held-out frame-time prediction error.
+- Reported output latency, AudioTrack underrun count or Oboe XRun count, callback duration/jitter and late callbacks.
+- Time the output stream became active, ANCHOR receipt, target output-frame index, first PCM frame submitted, first corresponding frame reported presented, and marker-detected acoustic arrival.
+- Mean, p95 and maximum acoustic skew across the two devices, plus dropouts/underruns and any discontinuities at the silence-to-PCM transition.
+
+For the continuous variants, the output stream and timestamp acquisition must be active before ANCHOR. Verify that silence has not already been committed beyond the target frame; an output queue that has passed the target cannot be retroactively replaced with audio. Record and validate the relationship between the renderer/write frame counter and the timestamp framePosition; do not assume they share an origin or represent the same point in the output pipeline. Confirm the renderer maps each output frame to the shared timeline and changes source exactly at the ANCHOR sample boundary. The first output frame must be predicted from the DAC mapping and Host/local clock mapping, not from a timed writer-thread wake-up.
+
+Android documents that AudioTrack timestamps may be unavailable during warm-up or after route changes and that the returned frame may already be presented or committed; application-level mapping is needed for higher-resolution frame/time scheduling. Oboe also exposes a best-effort estimate of when a frame entered or left the audio pipeline and cannot account for delay unknown to the implementation. Android recommends Oboe for lowest latency, and recommends PERFORMANCE_MODE_LOW_LATENCY when AudioTrack is used for latency-sensitive output; neither statement proves timestamp superiority on these Xiaomi devices.
+
+References:
+- [Android AudioTrack.getTimestamp API](https://developer.android.com/reference/android/media/AudioTrack#getTimestamp(android.media.AudioTimestamp))
+- [Android audio latency guidance](https://source.android.com/docs/core/audio/latency/app)
+- [Oboe AudioStream.getTimestamp API](https://google.github.io/oboe/classoboe_1_1_audio_stream.html)
+
+The primary result is target-output-frame-to-acoustic-arrival error and p95 acoustic skew, not only the delay from calling play(). Continuous output can remove the scheduled play() invocation from the media-start event; it does not by itself remove downstream DSP, speaker or acoustic-path delay. Keep route-specific calibration available until measurements show it is unnecessary.
+
+**Decision gate:** compare timestamp mapping quality and physical acoustic skew on both phones. Require p95 acoustic skew ≤10 ms (T2) with no new underrun/XRun or transition artifact before promoting the continuous path. Do not assume Oboe is better because it is the recommended low-latency API.
 
 ## 9. Drift and endurance tests (M4)
 
