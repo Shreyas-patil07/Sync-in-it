@@ -210,7 +210,9 @@ For each run record RTT p50/p95/range and timeouts, residual RMS, sample count/s
 
 Decision rules: localized outliers → inspect capture and selection; uniform ~0.5 ms scatter with low hold-out error → propose, but do not adopt, an uncertainty-based gate through ADR-024; slope swings correlated with hold-out error → test slope constraints; router-only pass → label hotspot prototype-only.
 
-**Probe evidence schema:** attempt ID; t1, t2, t3, t4; RTT; raw offset; selected/rejected/expired flag and reason. Each fit update includes samples seen/used, sample span, slope, residual, predicted offset at t4 and stable streak. Correlate Host audio delivery, slow writes, queue depth/high-water/overflow and disconnects under the same session diagnostic ID.
+**Probe evidence schema:** attempt ID and probe sequence; exact receiver/master timestamps `t1`, `t2`, `t3`, `t4`; corrected RTT; raw four-timestamp offset; accepted/rejected/timeout/malformed event; and the reason where the native correlator exposes one. The Android diagnostic branch now emits `CLOCK_PROBE` for every accepted exchange and `CLOCK_FIT` for every successful fit update. `CLOCK_FIT` records samples seen/used, selected span, skew, residual RMS, fitted offset, stable streak and the active `lowest-rtt-25pct` / 60-second policy. Reconstruct selected membership offline from the raw accepted probes and this policy; the client does not yet export a per-fit selection bitmap or native rejection enum.
+
+Correlate Host audio delivery, slow writes, queue depth/high-water/overflow and disconnects under the same session diagnostic ID. Those matching Host diagnostics and the replay fixture remain outstanding.
 
 Replay must run the same C++ estimator and readiness gate as Android and compare against the Python reference. A captured physical run must replay to the on-device residual and streak within rounding. Verify cached PCM snapshot counters using a fresh native read.
 
