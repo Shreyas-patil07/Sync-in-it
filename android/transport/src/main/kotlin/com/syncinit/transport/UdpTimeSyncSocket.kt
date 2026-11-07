@@ -25,7 +25,7 @@ object UdpTimeSyncPacketMetadata {
         require(packet[0] == 'S'.code.toByte() && packet[1] == 'T'.code.toByte()) {
             "invalid time-sync packet magic"
         }
-        require(packet[2].toInt() and 0xff == 1) { "unsupported time-sync packet version" }
+        require((packet[2].toInt() and 0xff) == 1) { "unsupported time-sync packet version" }
         return (packet[10].toLong() and 0xffL) or
             ((packet[11].toLong() and 0xffL) shl 8) or
             ((packet[12].toLong() and 0xffL) shl 16) or
