@@ -77,6 +77,12 @@ class NativeTimeSyncClient private constructor(private var handle: Long) : AutoC
     }
 
     @Synchronized
+    fun lastResponseStatus(): String {
+        checkOpen()
+        return NativeCore.nativeLastTimeSyncResponseStatus(handle) ?: "STATUS_UNAVAILABLE"
+    }
+
+    @Synchronized
     override fun close() {
         val current = handle
         if (current != 0L) {

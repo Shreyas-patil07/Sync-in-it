@@ -70,6 +70,7 @@ object NativeCore {
         t4Ns: Long
     ): DoubleArray?
     external fun nativeLastTimeSyncExchange(handle: Long): LongArray?
+    external fun nativeLastTimeSyncResponseStatus(handle: Long): String?
     external fun nativeCloseTimeSyncClient(handle: Long)
 
     external fun nativeCreateSession(

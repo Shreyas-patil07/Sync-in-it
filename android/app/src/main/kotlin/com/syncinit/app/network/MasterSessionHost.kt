@@ -295,20 +295,30 @@ class MasterSessionHost(context: Context, private val onStatus: (String) -> Unit
         private val audioFramesWritten = AtomicLong(0L)
         private val audioQueueHighWater = AtomicInteger(0)
         private val lastSlowAudioWriteDiagnosticAtNs = AtomicLong(0L)
+        private val lastAudioWriteCompletedAtNs = AtomicLong(0L)
+        private val lastAudioWriteDurationNs = AtomicLong(0L)
+        private val admittedAtNs = System.nanoTime()
         val udpPeer = AtomicReference<InetSocketAddress?>(null)
+        val isClosed: Boolean get() = peerClosed.get()
         private var audioWriter: Thread? = null
 
         fun startAudioWriter() {
             check(audioWriter == null) { "receiver audio writer has already started" }
             val writer = Thread({
+                val writerStartedAtNs = System.nanoTime()
                 try {
                     while (!peerClosed.get() && !closed.get()) {
                         val frame = audioQueue.poll(500, TimeUnit.MILLISECONDS) ?: continue
                         val writeStartedAtNs = System.nanoTime()
+                        var writeSucceeded = false
                         try {
                             audio.writeEncodedFrame(frame)
+                            writeSucceeded = true
                         } finally {
-                            val writeDurationNs = System.nanoTime() - writeStartedAtNs
+                            val writeCompletedAtNs = System.nanoTime()
+                            val writeDurationNs = writeCompletedAtNs - writeStartedAtNs
+                            lastAudioWriteDurationNs.set(writeDurationNs)
+                            if (writeSucceeded) lastAudioWriteCompletedAtNs.set(writeCompletedAtNs)
                             if (writeDurationNs >= 20_000_000L) {
                                 val nowNs = System.nanoTime()
                                 val previousReportNs = lastSlowAudioWriteDiagnosticAtNs.get()
@@ -338,8 +348,28 @@ class MasterSessionHost(context: Context, private val onStatus: (String) -> Unit
                     if (!peerClosed.get() && !closed.get()) Thread.currentThread().interrupt()
                 } catch (error: Exception) {
                     if (!peerClosed.get() && !closed.get()) {
-                        onStatus("DIAG HOST_AUDIO_WRITER_FAILED receiverId=$receiverId ${NetworkDiagnostics.exceptionDetails(error)}")
-                        removeReceiver(this, "audio channel failed: ${error.message ?: error.javaClass.simpleName}")
+                        val nowNs = System.nanoTime()
+                        val lastWriteAtNs = lastAudioWriteCompletedAtNs.get()
+                        val sinceLastWriteMs = if (lastWriteAtNs == 0L) {
+                            "never"
+                        } else {
+                            "%.1f".format((nowNs - lastWriteAtNs) / 1_000_000.0)
+                        }
+                        onStatus(
+                            "DIAG HOST_AUDIO_WRITER_FAILED receiverId=$receiverId " +
+                                "uptimeMs=${(nowNs - writerStartedAtNs) / 1_000_000L} " +
+                                "sinceLastWriteMs=$sinceLastWriteMs " +
+                                "lastWriteDurationMs=${"%.2f".format(lastAudioWriteDurationNs.get() / 1_000_000.0)} " +
+                                "queued=${audioFramesQueued.get()} written=${audioFramesWritten.get()} " +
+                                "queueDepth=${audioQueue.size} queueHighWater=${audioQueueHighWater.get()} " +
+                                "local=${audio.localEndpoint} remote=${audio.remoteEndpoint} " +
+                                NetworkDiagnostics.exceptionDetails(error)
+                        )
+                        removeReceiver(
+                            this,
+                            "audio channel failed: ${error.message ?: error.javaClass.simpleName}",
+                            trigger = "audio-writer"
+                        )
                     }
                 }
             }, "syncinit-audio-writer-$receiverId").apply { isDaemon = true }
@@ -355,8 +385,18 @@ class MasterSessionHost(context: Context, private val onStatus: (String) -> Unit
             return true
         }
 
-        override fun close() {
+        fun close(trigger: String, reason: String) {
             if (!peerClosed.compareAndSet(false, true)) return
+            val nowNs = System.nanoTime()
+            onStatus(
+                "DIAG HOST_RECEIVER_CLOSE receiverId=$receiverId trigger=$trigger reason=$reason " +
+                    "uptimeMs=${(nowNs - admittedAtNs) / 1_000_000L} " +
+                    "queued=${audioFramesQueued.get()} written=${audioFramesWritten.get()} " +
+                    "queueDepth=${audioQueue.size} queueHighWater=${audioQueueHighWater.get()} " +
+                    "lastWriteDurationMs=${"%.2f".format(lastAudioWriteDurationNs.get() / 1_000_000.0)} " +
+                    "controlLocal=${control.localEndpoint} controlRemote=${control.remoteEndpoint} " +
+                    "audioLocal=${audio.localEndpoint} audioRemote=${audio.remoteEndpoint}"
+            )
             audioQueue.clear()
             audioWriter?.interrupt()
             audioWriter = null
@@ -364,6 +404,8 @@ class MasterSessionHost(context: Context, private val onStatus: (String) -> Unit
             closeQuietly(control)
             closeQuietly(session)
         }
+
+        override fun close() = close("host-shutdown", "host service shutdown")
     }
 
     private fun startControlReader(peer: HostReceiverPeer) {
@@ -377,7 +419,15 @@ class MasterSessionHost(context: Context, private val onStatus: (String) -> Unit
         var reason = "control channel closed"
         try {
             while (!closed.get()) {
-                val frame = peer.control.readFrame() ?: break
+                val frame = peer.control.readFrame()
+                if (frame == null) {
+                    reason = "control channel reached EOF"
+                    onStatus(
+                        "DIAG HOST_CONTROL_READER_EOF receiverId=${peer.receiverId} " +
+                            "local=${peer.control.localEndpoint} remote=${peer.control.remoteEndpoint}"
+                    )
+                    break
+                }
                 when (frame.messageType) {
                     0x04 -> {
                         check(frame.flags == 0) { "READY frame flags must be zero" }
@@ -405,13 +455,28 @@ class MasterSessionHost(context: Context, private val onStatus: (String) -> Unit
                 }
             }
         } catch (error: Exception) {
-            if (!closed.get()) reason = "control channel failed: ${error.message ?: error.javaClass.simpleName}"
+            if (!closed.get()) {
+                reason = "control channel failed: ${error.message ?: error.javaClass.simpleName}"
+                onStatus(
+                    "DIAG HOST_CONTROL_READER_FAILED receiverId=${peer.receiverId} " +
+                        "local=${peer.control.localEndpoint} remote=${peer.control.remoteEndpoint} " +
+                        NetworkDiagnostics.exceptionDetails(error)
+                )
+            }
         } finally {
-            removeReceiver(peer, reason)
+            onStatus(
+                "DIAG HOST_CONTROL_READER_EXIT receiverId=${peer.receiverId} reason=$reason " +
+                    "peerClosed=${peer.isClosed}"
+            )
+            removeReceiver(peer, reason, trigger = "control-reader")
         }
     }
 
-    private fun removeReceiver(peer: HostReceiverPeer, reason: String) {
+    private fun removeReceiver(
+        peer: HostReceiverPeer,
+        reason: String,
+        trigger: String = "unspecified"
+    ) {
         val removed = synchronized(groupStartLock) {
             if (!receivers.remove(peer.receiverId, peer)) {
                 false
@@ -422,8 +487,14 @@ class MasterSessionHost(context: Context, private val onStatus: (String) -> Unit
                 true
             }
         }
-        if (!removed) return
-        peer.close()
+        if (!removed) {
+            onStatus(
+                "DIAG HOST_RECEIVER_REMOVE_SKIPPED receiverId=${peer.receiverId} " +
+                    "trigger=$trigger reason=already_removed"
+            )
+            return
+        }
+        peer.close(trigger, reason)
         if (!closed.get()) {
             onStatus("Speaker disconnected · receiverId=${peer.receiverId} · $reason · ${receivers.size}/${PreviewConfig.MAX_SPEAKERS} connected.")
         }
@@ -472,7 +543,7 @@ class MasterSessionHost(context: Context, private val onStatus: (String) -> Unit
                             "excludingReceivers=${notReady.joinToString(",") { it.receiverId.toString() }}"
                     )
                     notReady.forEach { peer ->
-                        removeReceiver(peer, "did not reach READY before the group startup deadline")
+                        removeReceiver(peer, "did not reach READY before the group startup deadline", trigger = "readiness-timeout")
                     }
                 }
                 if (receivers.isNotEmpty()) tryScheduleGroupStart()
@@ -554,7 +625,7 @@ class MasterSessionHost(context: Context, private val onStatus: (String) -> Unit
                 if (result == ReceiverSessionResult.Accepted) {
                     armed += peer
                 } else {
-                    removeReceiver(peer, "could not arm coordinated playback: $result")
+                    removeReceiver(peer, "could not arm coordinated playback: $result", trigger = "group-arm")
                 }
             }
             if (armed.isEmpty()) return
@@ -572,7 +643,7 @@ class MasterSessionHost(context: Context, private val onStatus: (String) -> Unit
                 if (result == ReceiverSessionResult.Accepted) {
                     started += peer
                 } else {
-                    removeReceiver(peer, "could not accept coordinated start ANCHOR: $result")
+                    removeReceiver(peer, "could not accept coordinated start ANCHOR: $result", trigger = "group-anchor-state")
                 }
             }
             if (started.isEmpty()) return
@@ -584,7 +655,8 @@ class MasterSessionHost(context: Context, private val onStatus: (String) -> Unit
                 } catch (error: Exception) {
                     removeReceiver(
                         peer,
-                        "could not deliver group-start ANCHOR: ${error.message ?: error.javaClass.simpleName}"
+                        "could not deliver group-start ANCHOR: ${error.message ?: error.javaClass.simpleName}",
+                        trigger = "group-anchor-write"
                     )
                 }
             }
@@ -642,7 +714,7 @@ class MasterSessionHost(context: Context, private val onStatus: (String) -> Unit
                     peers.forEach { peer ->
                         if (!peer.offerAudio(encoded)) {
                             onStatus("DIAG HOST_AUDIO_QUEUE_OVERFLOW receiverId=${peer.receiverId} limitChunks=${PreviewConfig.AUDIO_QUEUE_CHUNKS} limitMs=${PreviewConfig.AUDIO_QUEUE_CHUNKS * PreviewConfig.CHUNK_PERIOD_NS / 1_000_000L}")
-                            removeReceiver(peer, "audio send queue exceeded ${PreviewConfig.AUDIO_QUEUE_CHUNKS * PreviewConfig.CHUNK_PERIOD_NS / 1_000_000L} ms of backlog")
+                            removeReceiver(peer, "audio send queue exceeded ${PreviewConfig.AUDIO_QUEUE_CHUNKS * PreviewConfig.CHUNK_PERIOD_NS / 1_000_000L} ms of backlog", trigger = "audio-queue-overflow")
                         }
                     }
 
@@ -790,7 +862,7 @@ class MasterSessionHost(context: Context, private val onStatus: (String) -> Unit
     private fun closeResources() {
         val activePeers = receivers.values.toList()
         receivers.clear()
-        activePeers.forEach { it.close() }
+        activePeers.forEach { it.close("host-shutdown", "host service closed") }
 
         audioSenderThread?.interrupt()
         audioSenderThread = null

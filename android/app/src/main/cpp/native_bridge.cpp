@@ -66,7 +66,23 @@ struct NativeTimeSyncClient {
     syit::TimeSyncExchange last_exchange{};
     bool has_last_exchange{false};
     std::size_t stable_streak{0U};
+    std::string last_response_status{"NOT_EVALUATED"};
 };
+
+const char* time_sync_response_status_name(syit::TimeSyncResponseStatus status) noexcept {
+    switch (status) {
+        case syit::TimeSyncResponseStatus::Accepted: return "ACCEPTED";
+        case syit::TimeSyncResponseStatus::WrongPacketType: return "WRONG_PACKET_TYPE";
+        case syit::TimeSyncResponseStatus::UnsupportedVersion: return "UNSUPPORTED_VERSION";
+        case syit::TimeSyncResponseStatus::WrongSession: return "WRONG_SESSION";
+        case syit::TimeSyncResponseStatus::WrongReceiver: return "WRONG_RECEIVER";
+        case syit::TimeSyncResponseStatus::UnknownSequence: return "UNKNOWN_SEQUENCE";
+        case syit::TimeSyncResponseStatus::TimestampMismatch: return "TIMESTAMP_MISMATCH";
+        case syit::TimeSyncResponseStatus::InvalidTimestamps: return "INVALID_TIMESTAMPS";
+        case syit::TimeSyncResponseStatus::NegativeRoundTrip: return "NEGATIVE_ROUND_TRIP";
+    }
+    return "UNKNOWN_STATUS";
+}
 
 std::mutex g_registry_mutex;
 std::unordered_map<jlong, std::shared_ptr<NativeSession>> g_sessions;
@@ -589,17 +605,20 @@ Java_com_syncinit_app_core_NativeCore_nativeAcceptTimeSyncResponse(
     auto native_client = find_clock_client(handle);
     if (!native_client) return nullptr;
     std::vector<std::uint8_t> bytes;
-    if (!copy_binary_array(env, packet_array, bytes, syit::kTimeSyncPacketSize)) return nullptr;
+    if (!copy_binary_array(env, packet_array, bytes, syit::kTimeSyncPacketSize)) {
+        std::lock_guard<std::mutex> lock(native_client->mutex);
+        native_client->last_response_status = "MALFORMED_PACKET";
+        return nullptr;
+    }
 
     try {
         const auto response = syit::decode_time_sync_packet(bytes);
         std::lock_guard<std::mutex> lock(native_client->mutex);
         syit::TimeSyncExchange exchange;
-        if (native_client->client.accept_response(
-                response, static_cast<syit::Nanoseconds>(t4_ns), exchange) !=
-            syit::TimeSyncResponseStatus::Accepted) {
-            return nullptr;
-        }
+        const auto response_status = native_client->client.accept_response(
+            response, static_cast<syit::Nanoseconds>(t4_ns), exchange);
+        native_client->last_response_status = time_sync_response_status_name(response_status);
+        if (response_status != syit::TimeSyncResponseStatus::Accepted) return nullptr;
 
         native_client->last_exchange = exchange;
         native_client->has_last_exchange = true;
@@ -641,8 +660,19 @@ Java_com_syncinit_app_core_NativeCore_nativeAcceptTimeSyncResponse(
             static_cast<jdouble>(native_client->stable_streak)
         }});
     } catch (const std::exception&) {
+        std::lock_guard<std::mutex> lock(native_client->mutex);
+        native_client->last_response_status = "NATIVE_PROCESSING_ERROR";
         return nullptr;
     }
+}
+
+extern "C" JNIEXPORT jstring JNICALL
+Java_com_syncinit_app_core_NativeCore_nativeLastTimeSyncResponseStatus(
+    JNIEnv* env, jobject, jlong handle) {
+    auto native_client = find_clock_client(handle);
+    if (!native_client) return nullptr;
+    std::lock_guard<std::mutex> lock(native_client->mutex);
+    return env->NewStringUTF(native_client->last_response_status.c_str());
 }
 
 extern "C" JNIEXPORT jlongArray JNICALL

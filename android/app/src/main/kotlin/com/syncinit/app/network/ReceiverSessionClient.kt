@@ -286,9 +286,15 @@ class ReceiverSessionClient(
                         measurement = nativeClock.acceptResponse(received.bytes, received.receivedAtNs)
                         if (measurement == null) {
                             invalidResponseCount += 1
+                            val rejectionStatus = nativeClock.lastResponseStatus()
                             nativeClock.expireRequestsBefore(System.nanoTime() + 1L)
-                            onStatus("[DIAG $attemptId] UDP_RESPONSE_REJECTED attempt=$probeAttempts elapsedMs=${"%.2f".format(probeElapsedMs)} invalidCount=$invalidResponseCount source=${udp.remoteAddress}:${udp.remotePort}")
-                            onStatus("Ignoring an invalid or uncorrelated UDP time-sync response.")
+                            onStatus(
+                                "[DIAG $attemptId] UDP_RESPONSE_REJECTED attempt=$probeAttempts " +
+                                    "elapsedMs=${"%.2f".format(probeElapsedMs)} invalidCount=$invalidResponseCount " +
+                                    "reason=$rejectionStatus responseBytes=${received.bytes.size} " +
+                                    "source=${udp.remoteAddress}:${udp.remotePort}"
+                            )
+                            onStatus("Ignoring UDP time-sync response · $rejectionStatus.")
                         } else {
                             consecutiveUnreachable = 0
                             lastMeasurement = measurement
