@@ -1,9 +1,9 @@
 # Current Implementation Status — Sync In It
 
 **Status date:** 8 November 2026  
-**Main baseline:** PR #76 merged at `163faad3bde01b75d1e38d8b4b793d413393fdef`  
-**Release packaging commit:** `8e16eea24afaf0e671105b854df3b2d4fa735f3e`  
-**Latest published Android preview:** [`v0.6.8`](https://github.com/Shreyas-patil07/Sync-in-it/releases/tag/v0.6.8) — engineering prerelease  
+**Main baseline:** PR #78 merged at `79c50372a22a1378d265a2a4f9308a477863540c`  
+**Release packaging commit:** `79c50372a22a1378d265a2a4f9308a477863540c`  
+**Latest published Android preview:** [`v0.6.9`](https://github.com/Shreyas-patil07/Sync-in-it/releases/tag/v0.6.9) — engineering prerelease  
 **Audience:** contributors, testers and anyone assessing what is implemented versus what is still a design target.
 
 This file is the source of truth for present-tense implementation claims. Product targets, architecture proposals and future behavior in the other design documents remain useful, but they must not be read as evidence that those features are already implemented or validated.
@@ -12,7 +12,7 @@ This file is the source of truth for present-tense implementation claims. Produc
 
 Sync In It has progressed beyond the original discovery/clock-acquisition shell. The Android main branch contains local Host discovery, multi-Speaker TCP admission, UDP clock synchronization, local-file decoding, consented Android app-playback capture, sample-indexed PCM16 fan-out, bounded receiver/capture buffering, group readiness, a shared future playback ANCHOR, Android AudioTrack rendering and DAC output-timestamp diagnostics. System capture uses a MediaProjection foreground service and respects source-app capture policies. PR #55's PCM snapshot caching and ingress/slow-write diagnostics remain in place.
 
-**The end-to-end multi-phone playback path remains physically unvalidated.** The post-PR #55 Speaker-side test on 6 November showed materially better receive-path evidence: ingress was generally close to the 50 frames/sec producer cadence, the contiguous buffer grew to approximately 19.94 seconds, and no missing frames were reported in the supplied interval. However, clock residual RMS stayed around 0.412–0.557 ms, above the unchanged strict 0.25 ms threshold. The stability streak remained zero, READY was not demonstrated, and no ANCHOR or acoustic synchronization result was supplied. The matching Host log was not provided, so Host writer/queue health in this run is unknown. PR #76 has since merged local-file and system-audio capture code into main, but that merge and successful CI do not demonstrate physical capture, READY/ANCHOR or audible synchronization.
+**The end-to-end multi-phone playback path remains physically unvalidated.** The post-PR #55 Speaker-side test on 6 November showed materially better receive-path evidence: ingress was generally close to the 50 frames/sec producer cadence, the contiguous buffer grew to approximately 19.94 seconds, and no missing frames were reported in the supplied interval. However, clock residual RMS stayed around 0.412–0.557 ms, above the unchanged strict 0.25 ms threshold. The stability streak remained zero, READY was not demonstrated, and no ANCHOR or acoustic synchronization result was supplied. The matching Host log was not provided, so Host writer/queue health in this run is unknown. PR #76 added local-file and system-audio capture. PR #78 then added Host source-switch safeguards and aggregate capture-level diagnostics. Neither merge nor successful CI demonstrates physical capture, READY/ANCHOR or audible synchronization.
 
 The earlier pre-PR #55 run remains relevant historical evidence: its Host-side 500 ms queue overflowed after the Speaker failed to reach READY. PR #55 added 250 ms cached PCM snapshots and Speaker ingress/Host slow-write diagnostics. The post-fix Speaker log suggests PCM receive continuity improved in that capture, but it does not prove the Host writer is healthy or establish the root cause of clock residual noise. The current focus is **clock-measurement diagnosis with per-probe evidence, matching Host/Speaker log correlation, then successful READY/ANCHOR and acoustic measurement**. The 0.25 ms threshold, three-update stability gate and queue bound remain unchanged. See [Test Results](Test_Results.md) for the dated record and future-run template.
 
@@ -20,16 +20,16 @@ The earlier pre-PR #55 run remains relevant historical evidence: its Host-side 5
 
 | Item | Current state | Evidence / interpretation |
 |---|---|---|
-| Published preview | `v0.6.8` | Public GitHub engineering prerelease with updateable signed APK and SHA-256 checksum |
-| APK asset | `SyncInIt-Android-preview-v0.6.8.apk` | 6,021,838 bytes; persistent preview signing key used; SHA-256 `99fdff4dd9d2ba47514bbcbffd85f40c02fb8bed3f68a99d5be114ef1ee5ce43` |
-| Release scope | Local-file sharing, consented Android app-playback capture, 20-second rolling capture buffer, common PCM/TCP/ANCHOR path, UDP recvmsg sender-address fix | See the [v0.6.8 release notes](../RELEASE_NOTES_v0.6.8.md) |
-| Current main | PR #76 merged at `163faad3bde0` | Adds local-file and user-consented Android system-playback sources, plus the UDP recvmsg sender-address fix; estimator thresholds, readiness gate and Speaker transport unchanged |
-| M0 simulator/native CI on merged source | Passed | [Workflow run 42487998642](https://github.com/Shreyas-patil07/Sync-in-it/actions/runs/42487998642) passed Python 3.11/3.12/3.13 + C++17 tests |
-| Android/JNI CI on merged source | Passed | [Workflow run 42487998775](https://github.com/Shreyas-patil07/Sync-in-it/actions/runs/42487998775) passed Android build, transport checks, signature verification and artifact upload |
-| Release publisher | Passed | [Workflow run 42488294615](https://github.com/Shreyas-patil07/Sync-in-it/actions/runs/42488294615) built the updateable APK, passed transport checks, verified its signature and published the GitHub prerelease |
-| Physical validation | Not yet validated end-to-end | No Android 12/14 run has yet demonstrated app-playback capture, READY, ANCHOR and acoustic skew. Historical 6 Nov residual RMS of 0.412–0.557 ms remained above the strict 0.25 ms gate |
+| Published preview | `v0.6.9` | Public GitHub engineering prerelease with updateable signed APK and SHA-256 checksum |
+| APK asset | `SyncInIt-Android-preview-v0.6.9.apk` | 6,038,222 bytes; persistent preview signing key used; SHA-256 `349a6503b47f40b460f3b86f88ccd6535bbab9151854bed52b359478a71df5da` |
+| Release scope | v0.6.8 media sources plus v0.6.9 safe source switching, one-second PCM signal metrics, and offline application/kernel timestamp comparison; production estimator unchanged | See the [v0.6.9 release notes](../RELEASE_NOTES_v0.6.9.md) |
+| Current main | PR #78 merged at `79c50372a22a` | Adds safe Host source changes and aggregate system-capture signal diagnostics; no live clock-estimator or readiness-threshold change |
+| M0 simulator/native CI on release source | Passed | [Workflow run 42493479638](https://github.com/Shreyas-patil07/Sync-in-it/actions/runs/42493479638) passed Python 3.11/3.12/3.13 + C++17 tests |
+| Android/JNI CI on PR #78 source | Passed | [Workflow run 42493479658](https://github.com/Shreyas-patil07/Sync-in-it/actions/runs/42493479658) passed Android build, transport checks, signature verification and artifact upload |
+| Release publisher | Passed | [Workflow run 42499713865](https://github.com/Shreyas-patil07/Sync-in-it/actions/runs/42499713865) built the updateable APK, passed transport checks, verified its signature and published the v0.6.9 GitHub prerelease |
+| Physical validation | Not yet validated end-to-end | No post-v0.6.9 Android 12/14 run has demonstrated non-silent capture, READY, ANCHOR and acoustic skew. Latest paired replay had app-timestamp residuals of 0.354 ms and 0.298 ms, both above the strict 0.25 ms gate |
 
-The published `v0.6.8` APK is built from release commit `8e16eea24afaf0e671105b854df3b2d4fa735f3e` with the persistent preview signing key. [Release workflow run 42488294615](https://github.com/Shreyas-patil07/Sync-in-it/actions/runs/42488294615) passed the Android build, transport checks, APK signature verification and GitHub prerelease publication. Asset SHA-256: `99fdff4dd9d2ba47514bbcbffd85f40c02fb8bed3f68a99d5be114ef1ee5ce43`. The release includes local-file and user-consented system-audio sources. No successful physical READY/ANCHOR or acoustic-skew validation has been supplied; CI remains distinct from physical synchronization evidence.
+The published `v0.6.9` APK is built from release commit `79c50372a22a1378d265a2a4f9308a477863540c` with the persistent preview signing key. [Release workflow run 42499713865](https://github.com/Shreyas-patil07/Sync-in-it/actions/runs/42499713865) passed the Android build, transport checks, APK signature verification and GitHub prerelease publication. Asset SHA-256: `349a6503b47f40b460f3b86f88ccd6535bbab9151854bed52b359478a71df5da`. v0.6.9 adds safe source switching, aggregate capture-level diagnostics and offline clock-probe comparison. The production estimator remains unchanged. No successful physical non-silent capture, READY/ANCHOR or acoustic-skew validation has been supplied; CI remains distinct from physical synchronization evidence.
 
 
 ## Media sources — local files and Android system playback capture

@@ -6,12 +6,12 @@ const REPO = 'https://github.com/Shreyas-patil07/Sync-in-it';
 const DOCS = REPO + '/tree/main/docs';
 const STATUS_DOC = REPO + '/blob/main/docs/11_Current_Implementation_Status.md';
 const RELEASES = REPO + '/releases';
-const VERSION = 'v0.6.1';
-const LATEST_RELEASE = REPO + '/releases/tag/v0.6.1';
-const ANDROID_APK = REPO + '/releases/download/v0.6.1/SyncInIt-Android-preview-v0.6.1.apk';
-const ANDROID_CHECKSUMS = REPO + '/releases/download/v0.6.1/SHA256SUMS.txt';
+const VERSION = 'v0.6.9';
+const LATEST_RELEASE = REPO + '/releases/tag/v0.6.9';
+const ANDROID_APK = REPO + '/releases/download/v0.6.9/SyncInIt-Android-preview-v0.6.9.apk';
+const ANDROID_CHECKSUMS = REPO + '/releases/download/v0.6.9/SHA256SUMS.txt';
 const ANDROID_CI = REPO + '/actions/workflows/publish-android-release.yml';
-const DIAGNOSTICS_PR = REPO + '/pull/63';
+const DIAGNOSTICS_PR = REPO + '/pull/78';
 const MEASUREMENT_DOC = REPO + '/blob/main/tools/README.md';
 
 type Page = 'home' | 'downloads' | 'not-found';
