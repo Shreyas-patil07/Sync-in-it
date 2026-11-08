@@ -152,8 +152,8 @@ std::vector<Probe> read_probes(
             continue;
         }
 
-        // Historical logs put application T2/T4 on the wire. The live kernel path
-        // puts kernel T2/T4 on the estimator path while retaining app T2/T4 diagnostics.
+        // Live and historical logs use application T2/T4 for the production estimator.
+        // Kernel T2/T4 are retained as side-channel measurements for offline comparison.
         const auto application_t4 = app_t4.value_or(*t4);
         Probe probe;
         probe.sequence = static_cast<std::uint64_t>(*sequence);
