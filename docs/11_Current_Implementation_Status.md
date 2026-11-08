@@ -1,18 +1,18 @@
 # Current Implementation Status — Sync In It
 
-**Status date:** 7 November 2026  
-**Main baseline:** PR #55 merged at `6b87eadd018e4d73c4f2d1b40aa6c9692f5d11c0`  
+**Status date:** 8 November 2026  
+**Main baseline:** PR #76 merged at `163faad3bde01b75d1e38d8b4b793d413393fdef`  
 **Release packaging commit:** `886bb9bcd894211f073d09ae0c571258e149ec1b`  
-**Latest published Android preview:** [`v0.6.1`](https://github.com/Shreyas-patil07/Sync-in-it/releases/tag/v0.6.1)  
+**Latest published Android preview:** [`v0.6.7`](https://github.com/Shreyas-patil07/Sync-in-it/releases/tag/v0.6.7) — v0.6.8 release packaging in progress  
 **Audience:** contributors, testers and anyone assessing what is implemented versus what is still a design target.
 
 This file is the source of truth for present-tense implementation claims. Product targets, architecture proposals and future behavior in the other design documents remain useful, but they must not be read as evidence that those features are already implemented or validated.
 
 ## Executive summary
 
-Sync In It has progressed beyond the original discovery/clock-acquisition shell. The Android preview contains a working implementation path for local Host discovery, multi-Speaker TCP admission, UDP clock synchronization, generated PCM16 test-stream fan-out, bounded receiver buffering, group readiness, a shared future playback ANCHOR, Android AudioTrack rendering and DAC output-timestamp diagnostics. PR #55 also reduces repeated PCM-buffer scanning in the Speaker receive hot path and adds ingress/slow-write diagnostics.
+Sync In It has progressed beyond the original discovery/clock-acquisition shell. The Android main branch contains local Host discovery, multi-Speaker TCP admission, UDP clock synchronization, local-file decoding, consented Android app-playback capture, sample-indexed PCM16 fan-out, bounded receiver/capture buffering, group readiness, a shared future playback ANCHOR, Android AudioTrack rendering and DAC output-timestamp diagnostics. System capture uses a MediaProjection foreground service and respects source-app capture policies. PR #55's PCM snapshot caching and ingress/slow-write diagnostics remain in place.
 
-**The end-to-end multi-phone playback path remains physically unvalidated.** The post-PR #55 Speaker-side test on 6 November showed materially better receive-path evidence: ingress was generally close to the 50 frames/sec producer cadence, the contiguous buffer grew to approximately 19.94 seconds, and no missing frames were reported in the supplied interval. However, clock residual RMS stayed around 0.412–0.557 ms, above the unchanged strict 0.25 ms threshold. The stability streak remained zero, READY was not demonstrated, and no ANCHOR or acoustic synchronization result was supplied. The matching Host log was not provided, so Host writer/queue health in this run is unknown.
+**The end-to-end multi-phone playback path remains physically unvalidated.** The post-PR #55 Speaker-side test on 6 November showed materially better receive-path evidence: ingress was generally close to the 50 frames/sec producer cadence, the contiguous buffer grew to approximately 19.94 seconds, and no missing frames were reported in the supplied interval. However, clock residual RMS stayed around 0.412–0.557 ms, above the unchanged strict 0.25 ms threshold. The stability streak remained zero, READY was not demonstrated, and no ANCHOR or acoustic synchronization result was supplied. The matching Host log was not provided, so Host writer/queue health in this run is unknown. PR #76 has since merged local-file and system-audio capture code into main, but that merge and successful CI do not demonstrate physical capture, READY/ANCHOR or audible synchronization.
 
 The earlier pre-PR #55 run remains relevant historical evidence: its Host-side 500 ms queue overflowed after the Speaker failed to reach READY. PR #55 added 250 ms cached PCM snapshots and Speaker ingress/Host slow-write diagnostics. The post-fix Speaker log suggests PCM receive continuity improved in that capture, but it does not prove the Host writer is healthy or establish the root cause of clock residual noise. The current focus is **clock-measurement diagnosis with per-probe evidence, matching Host/Speaker log correlation, then successful READY/ANCHOR and acoustic measurement**. The 0.25 ms threshold, three-update stability gate and queue bound remain unchanged. See [Test Results](Test_Results.md) for the dated record and future-run template.
 
@@ -23,7 +23,7 @@ The earlier pre-PR #55 run remains relevant historical evidence: its Host-side 5
 | Published preview | `v0.6.1` | Public GitHub engineering pre-release with signed APK and SHA-256 checksum |
 | APK asset | `SyncInIt-Android-preview-v0.6.1.apk` | 5,986,806 bytes; persistent preview signing key used; SHA-256 `053ee227455a0b420effd81a58c9f8967179052097537604d76b1000ed80c959` |
 | Release scope | Persistent app-private diagnostic history, user-initiated `.txt` export, replayable `CLOCK_PROBE` / `CLOCK_FIT` telemetry, plus the existing acoustic markers and backpressure diagnostics | See the [v0.6.1 release notes](https://github.com/Shreyas-patil07/Sync-in-it/releases/tag/v0.6.1) |
-| Current main | PR #63 merged at `886bb9bcd894` | Adds native probe timestamp access, persistent bounded diagnostic history and Android document-picker export; clock estimator and readiness gate unchanged |
+| Current main | PR #76 merged at `163faad3bde0` | Adds local-file and user-consented Android system-playback sources, plus the UDP recvmsg sender-address fix; estimator thresholds, readiness gate and Speaker transport unchanged |
 | M0 simulator/native CI on release commit | Passed | [Workflow run 42230554383](https://github.com/Shreyas-patil07/Sync-in-it/actions/runs/42230554383) passed the Python 3.11/3.12/3.13 and C++17 matrix, vectors, simulator and queue scenarios |
 | Android/JNI CI on release commit | Passed | [Workflow run 42230554351](https://github.com/Shreyas-patil07/Sync-in-it/actions/runs/42230554351) passed build, Kotlin transport checks, signature verification and artifact upload |
 | Release publisher | Passed | [Workflow run 42230554362](https://github.com/Shreyas-patil07/Sync-in-it/actions/runs/42230554362) built the updateable APK, passed transport checks, verified its signature and uploaded the APK/checksum |
@@ -292,3 +292,10 @@ The measurement branch adds a 20 ms receiver-specific acoustic marker every seco
 The Host UI now offers an explicit Android system-audio capture option alongside local-file playback and the diagnostic test signal. The capture path requests `RECORD_AUDIO` and MediaProjection user consent, then starts a foreground `mediaProjection` service. Captured PCM16 stereo at 48 kHz is written into a bounded rolling buffer and consumed by the existing single sample-indexed Host producer. Once the full admitted Speaker cohort reaches the unchanged READY gate, the Host selects the recent two-second capture window, prebuffers it through the existing TCP stream, and sends the same common ANCHOR.
 
 The implementation is code-complete on the feature branch. GitHub Android app/JNI build, transport checks and preview APK signature verification passed; the M0 Python/C++ matrix also passed. Physical Android 12/14 playback-capture validation and acoustic-skew measurement remain pending. Android policy restrictions remain: source apps must allow playback capture, supported usages are limited, and protected/capture-blocked streams can be silent. No microphone input, DRM bypass, estimator threshold change or new receiver transport is included.
+
+
+### 8 November 2026 — System-audio preview merged into main
+
+PR #76 was merged at `163faad3bde01b75d1e38d8b4b793d413393fdef`. It adds local-file playback and consented Android playback capture using MediaProjection and a foreground service, both feeding the existing sample-indexed PCM/TCP fan-out and shared ANCHOR path. The same PR carries the previously separate UDP recvmsg sender-address fix.
+
+Post-merge main CI passed: [Android app/JNI run 42487998775](https://github.com/Shreyas-patil07/Sync-in-it/actions/runs/42487998775) and [M0 Python/C++ run 42487998642](https://github.com/Shreyas-patil07/Sync-in-it/actions/runs/42487998642). This is build/automated-test evidence only. Physical Android 12/14 app-playback capture, stable clock readiness, group ANCHOR, and acoustic-skew validation remain pending. See the release-specific notes for v0.6.8 before installing.
