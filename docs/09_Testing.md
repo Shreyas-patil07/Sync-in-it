@@ -4,7 +4,21 @@
 **Version:** 1.0  
 **Last updated:** 7 November 2026
 
-## Latest physical test evidence — 7 November 2026 (v0.6.4-debug)
+## Latest physical test evidence — 9 November 2026 (v0.7.0-debug RTP/UDP)
+
+The v0.7.0-debug two-phone role-reversal run physically exercised the feature-flagged RTP/UDP media path. Both devices registered their token-bound UDP endpoints and exchanged RTP PCM packets, but both runs failed clock readiness:
+
+- Run A: Xiaomi M2010J19SI / Android 12 Host; Xiaomi 22101316I / Android 14 Speaker. Attempt `5d00c1cb`, session `2772428285`. Host recorded 1,652 PCM chunks written / 6,608 RTP datagrams sent; Speaker's last ingress snapshot recorded 6,425 packets, eight sequence-gap observations and zero missing PCM frames.
+- Run B: Xiaomi 22101316I / Android 14 Host; Xiaomi M2010J19SI / Android 12 Speaker. Attempt `42667fea`, session `2396816099`. Host recorded 1,635 chunks written / 6,540 RTP datagrams sent; Speaker's last ingress snapshot recorded 6,489 packets, two duplicates, no sequence gaps and zero missing PCM frames.
+- Application-fit residual RMS was 0.315513 ms and 0.281073 ms. Offline kernel-receive residuals were 0.272710 ms and 0.319622 ms. None met the strict <0.25 ms gate; stable streak stayed 0.
+- Neither Speaker reached READY. No common ANCHOR, AudioTrack playback start, audible-output result or acoustic measurement was recorded.
+- Both runs lasted about 33 seconds, not the 60-second duration recommended for the experimental test.
+
+**Verdict: PARTIAL PASS — RTP registration and packet ingress. FAIL — clock stability / READY.** Kernel timestamps improved one run and worsened the other, so the production timestamp source must not be switched on this evidence. Host source-capture signal-present windows do not prove non-silent RTP payload or Speaker output. Keep the existing gate and TCP fallback unchanged.
+
+See [the paired RTP/UDP device report](Test_Results.md#27-test-record--2026-11-09--v070-debug-paired-rtpudp-role-reversal-runs).
+
+## Previous physical test evidence — 7 November 2026 (v0.6.4-debug)
 
 The latest two-phone test reversed Host/Speaker roles on the same pair of Xiaomi phones. Both runs reached UDP time-sync and full PCM pre-roll, but both failed the clock residual gate:
 
