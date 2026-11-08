@@ -10,6 +10,7 @@ import android.graphics.Typeface
 import android.content.Intent
 import android.graphics.drawable.GradientDrawable
 import android.os.Bundle
+import android.os.Build
 import android.net.Uri
 import android.provider.OpenableColumns
 import android.widget.Toast
@@ -437,7 +438,7 @@ class MainActivity : Activity() {
     }
 
     private fun startHosting() {
-        stopConnections(stopSystemAudioCapture = false)
+        stopConnections(stopCapture = false)
         val audioUri = selectedAudioUri
         val audioName = selectedAudioName
         val useSystemAudio = selectedSystemAudio
@@ -563,12 +564,12 @@ class MainActivity : Activity() {
         nearbyBrowser = null
     }
 
-    private fun stopConnections(stopSystemAudioCapture: Boolean = true) {
+    private fun stopConnections(stopCapture: Boolean = true) {
         masterHost?.close()
         masterHost = null
         receiverClient?.close()
         receiverClient = null
-        if (stopSystemAudioCapture && selectedSystemAudio) {
+        if (stopCapture && selectedSystemAudio) {
             stopSystemAudioCapture("session-stopped")
             if (::audioSelectionDetails.isInitialized && selectedAudioUri == null) {
                 audioSelectionDetails.text = "No file selected · diagnostic timing signal will be used."
