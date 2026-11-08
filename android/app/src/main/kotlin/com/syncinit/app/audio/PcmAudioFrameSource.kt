@@ -7,11 +7,12 @@ import com.syncinit.transport.RtpPcm16Packetizer
 import com.syncinit.transport.RtpUdpSocket
 import com.syncinit.transport.TcpFrameConnection
 import java.io.Closeable
-import java.io.IOException
 import java.net.InetAddress
 
 /** Supplies validated, native-protocol PCM chunks to the shared sample-indexed buffer. */
 interface PcmAudioFrameSource : Closeable {
+    val transportName: String
+
     /** Returns one complete encoded PCM chunk, or null on a clean end of stream. */
     fun readEncodedPcmChunk(): ByteArray?
 }
@@ -19,6 +20,8 @@ interface PcmAudioFrameSource : Closeable {
 class TcpPcmAudioFrameSource(
     private val connection: TcpFrameConnection
 ) : PcmAudioFrameSource {
+    override val transportName: String = "TCP"
+
     override fun readEncodedPcmChunk(): ByteArray? {
         val frame = connection.readFrame() ?: return null
         if (frame.messageType != 0x80 || frame.flags != 0) {
@@ -43,6 +46,7 @@ class RtpPcmAudioFrameSource(
     private val receiverId: Int,
     private val channels: Int = RtpPcm16Packetizer.CHANNELS
 ) : PcmAudioFrameSource {
+    override val transportName: String = "RTP_UDP"
     private val decoder = RtpPcm16Decoder(expectedSsrc = sessionId, channels = channels)
 
     init {
