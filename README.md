@@ -379,3 +379,9 @@ See [LICENSING.md](LICENSING.md) for the full map, contribution terms and the ru
 - Oboe `AudioStream` (getTimestamp, latency): https://android.googlesource.com/platform/external/oboe/+/10cd299e/include/oboe/AudioStream.h
 - Patent, multi-device audio playback correction: https://patents.google.com/patent/US12401947
 - Patent application, microphone-based playback delay: https://www.goveda.com/patent/CN-122002178-A
+
+## LAN backend API (foundation)
+
+The repository now includes an optional LAN-local FastAPI service under [`backend/`](backend/README.md). It provides session creation/join codes, Host and Speaker credentials, device presence and coarse readiness-state reporting. It uses SQLite and does not require an internet connection.
+
+**Architecture boundary:** this API is not in the audio or clock-sync data path. Android Host/Speaker audio remains direct over the existing TCP or experimental RTP/UDP transport; four-timestamp clock probes and the common playback ANCHOR remain on the direct device protocol. The service is currently a standalone integration foundation and is not yet consumed by the Android app. See [ADR-029](docs/ADR/Architecture_Decisions.md#adr-029--lan-local-session-coordination-api).
