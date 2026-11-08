@@ -351,18 +351,21 @@ class PcmAudioReceiver(
 
     private fun readAudioFrames() {
         var lastReportedWindowAdvance = 0L
-        var totalFramesReceived = 0L
-        var framesSinceIngressReport = 0L
+        var totalPacketsReceived = 0L
+        var packetsSinceIngressReport = 0L
+        var duplicateChunks = 0L
+        var partialLateChunks = 0L
+        var tooLateChunks = 0L
         var ingressReportStartedAtNs = System.nanoTime()
         try {
             while (!closed.get()) {
                 val encodedChunk = audioSource.readEncodedPcmChunk()
                     ?: throw IOException("master closed the ${audioSource.transportName} audio source")
                 when (buffer.insertEncodedFrame(encodedChunk)) {
-                    PcmChunkInsertResult.Inserted,
-                    PcmChunkInsertResult.PartialLate,
-                    PcmChunkInsertResult.Duplicate,
-                    PcmChunkInsertResult.TooLate -> Unit
+                    PcmChunkInsertResult.Inserted -> Unit
+                    PcmChunkInsertResult.PartialLate -> partialLateChunks += 1L
+                    PcmChunkInsertResult.Duplicate -> duplicateChunks += 1L
+                    PcmChunkInsertResult.TooLate -> tooLateChunks += 1L
                     PcmChunkInsertResult.WindowAdvanced -> {
                         val snapshot = currentBufferSnapshot()
                         val advances = snapshot.windowAdvanceCount
@@ -389,25 +392,27 @@ class PcmAudioReceiver(
                         throw IOException("received an invalid PCM16 audio chunk")
                 }
 
-                totalFramesReceived += 1L
-                framesSinceIngressReport += 1L
+                totalPacketsReceived += 1L
+                packetsSinceIngressReport += 1L
                 val nowNs = System.nanoTime()
                 val ingressElapsedNs = nowNs - ingressReportStartedAtNs
                 if (ingressElapsedNs >= AUDIO_INGRESS_DIAGNOSTIC_INTERVAL_NS) {
                     val snapshot = currentBufferSnapshot()
                     val bufferedMs = snapshot.contiguousBufferedFrames * 1_000L /
                         welcome.sampleRateHz.toLong()
-                    val rateFps = framesSinceIngressReport * 1_000_000_000.0 /
+                    val ratePps = packetsSinceIngressReport * 1_000_000_000.0 /
                         ingressElapsedNs.toDouble()
+                    val sourceMetrics = audioSource.diagnosticsSummary()?.let { " $it" } ?: ""
                     onStatus(
-                        "DIAG SPEAKER_AUDIO_INGRESS transport=${audioSource.transportName} totalPackets=$totalFramesReceived " +
-                            "intervalPackets=$framesSinceIngressReport " +
+                        "DIAG SPEAKER_AUDIO_INGRESS transport=${audioSource.transportName} totalPackets=$totalPacketsReceived " +
+                            "intervalPackets=$packetsSinceIngressReport " +
                             "intervalMs=${"%.1f".format(ingressElapsedNs / 1_000_000.0)} " +
-                            "ratePps=${"%.1f".format(rateFps)} bufferedMs=$bufferedMs " +
-                            "windowAdvances=${snapshot.windowAdvanceCount} " +
-                            "missingFrames=${snapshot.missingFrames}"
+                            "ratePps=${"%.1f".format(ratePps)} bufferedMs=$bufferedMs " +
+                            "bufferDuplicates=$duplicateChunks bufferPartialLate=$partialLateChunks " +
+                            "bufferTooLate=$tooLateChunks windowAdvances=${snapshot.windowAdvanceCount} " +
+                            "missingFrames=${snapshot.missingFrames}$sourceMetrics"
                     )
-                    framesSinceIngressReport = 0L
+                    packetsSinceIngressReport = 0L
                     ingressReportStartedAtNs = nowNs
                 }
                 trySendReady()
