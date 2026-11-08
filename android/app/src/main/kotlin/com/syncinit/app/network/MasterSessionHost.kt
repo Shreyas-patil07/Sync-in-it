@@ -818,7 +818,11 @@ class MasterSessionHost(
                 when {
                     audioFileUri != null -> onStatus("AUDIO_SOURCE_WAITING_FOR_READY_COHORT type=local-file label=${audioFileLabel ?: "selected audio"}")
                     systemAudioCaptureEnabled -> onStatus("AUDIO_SOURCE_WAITING_FOR_READY_COHORT type=android-system-playback")
-                    else -> onStatus("AUDIO_SOURCE_READY type=diagnostic-test-tone frequencyHz=1000 fanOutLimit=${PreviewConfig.MAX_SPEAKERS}")
+                    else -> onStatus(
+                        "AUDIO_SOURCE_READY type=diagnostic-test-tone frequencyHz=1000 " +
+                            "transport=${if (PreviewConfig.RTP_AUDIO_ENABLED) "RTP_UDP" else "TCP"} " +
+                            "fanOutLimit=${PreviewConfig.MAX_SPEAKERS}"
+                    )
                 }
 
                 while (!closed.get()) {
@@ -869,8 +873,14 @@ class MasterSessionHost(
                         channels = PreviewConfig.CHANNELS,
                         pcm16LittleEndian = pcm
                     )
+                    val hostChunk = HostAudioChunk(
+                        encodedFrame = encoded,
+                        pcm16LittleEndian = pcm.copyOf(),
+                        sequence = sequence,
+                        sampleIndex = sampleIndex
+                    )
                     peers.forEach { peer ->
-                        when (peer.offerAudio(encoded)) {
+                        when (peer.offerAudio(hostChunk)) {
                             AudioOfferResult.QUEUED,
                             AudioOfferResult.CLOSED -> Unit
                             AudioOfferResult.FULL -> {
