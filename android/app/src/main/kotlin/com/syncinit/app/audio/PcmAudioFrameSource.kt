@@ -15,6 +15,8 @@ interface PcmAudioFrameSource : Closeable {
 
     /** Returns one complete encoded PCM chunk, or null on a clean end of stream. */
     fun readEncodedPcmChunk(): ByteArray?
+
+    fun diagnosticsSummary(): String? = null
 }
 
 class TcpPcmAudioFrameSource(
@@ -48,6 +50,16 @@ class RtpPcmAudioFrameSource(
 ) : PcmAudioFrameSource {
     override val transportName: String = "RTP_UDP"
     private val decoder = RtpPcm16Decoder(expectedSsrc = sessionId, channels = channels)
+    private val recentSequences = LinkedHashSet<Long>()
+    private var highestSequence: Long? = null
+    private var receivedPackets = 0L
+    private var malformedPackets = 0L
+    private var sourceRejectedPackets = 0L
+    private var payloadRejectedPackets = 0L
+    private var sessionRejectedPackets = 0L
+    private var sequenceGapObservations = 0L
+    private var outOfOrderPackets = 0L
+    private var duplicatePackets = 0L
 
     init {
         require(expectedHostPort in 1..65_535)
@@ -58,17 +70,31 @@ class RtpPcmAudioFrameSource(
 
     override fun readEncodedPcmChunk(): ByteArray {
         while (true) {
-            val datagram = socket.receive()
+            val datagram = try {
+                socket.receive()
+            } catch (_: FrameProtocolException) {
+                malformedPackets += 1L
+                continue
+            }
             if (datagram.source.address != expectedHostAddress ||
                 datagram.source.port != expectedHostPort
             ) {
+                sourceRejectedPackets += 1L
                 continue
             }
             if (datagram.packet.payloadType != RtpPcm16Packetizer.PAYLOAD_TYPE) {
+                payloadRejectedPackets += 1L
                 continue
             }
 
-            val decoded = decoder.decode(datagram.packet)
+            val decoded = try {
+                decoder.decode(datagram.packet)
+            } catch (_: FrameProtocolException) {
+                sessionRejectedPackets += 1L
+                continue
+            }
+            recordSequence(decoded.extendedSequenceNumber)
+            receivedPackets += 1L
             return NativePcmJitterBuffer.encodeChunk(
                 sessionId = sessionId,
                 sequence = decoded.extendedSequenceNumber and 0xffff_ffffL,
@@ -79,6 +105,37 @@ class RtpPcmAudioFrameSource(
             )
         }
     }
+
+    @Synchronized
+    private fun recordSequence(sequence: Long) {
+        if (!recentSequences.add(sequence)) {
+            duplicatePackets += 1L
+            return
+        }
+        val previousHighest = highestSequence
+        if (previousHighest == null) {
+            highestSequence = sequence
+        } else if (sequence > previousHighest) {
+            if (sequence > previousHighest + 1L) {
+                sequenceGapObservations += sequence - previousHighest - 1L
+            }
+            highestSequence = sequence
+        } else {
+            outOfOrderPackets += 1L
+        }
+
+        while (recentSequences.size > 1_024) {
+            val oldest = recentSequences.iterator()
+            oldest.next()
+            oldest.remove()
+        }
+    }
+
+    override fun diagnosticsSummary(): String =
+        "rtpReceived=$receivedPackets seqGapObservations=$sequenceGapObservations " +
+            "outOfOrder=$outOfOrderPackets duplicates=$duplicatePackets malformed=$malformedPackets " +
+            "sourceRejected=$sourceRejectedPackets payloadRejected=$payloadRejectedPackets " +
+            "sessionRejected=$sessionRejectedPackets"
 
     override fun close() = socket.close()
 }
