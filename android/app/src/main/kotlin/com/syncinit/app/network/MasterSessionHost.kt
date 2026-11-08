@@ -17,11 +17,16 @@ import com.syncinit.transport.TcpFrameConnection
 import com.syncinit.transport.TcpFrameServer
 import com.syncinit.transport.FrameProtocolException
 import com.syncinit.transport.UdpTimeSyncPacketMetadata
+import com.syncinit.transport.RtpPcm16Packetizer
+import com.syncinit.transport.RtpUdpSocket
+import com.syncinit.transport.RtpUdpRegistrationCodec
 import java.io.Closeable
+import java.io.IOException
 import java.net.InetAddress
 import java.net.InetSocketAddress
 import java.net.SocketException
 import java.net.SocketTimeoutException
+import java.security.MessageDigest
 import java.security.SecureRandom
 import java.util.concurrent.ArrayBlockingQueue
 import java.util.concurrent.ConcurrentHashMap
@@ -44,6 +49,18 @@ private data class StreamCursor(
     val nextChunkDueNs: Long
 )
 
+private data class PendingRtpRegistration(
+    val expectedAddress: InetAddress,
+    val token: ByteArray
+)
+
+private data class HostAudioChunk(
+    val encodedFrame: ByteArray,
+    val pcm16LittleEndian: ByteArray,
+    val sequence: Long,
+    val sampleIndex: Long
+)
+
 private enum class AudioOfferResult {
     QUEUED,
     CLOSED,
@@ -63,6 +80,8 @@ class MasterSessionHost(
     private val started = AtomicBoolean(false)
     private val nextReceiverId = AtomicInteger(1)
     private val receivers = ConcurrentHashMap<Int, HostReceiverPeer>()
+    private val pendingRtpRegistrations = ConcurrentHashMap<Int, PendingRtpRegistration>()
+    private val registeredRtpPeers = ConcurrentHashMap<Int, InetSocketAddress>()
     private val groupStartLock = Any()
     private val groupStartScheduled = AtomicBoolean(false)
     private val groupStartCheckQueued = AtomicBoolean(false)
@@ -77,10 +96,12 @@ class MasterSessionHost(
     @Volatile private var controlServer: TcpFrameServer? = null
     @Volatile private var audioServer: TcpFrameServer? = null
     @Volatile private var timeSyncServer: TimeSyncUdpServer? = null
+    @Volatile private var rtpAudioServer: RtpUdpSocket? = null
     @Volatile private var nativeSessionConfig: ReceiverSessionConfig? = null
     @Volatile private var advertiser: LanSessionAdvertiser? = null
     @Volatile private var audioSenderThread: Thread? = null
     @Volatile private var timeSyncThread: Thread? = null
+    @Volatile private var rtpAudioThread: Thread? = null
     @Volatile private var localAudioSource: LocalAudioFilePcmSource? = null
     @Volatile private var systemAudioSource: SystemAudioPcmSource? = null
 
@@ -91,6 +112,7 @@ class MasterSessionHost(
         var control: TcpFrameServer? = null
         var audio: TcpFrameServer? = null
         var time: TimeSyncUdpServer? = null
+        var rtp: RtpUdpSocket? = null
         try {
             val anyAddress = InetAddress.getByName("0.0.0.0")
             val audioListener = TcpFrameServer(
@@ -107,6 +129,13 @@ class MasterSessionHost(
                 anyAddress, PreviewConfig.TIME_PORT, PreviewConfig.TIME_SYNC_RECEIVE_TIMEOUT_MS
             )
             time = timeListener
+            val rtpListener = if (PreviewConfig.RTP_AUDIO_ENABLED) {
+                RtpUdpSocket(
+                    bindAddress = anyAddress,
+                    localPort = PreviewConfig.RTP_AUDIO_PORT,
+                    receiveTimeoutMs = PreviewConfig.RTP_AUDIO_REGISTRATION_TIMEOUT_MS
+                ).also { rtp = it }
+            } else null
 
             val random = SecureRandom()
             val token = ByteArray(16).also(random::nextBytes)
@@ -124,19 +153,22 @@ class MasterSessionHost(
             check(audioListener.isListening) { "audio TCP listener did not bind" }
             onStatus(
                 "DIAG HOST_LISTENERS_BOUND control=${controlListener.localBindAddress}:${controlListener.localPort} " +
-                    "audio=${audioListener.localBindAddress}:${audioListener.localPort} udp=0.0.0.0:${PreviewConfig.TIME_PORT} " +
+                    "audio=${audioListener.localBindAddress}:${audioListener.localPort} " +
+                    "udp=0.0.0.0:${PreviewConfig.TIME_PORT} rtpUdp=0.0.0.0:${rtpListener?.localPort ?: "disabled"} " +
                     "udpTimestampMode=${timeListener.timestampMode}"
             )
             onStatus(NetworkDiagnostics.networkSnapshot(appContext))
             controlServer = controlListener
             audioServer = audioListener
             timeSyncServer = timeListener
+            rtpAudioServer = rtpListener
             nativeSessionConfig = config
 
             // These loops are independent: admission accepts new TCP pairs while UDP serves every
             // admitted receiver, and the shared audio producer fans identical chunks out to peers.
             executor.execute(::serve)
             startTimeSyncServer()
+            if (rtpListener != null) startRtpAudioServer()
 
             val deviceLabel = Build.MODEL.trim().take(32).ifBlank { "Android" }
             val serviceName = "Sync In It - $deviceLabel ${token.toHex().take(4)}"
@@ -144,7 +176,7 @@ class MasterSessionHost(
             advertiser = serviceAdvertiser
             serviceAdvertiser.start(serviceName, controlListener.localPort, token.toHex())
 
-            onStatus("DIAG HOST_READY controlPort=${controlListener.localPort} audioPort=${audioListener.localPort} timePort=${PreviewConfig.TIME_PORT} controlListening=${controlListener.isListening} audioListening=${audioListener.isListening}")
+            onStatus("DIAG HOST_READY controlPort=${controlListener.localPort} audioPort=${audioListener.localPort} timePort=${PreviewConfig.TIME_PORT} rtpAudioPort=${rtpListener?.localPort ?: "disabled"} controlListening=${controlListener.isListening} audioListening=${audioListener.isListening}")
             onStatus("TCP listener ready on port ${controlListener.localPort}. Advertising a session for up to ${PreviewConfig.MAX_SPEAKERS} speakers.")
             onStatus("Waiting for speakers · 0/${PreviewConfig.MAX_SPEAKERS} connected.")
             return HostInvitation(serviceName, controlListener.localPort)
@@ -157,6 +189,7 @@ class MasterSessionHost(
             closeQuietly(control)
             closeQuietly(audio)
             closeQuietly(time)
+            closeQuietly(rtp)
             closeResources()
             throw error
         }
@@ -173,6 +206,7 @@ class MasterSessionHost(
                 var control: TcpFrameConnection? = null
                 var audio: TcpFrameConnection? = null
                 var session: NativeReceiverSession? = null
+                var pendingRtpReceiverId: Int? = null
                 var ownershipTransferred = false
                 try {
                     val listeningControl = checkNotNull(controlServer)
@@ -210,6 +244,7 @@ class MasterSessionHost(
 
                     val receiverId = nextReceiverId.getAndIncrement()
                     check(receiverId in 1..0xffff) { "receiver ID space is exhausted" }
+                    pendingRtpReceiverId = if (PreviewConfig.RTP_AUDIO_ENABLED) receiverId else null
                     val baseConfig = checkNotNull(nativeSessionConfig)
                     val receiverConfig = baseConfig.copy(
                         receiverId = receiverId,
@@ -220,6 +255,13 @@ class MasterSessionHost(
                     val helloResult = receiverSession.onHelloFrame(hello.toEncodedBytes())
                     check(helloResult == ReceiverSessionResult.Accepted) {
                         "HELLO rejected: $helloResult"
+                    }
+
+                    if (PreviewConfig.RTP_AUDIO_ENABLED) {
+                        pendingRtpRegistrations[receiverId] = PendingRtpRegistration(
+                            expectedAddress = acceptedControl.remoteAddress,
+                            token = receiverConfig.token.copyOf()
+                        )
                     }
 
                     val welcome = checkNotNull(receiverSession.welcomeFrame()) {
@@ -245,7 +287,18 @@ class MasterSessionHost(
                         "AUDIO_HELLO rejected: $audioResult"
                     }
 
-                    val peer = HostReceiverPeer(receiverId, receiverSession, acceptedControl, acceptedAudio)
+                    val rtpEndpoint = if (PreviewConfig.RTP_AUDIO_ENABLED) {
+                        awaitRtpRegistration(receiverId)
+                    } else null
+
+                    val peer = HostReceiverPeer(
+                        receiverId = receiverId,
+                        session = receiverSession,
+                        control = acceptedControl,
+                        audio = acceptedAudio,
+                        sessionId = baseConfig.sessionId,
+                        rtpPeer = rtpEndpoint
+                    )
                     synchronized(groupStartLock) {
                         check(!groupStartScheduled.get()) {
                             "group playback started while this Speaker was joining"
@@ -265,6 +318,10 @@ class MasterSessionHost(
                         }
                         ownershipTransferred = true
                     }
+                    pendingRtpReceiverId?.let { pendingId ->
+                        pendingRtpRegistrations.remove(pendingId)?.token?.fill(0)
+                    }
+                    pendingRtpReceiverId = null
                     control = null
                     audio = null
                     session = null
@@ -285,6 +342,10 @@ class MasterSessionHost(
                     if (!closed.get()) reportJoinFailure(control, error)
                 } finally {
                     if (!ownershipTransferred) {
+                        pendingRtpReceiverId?.let { pendingId ->
+                            pendingRtpRegistrations.remove(pendingId)?.token?.fill(0)
+                            registeredRtpPeers.remove(pendingId)
+                        }
                         closeQuietly(control)
                         closeQuietly(audio)
                         closeQuietly(session)
@@ -309,13 +370,16 @@ class MasterSessionHost(
         val receiverId: Int,
         val session: NativeReceiverSession,
         val control: TcpFrameConnection,
-        val audio: TcpFrameConnection
+        val audio: TcpFrameConnection,
+        val sessionId: Long,
+        val rtpPeer: InetSocketAddress?
     ) : Closeable {
         private val peerClosed = AtomicBoolean(false)
         private val audioQueueLock = Any()
-        private val audioQueue = ArrayBlockingQueue<ByteArray>(PreviewConfig.AUDIO_QUEUE_CHUNKS)
+        private val audioQueue = ArrayBlockingQueue<HostAudioChunk>(PreviewConfig.AUDIO_QUEUE_CHUNKS)
         private val audioFramesQueued = AtomicLong(0L)
         private val audioFramesWritten = AtomicLong(0L)
+        private val rtpPacketsSent = AtomicLong(0L)
         private val audioQueueHighWater = AtomicInteger(0)
         private val lastSlowAudioWriteDiagnosticAtNs = AtomicLong(0L)
         private val lastAudioWriteCompletedAtNs = AtomicLong(0L)
@@ -325,17 +389,42 @@ class MasterSessionHost(
         val isClosed: Boolean get() = peerClosed.get()
         private var audioWriter: Thread? = null
 
+        init {
+            check(PreviewConfig.RTP_AUDIO_ENABLED == (rtpPeer != null)) {
+                "RTP endpoint registration state does not match the build-time transport mode"
+            }
+        }
+
         fun startAudioWriter() {
             check(audioWriter == null) { "receiver audio writer has already started" }
             val writer = Thread({
                 val writerStartedAtNs = System.nanoTime()
                 try {
                     while (!peerClosed.get() && !closed.get()) {
-                        val frame = audioQueue.poll(500, TimeUnit.MILLISECONDS) ?: continue
+                        val chunk = audioQueue.poll(500, TimeUnit.MILLISECONDS) ?: continue
                         val writeStartedAtNs = System.nanoTime()
                         var writeSucceeded = false
                         try {
-                            audio.writeEncodedFrame(frame)
+                            if (rtpPeer != null) {
+                                val socket = checkNotNull(rtpAudioServer) {
+                                    "RTP audio socket closed before Speaker delivery"
+                                }
+                                val firstSequence = (
+                                    chunk.sequence * RtpPcm16Packetizer.PACKETS_PER_SOURCE_CHUNK.toLong()
+                                ).and(0xffffL).toInt()
+                                val packets = RtpPcm16Packetizer.packetize(
+                                    pcm16LittleEndian = chunk.pcm16LittleEndian,
+                                    sampleIndex = chunk.sampleIndex,
+                                    firstSequenceNumber = firstSequence,
+                                    ssrc = sessionId
+                                )
+                                packets.forEach { packet ->
+                                    socket.send(packet, rtpPeer)
+                                    rtpPacketsSent.incrementAndGet()
+                                }
+                            } else {
+                                audio.writeEncodedFrame(chunk.encodedFrame)
+                            }
                             writeSucceeded = true
                         } finally {
                             val writeCompletedAtNs = System.nanoTime()
@@ -350,9 +439,11 @@ class MasterSessionHost(
                                     lastSlowAudioWriteDiagnosticAtNs.compareAndSet(previousReportNs, nowNs)
                                 ) {
                                     onStatus(
-                                        "DIAG HOST_AUDIO_WRITE_SLOW receiverId=$receiverId " +
+                                        "DIAG HOST_AUDIO_SEND_SLOW receiverId=$receiverId " +
+                                            "transport=${if (rtpPeer != null) "RTP_UDP" else "TCP"} " +
                                             "durationMs=${"%.1f".format(writeDurationNs / 1_000_000.0)} " +
                                             "queued=${audioFramesQueued.get()} written=${audioFramesWritten.get()} " +
+                                            "rtpPacketsSent=${rtpPacketsSent.get()} " +
                                             "queueDepth=${audioQueue.size} queueHighWater=${audioQueueHighWater.get()}"
                                     )
                                 }
@@ -362,7 +453,9 @@ class MasterSessionHost(
                         if (written == 1L || written % 250L == 0L) {
                             onStatus(
                                 "DIAG HOST_AUDIO_DELIVERY receiverId=$receiverId " +
+                                    "transport=${if (rtpPeer != null) "RTP_UDP" else "TCP"} " +
                                     "queued=${audioFramesQueued.get()} written=$written " +
+                                    "rtpPacketsSent=${rtpPacketsSent.get()} " +
                                     "queueDepth=${audioQueue.size} queueHighWater=${audioQueueHighWater.get()}"
                             )
                         }
@@ -380,6 +473,7 @@ class MasterSessionHost(
                         }
                         onStatus(
                             "DIAG HOST_AUDIO_WRITER_FAILED receiverId=$receiverId " +
+                                "transport=${if (rtpPeer != null) "RTP_UDP" else "TCP"} " +
                                 "uptimeMs=${(nowNs - writerStartedAtNs) / 1_000_000L} " +
                                 "sinceLastWriteMs=$sinceLastWriteMs " +
                                 "lastWriteDurationMs=${"%.2f".format(lastAudioWriteDurationNs.get() / 1_000_000.0)} " +
@@ -390,7 +484,7 @@ class MasterSessionHost(
                         )
                         removeReceiver(
                             this,
-                            "audio channel failed: ${error.message ?: error.javaClass.simpleName}",
+                            "audio send failed: ${error.message ?: error.javaClass.simpleName}",
                             trigger = "audio-writer"
                         )
                     }
@@ -400,9 +494,9 @@ class MasterSessionHost(
             writer.start()
         }
 
-        fun offerAudio(frame: ByteArray): AudioOfferResult = synchronized(audioQueueLock) {
+        fun offerAudio(chunk: HostAudioChunk): AudioOfferResult = synchronized(audioQueueLock) {
             if (peerClosed.get()) return@synchronized AudioOfferResult.CLOSED
-            if (!audioQueue.offer(frame)) return@synchronized AudioOfferResult.FULL
+            if (!audioQueue.offer(chunk)) return@synchronized AudioOfferResult.FULL
             audioFramesQueued.incrementAndGet()
             val depth = audioQueue.size
             audioQueueHighWater.updateAndGet { previous -> maxOf(previous, depth) }
@@ -415,18 +509,23 @@ class MasterSessionHost(
                 val nowNs = System.nanoTime()
                 val diagnostic =
                     "DIAG HOST_RECEIVER_CLOSE receiverId=$receiverId trigger=$trigger reason=$reason " +
+                        "transport=${if (rtpPeer != null) "RTP_UDP" else "TCP"} " +
                         "uptimeMs=${(nowNs - admittedAtNs) / 1_000_000L} " +
                         "queued=${audioFramesQueued.get()} written=${audioFramesWritten.get()} " +
+                        "rtpPacketsSent=${rtpPacketsSent.get()} " +
                         "queueDepth=${audioQueue.size} queueHighWater=${audioQueueHighWater.get()} " +
                         "lastWriteDurationMs=${"%.2f".format(lastAudioWriteDurationNs.get() / 1_000_000.0)} " +
                         "controlLocal=${control.localEndpoint} controlRemote=${control.remoteEndpoint} " +
-                        "audioLocal=${audio.localEndpoint} audioRemote=${audio.remoteEndpoint}"
+                        "audioLocal=${audio.localEndpoint} audioRemote=${audio.remoteEndpoint} " +
+                        "rtpPeer=${rtpPeer ?: "disabled"}"
                 audioQueue.clear()
                 diagnostic
             }
             onStatus(closeDiagnostic)
             audioWriter?.interrupt()
             audioWriter = null
+            pendingRtpRegistrations.remove(receiverId)?.token?.fill(0)
+            rtpPeer?.let { registeredRtpPeers.remove(receiverId, it) }
             closeQuietly(audio)
             closeQuietly(control)
             closeQuietly(session)
@@ -727,7 +826,11 @@ class MasterSessionHost(
                 when {
                     audioFileUri != null -> onStatus("AUDIO_SOURCE_WAITING_FOR_READY_COHORT type=local-file label=${audioFileLabel ?: "selected audio"}")
                     systemAudioCaptureEnabled -> onStatus("AUDIO_SOURCE_WAITING_FOR_READY_COHORT type=android-system-playback")
-                    else -> onStatus("AUDIO_SOURCE_READY type=diagnostic-test-tone frequencyHz=1000 fanOutLimit=${PreviewConfig.MAX_SPEAKERS}")
+                    else -> onStatus(
+                        "AUDIO_SOURCE_READY type=diagnostic-test-tone frequencyHz=1000 " +
+                            "transport=${if (PreviewConfig.RTP_AUDIO_ENABLED) "RTP_UDP" else "TCP"} " +
+                            "fanOutLimit=${PreviewConfig.MAX_SPEAKERS}"
+                    )
                 }
 
                 while (!closed.get()) {
@@ -770,16 +873,26 @@ class MasterSessionHost(
                         else -> ByteArray(PreviewConfig.CHUNK_FRAMES * PreviewConfig.CHANNELS * 2)
                     }
 
-                    val encoded = NativePcmJitterBuffer.encodeChunk(
-                        sessionId = sessionId,
+                    val encoded = if (PreviewConfig.RTP_AUDIO_ENABLED) {
+                        ByteArray(0)
+                    } else {
+                        NativePcmJitterBuffer.encodeChunk(
+                            sessionId = sessionId,
+                            sequence = sequence,
+                            sampleIndex = sampleIndex,
+                            frames = PreviewConfig.CHUNK_FRAMES,
+                            channels = PreviewConfig.CHANNELS,
+                            pcm16LittleEndian = pcm
+                        )
+                    }
+                    val hostChunk = HostAudioChunk(
+                        encodedFrame = encoded,
+                        pcm16LittleEndian = if (PreviewConfig.RTP_AUDIO_ENABLED) pcm.copyOf() else ByteArray(0),
                         sequence = sequence,
-                        sampleIndex = sampleIndex,
-                        frames = PreviewConfig.CHUNK_FRAMES,
-                        channels = PreviewConfig.CHANNELS,
-                        pcm16LittleEndian = pcm
+                        sampleIndex = sampleIndex
                     )
                     peers.forEach { peer ->
-                        when (peer.offerAudio(encoded)) {
+                        when (peer.offerAudio(hostChunk)) {
                             AudioOfferResult.QUEUED,
                             AudioOfferResult.CLOSED -> Unit
                             AudioOfferResult.FULL -> {
@@ -854,6 +967,127 @@ class MasterSessionHost(
             }
         }
         return pcm
+    }
+
+    private fun awaitRtpRegistration(receiverId: Int): InetSocketAddress {
+        val deadlineNs = System.nanoTime() +
+            (PreviewConfig.RTP_AUDIO_REGISTRATION_ATTEMPTS *
+                PreviewConfig.RTP_AUDIO_REGISTRATION_TIMEOUT_MS + 2_000L) * 1_000_000L
+        while (!closed.get()) {
+            registeredRtpPeers[receiverId]?.let { return it }
+            if (pendingRtpRegistrations[receiverId] == null) {
+                throw IOException("RTP UDP registration state disappeared for receiverId=$receiverId")
+            }
+            val remainingNs = deadlineNs - System.nanoTime()
+            if (remainingNs <= 0L) {
+                throw SocketTimeoutException(
+                    "Speaker $receiverId did not register its RTP UDP endpoint before the deadline"
+                )
+            }
+            Thread.sleep(20L)
+        }
+        throw IOException("Host closed while waiting for RTP UDP endpoint registration")
+    }
+
+    private fun startRtpAudioServer() {
+        check(rtpAudioThread == null) { "RTP audio listener is already running" }
+        val worker = Thread(::runRtpAudioServer, "syncinit-master-rtp-audio-registration").apply {
+            isDaemon = true
+        }
+        rtpAudioThread = worker
+        worker.start()
+    }
+
+    /**
+     * The existing TCP HELLO authenticates/adopts the receiver first. This UDP
+     * rendezvous then requires the same session, receiver ID, peer IP and token
+     * before pinning the source IP:port and acknowledging the media endpoint.
+     */
+    private fun runRtpAudioServer() {
+        val server = checkNotNull(rtpAudioServer) { "RTP UDP audio listener was not started" }
+        onStatus("DIAG HOST_RTP_UDP_SOCKET_READY bind=0.0.0.0:${server.localPort} bound=true")
+        var accepted = 0
+        var rejected = 0
+
+        try {
+            while (!closed.get()) {
+                val datagram = try {
+                    server.receive()
+                } catch (_: SocketTimeoutException) {
+                    continue
+                } catch (error: FrameProtocolException) {
+                    rejected += 1
+                    if (rejected == 1 || rejected % 10 == 0) {
+                        onStatus("DIAG HOST_RTP_UDP_REGISTRATION_REJECTED count=$rejected reason=malformed-packet")
+                    }
+                    continue
+                } catch (error: SocketException) {
+                    if (closed.get()) break
+                    throw error
+                }
+
+                if (datagram.packet.payloadType != RtpUdpRegistrationCodec.PAYLOAD_TYPE) {
+                    continue
+                }
+                val registration = try {
+                    RtpUdpRegistrationCodec.decode(datagram.packet)
+                } catch (_: Exception) {
+                    rejected += 1
+                    continue
+                }
+                val config = nativeSessionConfig ?: continue
+                if (registration.acknowledgement ||
+                    registration.sessionId != config.sessionId
+                ) {
+                    rejected += 1
+                    continue
+                }
+
+                val pending = pendingRtpRegistrations[registration.receiverId]
+                if (pending == null ||
+                    pending.expectedAddress != datagram.source.address ||
+                    !MessageDigest.isEqual(pending.token, registration.token)
+                ) {
+                    rejected += 1
+                    if (rejected == 1 || rejected % 10 == 0) {
+                        onStatus(
+                            "DIAG HOST_RTP_UDP_REGISTRATION_REJECTED count=$rejected " +
+                                "receiverId=${registration.receiverId} source=${datagram.source} " +
+                                "reason=unadmitted-peer-or-invalid-token"
+                        )
+                    }
+                    continue
+                }
+
+                val previousEndpoint = registeredRtpPeers.putIfAbsent(
+                    registration.receiverId,
+                    datagram.source
+                )
+                if (previousEndpoint != null && previousEndpoint != datagram.source) {
+                    rejected += 1
+                    onStatus(
+                        "DIAG HOST_RTP_UDP_REGISTRATION_REJECTED count=$rejected " +
+                            "receiverId=${registration.receiverId} source=${datagram.source} " +
+                            "reason=endpoint-already-pinned"
+                    )
+                    continue
+                }
+
+                server.send(RtpUdpRegistrationCodec.encodeAcknowledgement(registration), datagram.source)
+                if (previousEndpoint == null) {
+                    accepted += 1
+                    onStatus(
+                        "DIAG HOST_RTP_UDP_PEER_REGISTERED receiverId=${registration.receiverId} " +
+                            "sessionId=${registration.sessionId} endpoint=${datagram.source}"
+                    )
+                }
+            }
+        } catch (error: Exception) {
+            if (!closed.get()) {
+                onStatus("RTP UDP registration listener failed: ${error.message ?: error.javaClass.simpleName}")
+                close()
+            }
+        }
     }
 
     private fun startTimeSyncServer() {
@@ -1001,6 +1235,13 @@ class MasterSessionHost(
         systemAudioSource = null
         timeSyncThread?.interrupt()
         timeSyncThread = null
+        closeQuietly(rtpAudioServer)
+        rtpAudioServer = null
+        rtpAudioThread?.interrupt()
+        rtpAudioThread = null
+        pendingRtpRegistrations.values.forEach { it.token.fill(0) }
+        pendingRtpRegistrations.clear()
+        registeredRtpPeers.clear()
 
         closeQuietly(controlServer)
         closeQuietly(audioServer)

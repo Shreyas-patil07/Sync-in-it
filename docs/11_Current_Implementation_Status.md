@@ -30,6 +30,7 @@ The earlier pre-PR #55 run remains relevant historical evidence: its Host-side 5
 | Android/JNI CI on PR #78 source | Passed | [Workflow run 42493479658](https://github.com/Shreyas-patil07/Sync-in-it/actions/runs/42493479658) passed Android build, transport checks, signature verification and artifact upload |
 | Release publisher | Passed | [Workflow run 42499713865](https://github.com/Shreyas-patil07/Sync-in-it/actions/runs/42499713865) built the updateable APK, passed transport checks, verified its signature and published the v0.6.9 GitHub prerelease |
 | Physical validation | Not yet validated end-to-end | The 8 Nov v0.6.9-debug paired runs ended at 0.368338 ms and 0.449305 ms app-timestamp residual RMS; kernel timestamp comparison reached 0.304824 ms and 0.307115 ms. All remain above the strict 0.25 ms gate; no READY, ANCHOR or acoustic skew was demonstrated |
+| RTP/UDP experiment branch | Code-integrated, opt-in; not merged or physically tested | PR #85 adds the 48 kHz stereo diagnostic PCM RTP path, TCP admission/control fallback, token-bound UDP endpoint registration and sample-indexed receiver insertion. Build with `-PsyncinitRtpAudioEnabled=true` on Host and Speakers. Android build/physical test for the latest branch head are pending; Opus and complete RTCP feedback are not included |
 
 The published `v0.6.9` APK is built from release commit `79c50372a22a1378d265a2a4f9308a477863540c` with the persistent preview signing key. [Release workflow run 42499713865](https://github.com/Shreyas-patil07/Sync-in-it/actions/runs/42499713865) passed the Android build, transport checks, APK signature verification and GitHub prerelease publication. Asset SHA-256: `349a6503b47f40b460f3b86f88ccd6535bbab9151854bed52b359478a71df5da`. v0.6.9 adds safe source switching, aggregate capture-level diagnostics and offline clock-probe comparison. The production estimator remains unchanged. No successful physical non-silent capture, READY/ANCHOR or acoustic-skew validation has been supplied; CI remains distinct from physical synchronization evidence.
 
@@ -248,17 +249,17 @@ A successful desktop CI run verifies deterministic core behavior. A successful A
 - No claim of zero-millisecond, sample-accurate DAC, or acoustically perfect synchronization is supported.
 - Bluetooth output latency, device-specific HAL delay, microphone calibration and long-duration acoustic drift remain unmeasured.
 
-## Next engineering sequence
+## Next engineering sequence — ADR-028 RTP/RTCP migration
 
-1. Use one Host + one Speaker on the current PCM16/TCP + AudioTrack path, foregrounded and screen-on on a trusted LAN.
-2. Capture matching Host/Speaker logs and replay the exact clock probes through the same C++ estimator/gate. The 8 Nov paired runs now have application/kernel timestamp comparisons, but the kernel variant still fails the gate; run the canonical C++ replay tool against both raw pairs and preserve CSV. Include Host delivery, TCP write stalls, per-Speaker queue depth/overflow, receiver buffer, READY and disconnect reason.
-3. Keep the current clock threshold unchanged. Diagnose whether the first Speaker is blocked by clock readiness, audio transport/buffering or output scheduling; do not add another architecture layer to hide the failure.
-4. Prove READY sent/accepted → common ANCHOR received → audible marker output. Preserve a physical recording and machine-readable frame-to-marker result.
-5. Compare scheduled AudioTrack with continuous silence-first, output-frame-aligned rendering on the same device/setup. DAC timestamps must be active before ANCHOR and the renderer/timestamp frame counter relationship must be validated.
-6. Add a second Speaker and prove repeatable p95 acoustic skew ≤10 ms before group scaling.
-7. Only after that baseline passes, compare PCM/TCP against FLAC/TCP and Opus/TCP, then test UDP selective retransmission separately. Keep the current PCM/TCP path as fallback.
-8. Compare Oboe/AAudio against AudioTrack on the same Xiaomi devices only after an output baseline exists. Select from timestamp and acoustic measurements, not API claims.
-9. Keep one primary implementation workstream. Do not start iOS, PWA, provider/queue, calibration, security, codec or transport expansion while the single-Speaker path remains blocked. Long/endurance work remains blocked by the foreground-service/wake-lock dependency.
+1. Keep the strict clock gate unchanged and replay the paired 8 Nov Host/Speaker probes through the canonical C++ estimator. The application/kernel residual alternatives remain above 0.25 ms; transport success must not be used to bypass READY.
+2. Run the already-integrated, feature-flagged diagnostic PCM RTP/UDP unicast path alongside PCM16/TCP. Build both Host and Speakers with `-PsyncinitRtpAudioEnabled=true`; bind the receiver socket to the selected Wi-Fi Network and verify the Host pins only the TCP-admitted receiver endpoint.
+3. Validate UDP ingress on two phones: per-packet sequence/timestamp continuity, loss, reordering, duplicates, late packets, contiguous buffer fill and actual PCM signal energy. The receiver inserts each 240-frame RTP sample range into the existing native sample-indexed PCM buffer.
+4. Run one Host + one Speaker on the same devices/router/audio source with TCP and RTP as the only A/B variable. Preserve Host/Speaker logs, reach READY → common ANCHOR → audible output, and record receiver-specific acoustic markers. No threshold changes.
+5. Add Opus after diagnostic PCM RTP passes. Use the RFC 7587 48 kHz RTP clock and begin with 20 ms frames / 960 timestamp ticks. Measure codec latency, bitrate, CPU and decoded PCM continuity.
+6. Complete RTCP compound SR/RR with SDES/CNAME and populated report blocks. Use SR to observe the sender media clock and RR for receiver loss/jitter feedback; retain four-timestamp clock acquisition for inter-device monotonic offset.
+7. Map RTP sample time through receiver monotonic time to AudioTrack timestamp frame positions. Only then evaluate output-frame scheduling and drift correction.
+8. Add a second Speaker, prove p95 absolute acoustic skew ≤10 ms, then expand group resilience. Keep RTP feature-flagged and PCM/TCP available until physical acceptance is repeatable.
+9. Long/endurance/background tests remain blocked by the foreground-service and wake-lock dependency.
 
 
 
@@ -266,7 +267,7 @@ A successful desktop CI run verifies deterministic core behavior. A successful A
 
 The two 8 November v0.6.9-debug attempts are the latest physical evidence. Both used the same Android 12 Host (Xiaomi M2010J19SI) and Android 14 Speaker (Xiaomi 22101316I) on one Wi-Fi subnet. TCP admission, UDP time-sync response and PCM/TCP delivery were observed, but both attempts remained blocked at `CLOCK_UNSTABLE`. The full two-attempt application/kernel fit and hold-out comparison is recorded in [Test Results §2.6](Test_Results.md#26-test-record--2026-11-08--v069-debug-paired-applicationkernel-timestamp-replay).
 
-Kernel receive timestamps reduce residual RMS but do not meet the current 0.25 ms criterion. This is an investigation result, not a production estimator change. The next physical attempt should use the diagnostic timing-click source to remove intermittent system-playback silence from the same run. The project test order remains unchanged: single-Speaker READY → ANCHOR → audible output, then two-Speaker acoustic baseline, then codec/transport experiments. **RTP/RTCP audio transport is not implemented and remains gated behind those acceptance tests.**
+Kernel receive timestamps reduce residual RMS but do not meet the current 0.25 ms criterion. This is an investigation result, not a production estimator change. The next physical attempt should use the diagnostic timing-click source to remove intermittent system-playback silence from the same run. Per ADR-028, the branch now integrates an opt-in RTP/UDP diagnostic PCM path alongside the existing TCP fallback: TCP still owns admission/control, UDP registration is tied to the admitted session/token and peer IP, and RTP sample ranges enter the same native PCM buffer. Build with `-PsyncinitRtpAudioEnabled=true` on both Host and Speakers. **This is code integration only; latest-head Android CI and physical UDP/PCM/READY/ANCHOR/acoustic evidence are not yet complete.** Opus and a complete RTCP feedback plane remain future stages. The clock threshold and READY → ANCHOR → audible-output acceptance gates remain unchanged.
 
 ## Repository map
 

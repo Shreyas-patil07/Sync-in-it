@@ -33,6 +33,11 @@ val requestedVersionName = providers.gradleProperty("syncinitVersionName")
     ?.takeIf { it.isNotBlank() }
     ?: "0.6.6"
 
+val rtpAudioEnabled = providers.gradleProperty("syncinitRtpAudioEnabled")
+    .orNull
+    ?.toBooleanStrictOrNull()
+    ?: false
+
 require(requestedVersionCode in 1..2_100_000_000) {
     "syncinitVersionCode must be between 1 and 2100000000"
 }
@@ -53,6 +58,7 @@ android {
         targetSdk = 36
         versionCode = requestedVersionCode
         versionName = requestedVersionName
+        buildConfigField("boolean", "RTP_AUDIO_ENABLED", rtpAudioEnabled.toString())
 
         ndk {
             abiFilters += listOf("arm64-v8a", "x86_64")

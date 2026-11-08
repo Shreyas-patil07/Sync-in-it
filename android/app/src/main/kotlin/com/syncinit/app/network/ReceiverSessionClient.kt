@@ -7,17 +7,25 @@ import android.content.Context
 import android.net.Network
 import android.os.SystemClock
 import com.syncinit.app.audio.PcmAudioReceiver
+import com.syncinit.app.audio.PcmAudioFrameSource
+import com.syncinit.app.audio.RtpPcmAudioFrameSource
+import com.syncinit.app.audio.TcpPcmAudioFrameSource
 import com.syncinit.app.core.NativeProtocol
 import com.syncinit.app.core.NativeTimeSyncClient
 import com.syncinit.transport.TcpFrameConnection
 import com.syncinit.transport.FrameProtocolException
 import com.syncinit.transport.UdpTimeSyncClient
 import com.syncinit.transport.UdpTimeSyncPacketMetadata
+import com.syncinit.transport.RtpUdpSocket
+import com.syncinit.transport.RtpUdpRegistrationCodec
 import java.io.Closeable
 import java.net.InetAddress
+import java.net.DatagramSocket
+import java.net.InetSocketAddress
 import java.net.PortUnreachableException
 import java.io.IOException
 import java.net.SocketTimeoutException
+import java.security.SecureRandom
 import java.util.concurrent.Executors
 import java.util.concurrent.atomic.AtomicBoolean
 import java.util.UUID
@@ -36,6 +44,7 @@ class ReceiverSessionClient(
     @Volatile private var controlConnection: TcpFrameConnection? = null
     @Volatile private var audioConnection: TcpFrameConnection? = null
     @Volatile private var audioPipeline: PcmAudioReceiver? = null
+    @Volatile private var rtpAudioSocket: RtpUdpSocket? = null
 
     fun connect(host: String, tokenHex: String, controlPort: Int = PreviewConfig.CONTROL_PORT) {
         check(!closed.get()) { "receiver client is closed" }
@@ -77,21 +86,40 @@ class ReceiverSessionClient(
                 )
 
                 // The 10-second timeout protects only the WELCOME handshake. The control
-                // channel is otherwise intentionally idle until the master sends an ANCHOR.
+                // channel remains the authority for READY/ANCHOR and session commands.
                 diagnosticStage(attemptId, "CONTROL_IDLE_TIMEOUT_DISABLE") {
                     control.setReadTimeoutMs(0)
                 }
 
-                onStatus("Master accepted HELLO. Opening audio channel…")
+                val rtpRegistration = if (PreviewConfig.RTP_AUDIO_ENABLED) {
+                    diagnosticStage(attemptId, "RTP_UDP_REGISTER") {
+                        registerRtpAudioEndpoint(attemptId, host, peerRoute.network, welcome, token)
+                    }
+                } else null
+
+                onStatus("Master accepted HELLO. Opening audio admission channel…")
                 val audio = connectTcp(attemptId, "AUDIO", host, welcome.audioPort, 0, peerRoute.network)
                 audioConnection = audio
                 diagnosticStage(attemptId, "AUDIO_HELLO_WRITE") {
                     audio.writeEncodedFrame(NativeProtocol.encodeAudioHelloFrame(welcome))
                 }
 
+                val audioSource: PcmAudioFrameSource = if (rtpRegistration != null) {
+                    RtpPcmAudioFrameSource(
+                        socket = rtpRegistration.first,
+                        expectedHostAddress = rtpRegistration.second,
+                        expectedHostPort = PreviewConfig.RTP_AUDIO_PORT,
+                        sessionId = welcome.sessionId,
+                        receiverId = welcome.receiverId,
+                        channels = welcome.channels
+                    )
+                } else {
+                    TcpPcmAudioFrameSource(audio)
+                }
+
                 val pipeline = diagnosticStage(attemptId, "AUDIO_PIPELINE_CREATE") {
                     PcmAudioReceiver(
-                        audioConnection = audio,
+                        audioSource = audioSource,
                         controlConnection = control,
                         welcome = welcome,
                         onStatus = onStatus,
@@ -99,6 +127,7 @@ class ReceiverSessionClient(
                             if (!closed.get()) {
                                 onStatus(
                                     "[DIAG $attemptId] AUDIO_PIPELINE_FAILURE " +
+                                        "transport=${audioSource.transportName} " +
                                         "audioLocal=${audio.localEndpoint} audioRemote=${audio.remoteEndpoint} " +
                                         NetworkDiagnostics.exceptionDetails(error)
                                 )
@@ -112,8 +141,16 @@ class ReceiverSessionClient(
                 diagnosticStage(attemptId, "AUDIO_PIPELINE_START") { pipeline.start() }
                 startControlReader(attemptId, control, pipeline)
 
-                onStatus("[DIAG $attemptId] JOIN_TRANSPORT_READY control=${control.localEndpoint}->${control.remoteEndpoint} audio=${audio.localEndpoint}->${audio.remoteEndpoint}")
-                onStatus("Control and audio channels established. Receiving PCM16 while acquiring the master clock…")
+                onStatus(
+                    "[DIAG $attemptId] JOIN_TRANSPORT_READY mediaTransport=${audioSource.transportName} " +
+                        "control=${control.localEndpoint}->${control.remoteEndpoint} " +
+                        "tcpAudioAdmission=${audio.localEndpoint}->${audio.remoteEndpoint} " +
+                        "rtpUdp=${rtpRegistration?.first?.localPort?.toString() ?: "disabled"}"
+                )
+                onStatus(
+                    "TCP control and ${audioSource.transportName} media data plane established. " +
+                        "Receiving diagnostic PCM16 while acquiring the master clock…"
+                )
                 runClockSync(
                     attemptId,
                     control,
@@ -182,6 +219,77 @@ class ReceiverSessionClient(
         }, "syncinit-control-reader").apply {
             isDaemon = true
             start()
+        }
+    }
+
+    private fun registerRtpAudioEndpoint(
+        attemptId: String,
+        host: String,
+        network: Network,
+        welcome: com.syncinit.app.core.WelcomeParameters,
+        token: ByteArray
+    ): Pair<RtpUdpSocket, InetAddress> {
+        val hostAddress = network.getByName(host)
+        val rawSocket = DatagramSocket(null)
+        try {
+            network.bindSocket(rawSocket)
+            val socket = RtpUdpSocket(
+                bindAddress = InetAddress.getByName("0.0.0.0"),
+                receiveTimeoutMs = PreviewConfig.RTP_AUDIO_REGISTRATION_TIMEOUT_MS,
+                datagramSocket = rawSocket
+            )
+            rtpAudioSocket = socket
+            val nonce = SecureRandom().nextLong()
+            val hello = RtpUdpRegistrationCodec.encodeHello(
+                sessionId = welcome.sessionId,
+                receiverId = welcome.receiverId,
+                token = token,
+                nonce = nonce
+            )
+            val destination = InetSocketAddress(hostAddress, PreviewConfig.RTP_AUDIO_PORT)
+            onStatus(
+                "[DIAG $attemptId] RTP_UDP_REGISTRATION_BEGIN " +
+                    "local=${socket.localAddress}:${socket.localPort} remote=$destination " +
+                    "sessionId=${welcome.sessionId} receiverId=${welcome.receiverId}"
+            )
+
+            repeat(PreviewConfig.RTP_AUDIO_REGISTRATION_ATTEMPTS) { attempt ->
+                socket.send(hello, destination)
+                try {
+                    val response = socket.receive()
+                    if (response.source.address == hostAddress &&
+                        response.source.port == PreviewConfig.RTP_AUDIO_PORT &&
+                        RtpUdpRegistrationCodec.matchesAcknowledgement(
+                            response.packet,
+                            welcome.sessionId,
+                            welcome.receiverId,
+                            token,
+                            nonce
+                        )
+                    ) {
+                        onStatus(
+                            "[DIAG $attemptId] RTP_UDP_REGISTRATION_ACCEPTED " +
+                                "attempt=${attempt + 1} local=${socket.localAddress}:${socket.localPort} " +
+                                "remote=$destination"
+                        )
+                        return socket to hostAddress
+                    }
+                    onStatus(
+                        "[DIAG $attemptId] RTP_UDP_REGISTRATION_RESPONSE_IGNORED " +
+                            "attempt=${attempt + 1} source=${response.source}"
+                    )
+                } catch (_: SocketTimeoutException) {
+                    onStatus(
+                        "[DIAG $attemptId] RTP_UDP_REGISTRATION_TIMEOUT " +
+                            "attempt=${attempt + 1} maxAttempts=${PreviewConfig.RTP_AUDIO_REGISTRATION_ATTEMPTS}"
+                    )
+                }
+            }
+            throw IOException("RTP UDP registration was not acknowledged by the admitted Host.")
+        } catch (error: Exception) {
+            try { rawSocket.close() } catch (_: Exception) { }
+            rtpAudioSocket = null
+            throw error
         }
     }
 
@@ -473,8 +581,10 @@ class ReceiverSessionClient(
         audioPipeline = null
         try { controlConnection?.close() } catch (_: Exception) { }
         try { audioConnection?.close() } catch (_: Exception) { }
+        try { rtpAudioSocket?.close() } catch (_: Exception) { }
         controlConnection = null
         audioConnection = null
+        rtpAudioSocket = null
     }
 
     private fun String.decodeSessionToken(): ByteArray {

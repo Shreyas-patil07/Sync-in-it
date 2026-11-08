@@ -30,15 +30,41 @@ The check task compiles the Kotlin source and runs loopback integration tests fo
 
 ## RTP/UDP audio transport prototype
 
-The transport module now contains an isolated RTP v2 packet profile and unconnected UDP socket adapter:
+The transport module contains an isolated RTP v2 packet profile and unconnected UDP socket adapter:
 
 - Fixed 12-byte RTP v2 header: marker, 7-bit payload type, uint16 sequence, uint32 media timestamp and uint32 SSRC.
 - No CSRC list, header extension or padding in this first profile; those header bits are rejected rather than silently misparsed.
 - Datagram budget is capped at 1,200 bytes, leaving at most 1,188 bytes for payload to avoid routine IP fragmentation on common LAN paths.
-- Payload is opaque. The transport does not yet encode/decode Opus or PCM, schedule playout, reorder packets, repair loss, authenticate peers or integrate with the Android Host/Speaker session.
-- RtpUdpSocket owns a UDP socket, reports source endpoint and monotonic receive time, and leaves session/SSRC/sequence validation to its caller.
+- `RtpUdpSocket` owns a UDP socket, reports source endpoint and monotonic receive time, and leaves session/SSRC/sequence admission to its caller.
 
-This is a packet/socket foundation, not a working audio-stream mode. Existing PCM/TCP remains the application path and fallback. RTCP Sender Report and empty Receiver Report packet/socket primitives are now present, but periodic scheduling, report blocks with loss/jitter statistics, RTP↔NTP clock mapping in the session, NACK/repair, Opus codec integration and playout-buffer wiring are subsequent stages.
+### Diagnostic PCM16 RTP profile
+
+`RtpPcm16Packetizer` and `RtpPcm16Decoder` define the first project-specific payload profile:
+
+- Input is one 20 ms, 48 kHz, stereo, signed PCM16 little-endian chunk: 960 sample frames / 3,840 bytes.
+- That raw chunk cannot fit in a 1,200-byte RTP datagram. It is split into four 5 ms packets, each carrying 240 stereo frames / 960 bytes.
+- Dynamic RTP payload type 96 identifies this diagnostic PCM profile. Sequence number increments for every 5 ms packet; timestamp identifies the first sample frame in that packet and advances by 240 at a 48 kHz clock rate.
+- The four packets retain one session SSRC. The decoder validates payload type, SSRC and exact payload size, and extends 16-bit sequence / 32-bit timestamp counters across wrap.
+- The Android native PCM buffer already stores samples by sample index and accepts out-of-order ranges and duplicates. The intended receiver adapter will insert each decoded 240-frame packet into that buffer; packet arrival order must never become playback order.
+
+The Android app now wires this profile into a build-time opt-in path on the `feature/android-rtp-pcm-first-slice` branch:
+
+- Build with `-PsyncinitRtpAudioEnabled=true`; the property defaults to `false`, so standard builds continue to use PCM16/TCP.
+- TCP still owns HELLO/WELCOME and AUDIO_HELLO admission, clock acquisition, READY, common ANCHOR and session control.
+- After TCP admission, the Speaker registers its UDP source endpoint using its session ID, receiver ID and existing 16-byte admission token. The Host checks the registration against the admitted TCP peer IP and pins the receiver's UDP source endpoint before creating the Host peer.
+- The Host's existing bounded per-Speaker queue retains the shared sample-indexed PCM and sends the four RTP fragments to that receiver's pinned unicast endpoint.
+- The Speaker validates the Host source IP/port, session SSRC and payload type; each 240-frame range is wrapped in the existing native PCM chunk envelope and inserted into the existing sample-indexed native jitter buffer.
+- Both transports share the same receiver output, strict clock gate and common ANCHOR logic. The TCP AUDIO_HELLO channel remains open for compatibility/admission, but the RTP build does not use it as the media data plane.
+
+This is code integration, not physical validation. TCP remains the default and fallback. The feature-flagged branch still needs a paired Android run that proves UDP registration, actual non-silent PCM energy, receive continuity, READY, common ANCHOR and acoustic output. CI success cannot establish those results.
+
+### RTCP boundary
+
+The current `RtcpPacketCodec` and `RtcpUdpSocket` are packet primitives only. They do not yet implement a complete RFC 3550 RTCP feedback plane: periodic scheduling, compound packets with SDES/CNAME, Receiver Report report blocks (fraction/cumulative loss, extended highest sequence, interarrival jitter, LSR/DLSR), or the RTP↔sender-clock mapping are still required. Do not treat the current empty RR packet as full receiver feedback.
+
+An RTCP Sender Report correlates an RTP timestamp with the sender's NTP-format reference clock; it does not synchronize Android monotonic clocks by itself. Keep the existing four-timestamp clock estimator and common `(masterTimeNs, sampleIndex)` ANCHOR. Use RTCP to monitor the media clock and receiver delivery quality, not to bypass the clock-readiness gate.
+
+Opus is a later profile: a 20 ms Opus packet advances the 48 kHz RTP timestamp by 960 ticks and normally fits one RTP payload. Its payload format must follow RFC 7587.
 
 ## Boundaries and limitations
 
