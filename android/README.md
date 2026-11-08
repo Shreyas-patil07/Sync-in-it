@@ -16,6 +16,30 @@ The earlier pre-PR #55 run still records the separate Host-side 500 ms audio-que
 
 See [Test Results](../docs/Test_Results.md) for the complete dated test record, measured values, verdict and next actions. See [Current Implementation Status](../docs/11_Current_Implementation_Status.md) for the overall engineering state.
 
+## Experimental RTP/UDP diagnostic audio path
+
+The current feature branch adds a **build-time, opt-in RTP audio path** alongside the existing PCM16/TCP path. It is not enabled in the published v0.6.9 preview and defaults to TCP.
+
+Build the Host and every Speaker with the same Gradle property:
+
+```bash
+gradle -p android :app:assembleDebug -PsyncinitRtpAudioEnabled=true
+```
+
+Use the default build command without that property to keep PCM16/TCP. Do not mix transports inside one session: Host and Speakers must use matching builds.
+
+When enabled:
+
+- TCP still performs HELLO/WELCOME, AUDIO_HELLO admission, clock probes, READY, ANCHOR and control.
+- The receiver binds its UDP socket to the selected Android `Network`, sends a token-bound registration message, and accepts an RTP endpoint only after the Host validates the existing TCP-admitted receiver ID, session ID, peer IP and session token.
+- The Host pins one UDP source endpoint per Speaker and sends unicast RTP over UDP from the shared audio producer.
+- The first RTP payload is diagnostic PCM16, 48 kHz stereo. Each 20 ms / 960-frame source chunk is split into four 5 ms packets of 240 stereo frames, keeping each payload at 960 bytes below the 1,188-byte RTP payload limit. RTP timestamps advance by 240 per packet.
+- Each Speaker converts the RTP timestamp back to an absolute sample index and inserts the 240-frame PCM range into the same native sample-indexed jitter buffer. READY, common ANCHOR, AudioTrack output and the strict clock gate are shared with TCP; no readiness threshold has been relaxed.
+
+**Not yet implemented in this first app slice:** Opus encode/decode, periodic RTCP Sender Reports, populated RTCP Receiver Report blocks, RTP↔NTP/media-clock mapping, feedback-driven drift correction, or acoustic validation. Existing SR/empty-RR packet primitives are not a complete RTCP feedback plane. RTP packet counts and CI do not establish audible or synchronized playback.
+
+For an RTP test, allow the Host and Speakers to exchange UDP on port `47803` in addition to the existing TCP admission/audio ports and UDP clock-sync port `47802`. Use a trusted private LAN. The session token is still published in DNS-SD metadata in this preview; see [ADR-020](../docs/ADR/Architecture_Decisions.md#adr-020--lan-visible-session-token-in-dns-sd-metadata).
+
 ## Diagnostic text export
 
 The Android app keeps a rolling diagnostic history in app-private storage at `files/diagnostics/sync-in-it-diagnostics.txt` (bounded to 4 MB). The on-screen debugger still shows only the latest 240 events; the saved report contains the retained file history across activity recreation and app restarts.
