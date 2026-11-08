@@ -11,6 +11,7 @@ import com.syncinit.app.core.ClockSyncMeasurement
 import com.syncinit.app.core.NativeCore
 import com.syncinit.app.core.NativeProtocol
 import com.syncinit.app.core.WelcomeParameters
+import com.syncinit.transport.TcpFrameConnection
 import java.io.Closeable
 import java.io.IOException
 import java.util.concurrent.atomic.AtomicBoolean
