@@ -912,7 +912,7 @@ class MasterSessionHost(
                     }
 
                     val candidateResponse = try {
-                        peer.session.timeSyncResponse(datagram.bytes, datagram.estimatorTimestampNs)
+                        peer.session.timeSyncResponse(datagram.bytes, datagram.receivedAtNs)
                     } catch (_: IllegalStateException) {
                         // The Speaker may have disconnected after the receiver snapshot was taken.
                         null
@@ -946,8 +946,7 @@ class MasterSessionHost(
                 val sendTiming = server.sendTimeSyncResponse(encodedResponse, datagram.source)
                 val t3Ns = sendTiming.t3Ns
                 val responseReadyToT3Us = (t3Ns - responseReadyAtNs) / 1_000L
-                val receiveToT3Us = (t3Ns - datagram.estimatorTimestampNs) / 1_000L
-                val appReceiveToT3Us = (t3Ns - datagram.receivedAtNs) / 1_000L
+                val receiveToT3Us = (t3Ns - datagram.receivedAtNs) / 1_000L
                 val sendElapsedUs = sendTiming.sendElapsedNs / 1_000L
                 val hostSessionId = checkNotNull(nativeSessionConfig).sessionId
                 val kernelT2Fields = datagram.kernelTimestamp?.let { kernel ->
@@ -963,8 +962,8 @@ class MasterSessionHost(
                 onStatus(
                     "DIAG HOST_UDP_PROBE sessionId=$hostSessionId sequence=$sequence " +
                         "receiverId=${target.receiverId} appT2Ns=${datagram.receivedAtNs} " +
-                        "t2Ns=${datagram.estimatorTimestampNs} t2Source=${datagram.estimatorTimestampSource} " +
-                        "source=${datagram.source} receiveToT3Us=$receiveToT3Us appReceiveToT3Us=$appReceiveToT3Us " +
+                        "t2Ns=${datagram.receivedAtNs} t2Source=app-post-recv " +
+                        "source=${datagram.source} receiveToT3Us=$receiveToT3Us " +
                         "responseReadyToT3Us=$responseReadyToT3Us sendElapsedUs=$sendElapsedUs" +
                         kernelT2Fields
                 )
