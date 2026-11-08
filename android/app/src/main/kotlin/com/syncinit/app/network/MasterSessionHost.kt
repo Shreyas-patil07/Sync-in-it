@@ -21,6 +21,7 @@ import com.syncinit.transport.RtpPcm16Packetizer
 import com.syncinit.transport.RtpUdpSocket
 import com.syncinit.transport.RtpUdpRegistrationCodec
 import java.io.Closeable
+import java.io.IOException
 import java.net.InetAddress
 import java.net.InetSocketAddress
 import java.net.SocketException
