@@ -38,7 +38,7 @@ The transport module now contains an isolated RTP v2 packet profile and unconnec
 - Payload is opaque. The transport does not yet encode/decode Opus or PCM, schedule playout, reorder packets, repair loss, authenticate peers or integrate with the Android Host/Speaker session.
 - RtpUdpSocket owns a UDP socket, reports source endpoint and monotonic receive time, and leaves session/SSRC/sequence validation to its caller.
 
-This is a packet/socket foundation, not a working audio-stream mode. Existing PCM/TCP remains the application path and fallback. RTCP sender reports, receiver reports, jitter/loss statistics, NACK/repair, Opus codec integration and playout-buffer wiring are subsequent stages.
+This is a packet/socket foundation, not a working audio-stream mode. Existing PCM/TCP remains the application path and fallback. RTCP Sender Report and empty Receiver Report packet/socket primitives are now present, but periodic scheduling, report blocks with loss/jitter statistics, RTP↔NTP clock mapping in the session, NACK/repair, Opus codec integration and playout-buffer wiring are subsequent stages.
 
 ## Boundaries and limitations
 
