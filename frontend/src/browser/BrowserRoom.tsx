@@ -397,7 +397,7 @@ export default function BrowserRoom() {
     const bytes = numberValue(active?.bytesReceived ?? active?.bytesSent);
     const timestamp = numberValue(active?.timestamp);
     const elapsed = previous.lastStatsAt > 0 ? Math.max(0.001, (timestamp - previous.lastStatsAt) / 1000) : 0;
-    const bitrateKbps = elapsed > 0 ? Math.max(0, (bytes - previous.bytes) * 8 / elapsed / 1000) : 0;
+    const bitrateKbps = elapsed > 0 ? Math.max(0, (bytes - previous.lastBytes) * 8 / elapsed / 1000) : 0;
     previous.lastBytes = bytes;
     previous.lastStatsAt = timestamp;
 
