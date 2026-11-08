@@ -651,11 +651,6 @@ class MainActivity : Activity() {
         }
     }
 
-    override fun onDestroy() {
-        SystemAudioCaptureBuffer.statusListener = null
-        super.onDestroy()
-    }
-
     private fun clearDiagnosticLog() {
         synchronized(diagnosticEvents) { diagnosticEvents.clear() }
         diagnosticLogStore.clear()
@@ -797,6 +792,7 @@ class MainActivity : Activity() {
     override fun onDestroy() {
         stopDiscovery()
         stopConnections()
+        SystemAudioCaptureBuffer.statusListener = null
         super.onDestroy()
     }
 }
