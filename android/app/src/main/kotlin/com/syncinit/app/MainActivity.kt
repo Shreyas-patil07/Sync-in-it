@@ -438,6 +438,10 @@ class MainActivity : Activity() {
     }
 
     private fun startHosting() {
+        if (selectedSystemAudio && !SystemAudioCaptureBuffer.isActive()) {
+            postStatus("System-audio capture is not active yet. Grant Android consent again and retry.")
+            return
+        }
         stopConnections(stopCapture = false)
         val audioUri = selectedAudioUri
         val audioName = selectedAudioName
@@ -600,6 +604,7 @@ class MainActivity : Activity() {
                 message.startsWith("Admitted receiver disconnected:")
             if (hostEnded && masterHost != null) {
                 masterHost = null
+                if (selectedSystemAudio) stopSystemAudioCapture("host-session-ended")
                 if (::hostDetails.isInitialized) {
                     hostDetails.text = "Host session ended. Tap Start hosting to advertise again."
                 }
