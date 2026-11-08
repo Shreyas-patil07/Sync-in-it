@@ -32,6 +32,18 @@ The earlier pre-PR #55 run remains relevant historical evidence: its Host-side 5
 The published `v0.6.1` APK is built from release commit `886bb9bcd894211f073d09ae0c571258e149ec1b` with the persistent preview signing key. [Release workflow run 42344911347](https://github.com/Shreyas-patil07/Sync-in-it/actions/runs/42344911347) passed the Android build, transport checks, APK signature verification and GitHub asset publication; [M0 workflow run 42344911344](https://github.com/Shreyas-patil07/Sync-in-it/actions/runs/42344911344) passed the Python 3.11/3.12/3.13 and C++17 matrix. The app now exports retained diagnostics as a user-selected `.txt` file. The latest physical evidence remains the 6 November Speaker-side run, which failed clock stability and did not demonstrate READY, ANCHOR or acoustic skew. CI remains distinct from physical synchronization evidence.
 
 
+## Local audio file source — feature branch, not yet released
+
+The branch `feature/local-audio-file-sharing` introduces the first user-media source behind the existing PCM16/TCP transport:
+
+- The Host can select one `audio/*` content URI through Android's system document picker. A persistable read grant is requested; broad storage permissions are not added.
+- The Host decodes the selected track with Android MediaExtractor/MediaCodec and converts decoded PCM to the existing 48 kHz, stereo, signed PCM16 format. Mono is duplicated to stereo; multichannel sources use their first two channels; sample-rate conversion uses streaming linear interpolation.
+- While Speakers acquire a stable clock, the Host sends silence so the existing 3-second PCM readiness requirement can be satisfied without consuming the selected track.
+- After the admission window closes and the remaining cohort is READY, the Host starts the file at its first sample, sends a 2-second pre-roll, and then issues the shared ANCHOR at that first file sample.
+- The single selected track loops at EOF. The generated timing-click signal remains available for synchronization diagnostics.
+
+**Not included:** Android system-audio capture, DRM/protected playback capture, playlists, coordinated pause/seek, track queueing, background/foreground-service playback, or acoustic validation with real music. Device decoder/container compatibility still requires testing. The feature branch has not passed CI or physical-device validation yet.
+
 ## Final upgrade direction — 7 November 2026
 
 The active work order is evidence tooling → controlled clock A/B → readiness criterion reconciliation → physical READY/ANCHOR and acoustic proof → manual offset/DAC snapshot → drift correction → group recovery/approval → source/codec expansion. See [Implementation Plan](07_Implementation.md) for work packages and [ADR-024](ADR/Architecture_Decisions.md#adr-024--clock-readiness-criterion-and-replay-parity) for the unresolved gate definition.
