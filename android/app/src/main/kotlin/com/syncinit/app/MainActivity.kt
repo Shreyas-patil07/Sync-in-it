@@ -7,6 +7,8 @@ import android.graphics.Typeface
 import android.content.Intent
 import android.graphics.drawable.GradientDrawable
 import android.os.Bundle
+import android.net.Uri
+import android.provider.OpenableColumns
 import android.widget.Toast
 import android.view.Gravity
 import android.widget.Button
@@ -31,6 +33,7 @@ class MainActivity : Activity() {
     private lateinit var status: TextView
     private lateinit var foundationStatus: TextView
     private lateinit var hostDetails: TextView
+    private lateinit var audioSelectionDetails: TextView
     private lateinit var discoveryStatus: TextView
     private lateinit var nearbySessionsContainer: LinearLayout
     private lateinit var debugLog: TextView
@@ -39,12 +42,15 @@ class MainActivity : Activity() {
 
     companion object {
         private const val REQUEST_EXPORT_DIAGNOSTICS = 4102
+        private const val REQUEST_PICK_AUDIO = 4103
     }
 
     @Volatile private var masterHost: MasterSessionHost? = null
     @Volatile private var receiverClient: ReceiverSessionClient? = null
     @Volatile private var hostServiceName: String? = null
     @Volatile private var nearbyBrowser: LanSessionBrowser? = null
+    @Volatile private var selectedAudioUri: Uri? = null
+    @Volatile private var selectedAudioName: String? = null
     private val nearbySessions = LinkedHashMap<String, NearbySession>()
 
     override fun onCreate(savedInstanceState: Bundle?) {
@@ -149,9 +155,19 @@ class MainActivity : Activity() {
             parent = content,
             eyebrow = "01 / HOST",
             title = "Start a speaker group",
-            description = "This phone becomes the Host and shares one generated test stream with connected Speakers."
+            description = "Choose a local audio file to stream from this phone to every connected Speaker. The diagnostic timing signal remains available for sync tests."
         )
-        hostCard.addView(actionButton("Start hosting") { startHosting() }, sectionMargins(top = 12, bottom = 8))
+        hostCard.addView(actionButton("Choose audio file") { chooseAudioFile() }, sectionMargins(top = 12, bottom = 7))
+        audioSelectionDetails = TextView(this).apply {
+            text = "No file selected · diagnostic timing signal will be used."
+            textSize = 12f
+            setTextColor(Color.rgb(159, 174, 198))
+            setPadding(dp(12), dp(10), dp(12), dp(10))
+            background = insetBackground()
+        }
+        hostCard.addView(audioSelectionDetails, sectionMargins(bottom = 7))
+        hostCard.addView(actionButton("Use diagnostic test signal") { clearAudioSelection() }, sectionMargins(bottom = 8))
+        hostCard.addView(actionButton("Start hosting") { startHosting() }, sectionMargins(bottom = 8))
         hostDetails = TextView(this).apply {
             text = "You are not hosting a session."
             textSize = 13f
@@ -223,7 +239,7 @@ class MainActivity : Activity() {
         diagnosticsCard.addView(debugLog)
 
         TextView(this).apply {
-            text = "PLAYBACK NOTE\nThe Host waits for the admitted Speakers to become clock-stable and buffered, then sends a shared start anchor. AudioTrack is started by a writer thread against local monotonic time; DAC start accuracy is not yet validated. The generated 1 kHz click carries a low-level receiver-specific acoustic marker for recording-based skew measurement."
+            text = "PLAYBACK NOTE\nThe Host can stream a selected local audio file or the diagnostic timing signal. Audio is decoded to 48 kHz stereo PCM16 and sent over the existing TCP audio channel. Android system-audio capture, playlists and foreground/background playback are not included yet. The Host waits for clock-stable, buffered Speakers before coordinating the shared start anchor."
             textSize = 11f
             setTextColor(Color.rgb(119, 137, 168))
             setLineSpacing(dp(2).toFloat(), 1f)
@@ -247,6 +263,22 @@ class MainActivity : Activity() {
     @Deprecated("Deprecated in Android API")
     override fun onActivityResult(requestCode: Int, resultCode: Int, data: Intent?) {
         super.onActivityResult(requestCode, resultCode, data)
+        if (requestCode == REQUEST_PICK_AUDIO) {
+            if (resultCode != RESULT_OK) return
+            val uri = data?.data ?: return
+            runCatching {
+                contentResolver.takePersistableUriPermission(
+                    uri,
+                    Intent.FLAG_GRANT_READ_URI_PERMISSION
+                )
+            }
+            selectedAudioUri = uri
+            selectedAudioName = queryDisplayName(uri)
+            audioSelectionDetails.text =
+                "Selected: ${selectedAudioName}\nThis file will be decoded and streamed to connected Speakers."
+            appendDiagnostic("AUDIO_SOURCE_SELECTED", "name=${selectedAudioName} uri=$uri")
+            return
+        }
         if (requestCode != REQUEST_EXPORT_DIAGNOSTICS || resultCode != RESULT_OK) return
         val destination = data?.data ?: return
         Thread({
@@ -277,9 +309,46 @@ class MainActivity : Activity() {
         }, "syncinit-diagnostic-export").apply { isDaemon = true }.start()
     }
 
+    private fun chooseAudioFile() {
+        val intent = Intent(Intent.ACTION_OPEN_DOCUMENT).apply {
+            addCategory(Intent.CATEGORY_OPENABLE)
+            type = "audio/*"
+            addFlags(
+                Intent.FLAG_GRANT_READ_URI_PERMISSION or
+                    Intent.FLAG_GRANT_PERSISTABLE_URI_PERMISSION
+            )
+        }
+        try {
+            startActivityForResult(intent, REQUEST_PICK_AUDIO)
+        } catch (error: Exception) {
+            Toast.makeText(this, "No compatible audio file picker is available.", Toast.LENGTH_LONG).show()
+            appendDiagnostic("AUDIO_PICKER_FAILED", error.message ?: error.javaClass.simpleName)
+        }
+    }
+
+    private fun clearAudioSelection() {
+        selectedAudioUri = null
+        selectedAudioName = null
+        audioSelectionDetails.text = "No file selected · diagnostic timing signal will be used."
+        appendDiagnostic("AUDIO_SOURCE_SELECTED", "source=diagnostic-test-tone")
+    }
+
+    private fun queryDisplayName(uri: Uri): String {
+        return runCatching {
+            contentResolver.query(uri, arrayOf(OpenableColumns.DISPLAY_NAME), null, null, null)?.use { cursor ->
+                val index = cursor.getColumnIndex(OpenableColumns.DISPLAY_NAME)
+                if (index >= 0 && cursor.moveToFirst()) cursor.getString(index) else null
+            }
+        }.getOrNull()?.takeIf { it.isNotBlank() }
+            ?: uri.lastPathSegment?.substringAfterLast('/')?.takeIf { it.isNotBlank() }
+            ?: "Selected audio file"
+    }
+
     private fun startHosting() {
         stopConnections()
-        val service = MasterSessionHost(applicationContext, ::postStatus)
+        val audioUri = selectedAudioUri
+        val audioName = selectedAudioName
+        val service = MasterSessionHost(applicationContext, ::postStatus, audioUri, audioName)
         masterHost = service
         postStatus("Starting a discoverable session…")
         Thread({
@@ -290,8 +359,13 @@ class MainActivity : Activity() {
                         service.close()
                     } else {
                         hostServiceName = invitation.serviceName
+                        val sourceDescription = if (audioUri == null) {
+                            "Diagnostic 1 kHz test signal"
+                        } else {
+                            "Sharing local file: ${audioName ?: "selected audio"} (loops at end-of-file)"
+                        }
                         hostDetails.text =
-                            "Visible as ${invitation.serviceName}\nWaiting for up to ${PreviewConfig.MAX_SPEAKERS} Speakers. One shared 1 kHz timing-click stream will be sent to every connected speaker."
+                            "Visible as ${invitation.serviceName}\n$sourceDescription\nWaiting for up to ${PreviewConfig.MAX_SPEAKERS} Speakers."
                         postStatus("Session created. Nearby phones can see this device and tap to join.")
                         renderNearbySessions()
                     }
