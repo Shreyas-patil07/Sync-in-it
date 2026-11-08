@@ -506,15 +506,18 @@ Android and iOS CI may be expanded after native project skeletons exist. Physica
 - Calibration may be invalidated by phone movement.
 - Building all layers at once will make failures difficult to isolate.
 
-## 10. Immediate next engineering actions
+## 10. Immediate next engineering actions — RTP/RTCP migration
 
-1. Capture the minimum complete Speaker/Host evidence needed to diagnose the active physical failure: per-probe t1–t4/RTT/offset/selection, fit updates, Host audio delivery/queue/slow-write and disconnect counters under one session ID.
-2. Replay the same physical log through the current C++ estimator/gate and compare with the Python reference. Do not change the <0.25 ms runtime gate.
-3. Run one Host + one Speaker using the existing PCM16/TCP + AudioTrack path. Reach READY, receive ANCHOR and record audible marker output. This is the hard vertical-slice gate.
-4. Only after that baseline passes, compare scheduled output with continuous silence-first/timeline-frame output on the same phone and setup.
-5. Add a second Speaker and record repeatable p95 acoustic skew before expanding the group.
-6. After the two-Speaker baseline passes, run the FLAC/TCP and Opus/TCP codec comparisons; then assess UDP selective retransmission separately. Oboe/AAudio remains a later measured backend comparison.
-7. Maintain one primary implementation workstream. Do not begin unrelated platform, provider, calibration, security or codec layers while the single-Speaker path is blocked.
+ADR-028 supersedes the TCP-only transport sequencing in ADR-027. This authorizes a narrow, feature-flagged diagnostic RTP/UDP path; it does not change the clock-readiness gate, declare the RTP path integrated, or remove PCM16/TCP fallback.
+
+1. Preserve the latest paired Host/Speaker clock evidence and replay it through the current C++ estimator/gate. Keep residual RMS <0.25 ms, selected-sample/span requirements and the three-update streak unchanged.
+2. Complete the RTP diagnostic PCM profile in the transport module: 48 kHz stereo PCM16, split into MTU-safe 5 ms packets, 240 sample frames per packet, with sequence/timestamp wrap and out-of-order tests. This transport-library slice is groundwork, not Android app integration.
+3. Integrate RTP unicast behind a build-time feature flag. Bind each UDP endpoint to the selected Wi-Fi Network and associate registration with the admitted TCP control session, session ID, receiver ID and admission credential. Keep the existing TCP audio path available as fallback.
+4. Feed decoded RTP sample ranges into the existing bounded, sample-indexed native PCM jitter buffer. Record sequence gaps, duplicates, late packets, reordering, buffer fill and PCM signal energy. Packet arrival/count alone is not proof of audio delivery.
+5. Run controlled one-Host/one-Speaker A/B tests with the same diagnostic source and AudioTrack backend. Compare TCP and RTP delivery while holding the estimator, READY threshold and ANCHOR algorithm constant. Require READY → common ANCHOR → audible marker output and a physical recording.
+6. Add Opus only after diagnostic PCM over RTP passes the receive-buffer and audible-output tests. Begin with 20 ms Opus frames and 960 RTP timestamp ticks; measure encode/decode delay, bitrate, CPU and quality.
+7. Implement complete compound RTCP Sender/Receiver Reports (including SDES/CNAME and populated reception report blocks), then use SR/RR data for media-clock mapping and per-Speaker feedback. RTCP does not replace the four-timestamp clock estimator.
+8. Add a second Speaker, measure p95 absolute acoustic skew ≤10 ms, then validate drift correction and group resilience. Keep RTP feature-flagged until physical acceptance is repeatable; retain TCP fallback during the migration.
 
 ## 11. Source documents
 
