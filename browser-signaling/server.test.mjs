@@ -132,21 +132,21 @@ test('routes valid signaling only between peers in the same room', async (t) => 
   assert.equal(forwarded.fromPeerId, created.peerId);
   assert.deepEqual(forwarded.payload, payload);
 
+  const outsiderError = nextMessage(outsider, 'error', (message) => message.code === 'not_in_room');
   send(outsider, { type: 'signal', targetPeerId: joined.peerId, payload });
-  assert.equal((await nextMessage(outsider, 'error')).code, 'not_in_room');
+  assert.equal((await outsiderError).code, 'not_in_room');
 
+  const wrongRoomError = nextMessage(host, 'error', (message) => message.code === 'peer_not_found');
   send(host, { type: 'signal', targetPeerId: otherCreated.peerId, payload });
-  assert.equal((await nextMessage(host, 'error', (message) => message.code === 'peer_not_found')).code, 'peer_not_found');
+  assert.equal((await wrongRoomError).code, 'peer_not_found');
 
+  const invalidDescriptionError = nextMessage(host, 'error', (message) => message.code === 'invalid_description');
   send(host, {
     type: 'signal',
     targetPeerId: joined.peerId,
     payload: { kind: 'description', description: { type: 'answer', sdp: 'x'.repeat(12_001) } },
   });
-  assert.equal(
-    (await nextMessage(speaker, 'error', (message) => message.code === 'invalid_description')).code,
-    'invalid_description',
-  );
+  assert.equal((await invalidDescriptionError).code, 'invalid_description');
 });
 
 test('host disconnect closes its room and releases speakers', async (t) => {
