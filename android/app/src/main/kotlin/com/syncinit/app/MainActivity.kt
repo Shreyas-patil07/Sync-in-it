@@ -76,7 +76,14 @@ class MainActivity : Activity() {
                     if (message.contains("failed", ignoreCase = true) ||
                         message.contains("stopped", ignoreCase = true)
                     ) {
+                        val wasSystemAudioSelected = selectedSystemAudio
                         selectedSystemAudio = false
+                        if (wasSystemAudioSelected && selectedAudioUri == null &&
+                            selectedAudioName == null && ::audioSelectionDetails.isInitialized
+                        ) {
+                            audioSelectionDetails.text =
+                                "System audio capture stopped or unavailable · select Capture system audio again."
+                        }
                     } else if (
                         message.contains("capture service is active", ignoreCase = true) ||
                         message.contains("playback capture started", ignoreCase = true)
