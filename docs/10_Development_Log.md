@@ -1081,3 +1081,18 @@ Do not infer missing hardware/router metadata. Store raw recordings outside Git 
 PR #76 merged the local-file source, user-consented Android system-audio capture, 20-second capture buffer, MediaProjection foreground service, and the UDP recvmsg sender-address correction into main. The Host media sources use the unchanged PCM16/TCP fan-out and common READY/ANCHOR schedule.
 
 Post-merge main workflows passed: Android app/JNI [42487998775](https://github.com/Shreyas-patil07/Sync-in-it/actions/runs/42487998775) and M0 Python/C++ [42487998642](https://github.com/Shreyas-patil07/Sync-in-it/actions/runs/42487998642). Physical Android 12/14 capture, successful READY/ANCHOR and acoustic-skew testing remain unverified. The release is therefore an engineering prerelease, not a validated synchronized-audio release.
+
+
+### 8 November 2026 — v0.6.8 engineering prerelease published
+
+**Release:** [v0.6.8](https://github.com/Shreyas-patil07/Sync-in-it/releases/tag/v0.6.8)  
+**Source commit:** `8e16eea24afaf0e671105b854df3b2d4fa735f3e`  
+**Publisher workflow:** [42488294615](https://github.com/Shreyas-patil07/Sync-in-it/actions/runs/42488294615) — passed build, transport checks, persistent preview-signature verification and GitHub pre-release publication.
+
+**Assets:**
+- `SyncInIt-Android-preview-v0.6.8.apk` — 6,021,838 bytes.
+- APK SHA-256: `99fdff4dd9d2ba47514bbcbffd85f40c02fb8bed3f68a99d5be114ef1ee5ce43`.
+
+**Release scope:** local audio-file sharing, consented Android app-playback capture through MediaProjection, bounded rolling PCM capture, shared sample-indexed TCP fan-out and the existing group READY/ANCHOR path. Includes the UDP recvmsg sender-address fix.
+
+**Evidence boundary:** Post-merge Android/JNI and M0 workflows passed. No physical Android 12/14 system-capture run has yet demonstrated READY, ANCHOR or measured acoustic skew. The prerelease must not be described as acoustically validated.
