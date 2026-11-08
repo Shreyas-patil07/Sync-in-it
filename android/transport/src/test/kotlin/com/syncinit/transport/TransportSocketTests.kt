@@ -358,8 +358,6 @@ private fun udpTimeSyncSequenceMetadata() {
     expect(rejected, "UDP sequence metadata rejects invalid packet magic")
 }
 
-
-
 private fun udpTimeSyncLoopback() {
     val loopback = InetAddress.getByName("127.0.0.1")
     UdpTimeSyncServer(loopback, 0, receiveTimeoutMs = 3_000).use { server ->
