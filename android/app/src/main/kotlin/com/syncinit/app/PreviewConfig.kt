@@ -10,6 +10,10 @@ internal object PreviewConfig {
     const val DEFAULT_AUDIO_PORT = 47_801
     const val AUDIO_LISTENER_REQUESTED_PORT = 0
     const val TIME_PORT = 47_802
+    const val RTP_AUDIO_PORT = 47_803
+    const val RTP_AUDIO_REGISTRATION_TIMEOUT_MS = 1_000
+    const val RTP_AUDIO_REGISTRATION_ATTEMPTS = 5
+    val RTP_AUDIO_ENABLED: Boolean = BuildConfig.RTP_AUDIO_ENABLED
 
     const val MAX_SPEAKERS = 8
     const val SAMPLE_RATE_HZ = 48_000
