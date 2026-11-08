@@ -97,3 +97,67 @@ object RtcpPacketCodec {
             ((bytes[offset + 2].toLong() and 0xffL) shl 8) or
             (bytes[offset + 3].toLong() and 0xffL)
 }
+
+
+data class ReceivedRtcpDatagram(
+    val bytes: ByteArray,
+    val source: java.net.InetSocketAddress,
+    val receivedAtNs: Long
+)
+
+/** Dedicated RTCP UDP socket; packet semantics are validated by RtcpPacketCodec. */
+class RtcpUdpSocket(
+    bindAddress: java.net.InetAddress,
+    localPort: Int = 0,
+    receiveTimeoutMs: Int = 0
+) : java.io.Closeable {
+    private val socket = java.net.DatagramSocket(null)
+    private val closed = java.util.concurrent.atomic.AtomicBoolean(false)
+
+    init {
+        require(localPort in 0..65_535)
+        require(receiveTimeoutMs >= 0)
+        socket.reuseAddress = true
+        socket.bind(java.net.InetSocketAddress(bindAddress, localPort))
+        socket.soTimeout = receiveTimeoutMs
+    }
+
+    val localPort: Int get() = socket.localPort
+
+    fun sendSenderReport(report: RtcpSenderReport, destination: java.net.InetSocketAddress) =
+        send(RtcpPacketCodec.encodeSenderReport(report), destination)
+
+    fun sendReceiverReport(report: RtcpReceiverReport, destination: java.net.InetSocketAddress) =
+        send(RtcpPacketCodec.encodeReceiverReport(report), destination)
+
+    fun send(bytes: ByteArray, destination: java.net.InetSocketAddress) {
+        check(!closed.get()) { "RTCP UDP socket is closed" }
+        require(!destination.isUnresolved && destination.port in 1..65_535)
+        val packet = when ((bytes.getOrNull(1)?.toInt() ?: -1) and 0xff) {
+            RtcpPacketCodec.SENDER_REPORT_TYPE -> RtcpPacketCodec.decodeSenderReport(bytes)
+            RtcpPacketCodec.RECEIVER_REPORT_TYPE -> RtcpPacketCodec.decodeReceiverReport(bytes)
+            else -> throw IllegalArgumentException("unsupported RTCP packet type")
+        }
+        @Suppress("UNUSED_VARIABLE") val validated = packet
+        socket.send(java.net.DatagramPacket(bytes, bytes.size, destination))
+    }
+
+    fun receive(): ReceivedRtcpDatagram {
+        check(!closed.get()) { "RTCP UDP socket is closed" }
+        val buffer = ByteArray(RtcpPacketCodec.SENDER_REPORT_SIZE + 1)
+        val packet = java.net.DatagramPacket(buffer, buffer.size)
+        socket.receive(packet)
+        val receivedAtNs = System.nanoTime()
+        val bytes = buffer.copyOf(packet.length)
+        when ((bytes.getOrNull(1)?.toInt() ?: -1) and 0xff) {
+            RtcpPacketCodec.SENDER_REPORT_TYPE -> RtcpPacketCodec.decodeSenderReport(bytes)
+            RtcpPacketCodec.RECEIVER_REPORT_TYPE -> RtcpPacketCodec.decodeReceiverReport(bytes)
+            else -> throw FrameProtocolException("unsupported RTCP packet type")
+        }
+        return ReceivedRtcpDatagram(bytes, java.net.InetSocketAddress(packet.address, packet.port), receivedAtNs)
+    }
+
+    override fun close() {
+        if (closed.compareAndSet(false, true)) socket.close()
+    }
+}
