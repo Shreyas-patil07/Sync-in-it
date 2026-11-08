@@ -205,6 +205,7 @@ class MasterSessionHost(
                 var control: TcpFrameConnection? = null
                 var audio: TcpFrameConnection? = null
                 var session: NativeReceiverSession? = null
+                var pendingRtpReceiverId: Int? = null
                 var ownershipTransferred = false
                 try {
                     val listeningControl = checkNotNull(controlServer)
@@ -242,6 +243,7 @@ class MasterSessionHost(
 
                     val receiverId = nextReceiverId.getAndIncrement()
                     check(receiverId in 1..0xffff) { "receiver ID space is exhausted" }
+                    pendingRtpReceiverId = if (PreviewConfig.RTP_AUDIO_ENABLED) receiverId else null
                     val baseConfig = checkNotNull(nativeSessionConfig)
                     val receiverConfig = baseConfig.copy(
                         receiverId = receiverId,
@@ -252,6 +254,13 @@ class MasterSessionHost(
                     val helloResult = receiverSession.onHelloFrame(hello.toEncodedBytes())
                     check(helloResult == ReceiverSessionResult.Accepted) {
                         "HELLO rejected: $helloResult"
+                    }
+
+                    if (PreviewConfig.RTP_AUDIO_ENABLED) {
+                        pendingRtpRegistrations[receiverId] = PendingRtpRegistration(
+                            expectedAddress = acceptedControl.remoteAddress,
+                            token = receiverConfig.token.copyOf()
+                        )
                     }
 
                     val welcome = checkNotNull(receiverSession.welcomeFrame()) {
@@ -277,7 +286,18 @@ class MasterSessionHost(
                         "AUDIO_HELLO rejected: $audioResult"
                     }
 
-                    val peer = HostReceiverPeer(receiverId, receiverSession, acceptedControl, acceptedAudio)
+                    val rtpEndpoint = if (PreviewConfig.RTP_AUDIO_ENABLED) {
+                        awaitRtpRegistration(receiverId)
+                    } else null
+
+                    val peer = HostReceiverPeer(
+                        receiverId = receiverId,
+                        session = receiverSession,
+                        control = acceptedControl,
+                        audio = acceptedAudio,
+                        sessionId = baseConfig.sessionId,
+                        rtpPeer = rtpEndpoint
+                    )
                     synchronized(groupStartLock) {
                         check(!groupStartScheduled.get()) {
                             "group playback started while this Speaker was joining"
@@ -297,6 +317,10 @@ class MasterSessionHost(
                         }
                         ownershipTransferred = true
                     }
+                    pendingRtpReceiverId?.let { pendingId ->
+                        pendingRtpRegistrations.remove(pendingId)?.token?.fill(0)
+                    }
+                    pendingRtpReceiverId = null
                     control = null
                     audio = null
                     session = null
@@ -317,6 +341,10 @@ class MasterSessionHost(
                     if (!closed.get()) reportJoinFailure(control, error)
                 } finally {
                     if (!ownershipTransferred) {
+                        pendingRtpReceiverId?.let { pendingId ->
+                            pendingRtpRegistrations.remove(pendingId)?.token?.fill(0)
+                            registeredRtpPeers.remove(pendingId)
+                        }
                         closeQuietly(control)
                         closeQuietly(audio)
                         closeQuietly(session)
