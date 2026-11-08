@@ -248,17 +248,17 @@ A successful desktop CI run verifies deterministic core behavior. A successful A
 - No claim of zero-millisecond, sample-accurate DAC, or acoustically perfect synchronization is supported.
 - Bluetooth output latency, device-specific HAL delay, microphone calibration and long-duration acoustic drift remain unmeasured.
 
-## Next engineering sequence
+## Next engineering sequence — ADR-028 RTP/RTCP migration
 
-1. Use one Host + one Speaker on the current PCM16/TCP + AudioTrack path, foregrounded and screen-on on a trusted LAN.
-2. Capture matching Host/Speaker logs and replay the exact clock probes through the same C++ estimator/gate. The 8 Nov paired runs now have application/kernel timestamp comparisons, but the kernel variant still fails the gate; run the canonical C++ replay tool against both raw pairs and preserve CSV. Include Host delivery, TCP write stalls, per-Speaker queue depth/overflow, receiver buffer, READY and disconnect reason.
-3. Keep the current clock threshold unchanged. Diagnose whether the first Speaker is blocked by clock readiness, audio transport/buffering or output scheduling; do not add another architecture layer to hide the failure.
-4. Prove READY sent/accepted → common ANCHOR received → audible marker output. Preserve a physical recording and machine-readable frame-to-marker result.
-5. Compare scheduled AudioTrack with continuous silence-first, output-frame-aligned rendering on the same device/setup. DAC timestamps must be active before ANCHOR and the renderer/timestamp frame counter relationship must be validated.
-6. Add a second Speaker and prove repeatable p95 acoustic skew ≤10 ms before group scaling.
-7. Only after that baseline passes, compare PCM/TCP against FLAC/TCP and Opus/TCP, then test UDP selective retransmission separately. Keep the current PCM/TCP path as fallback.
-8. Compare Oboe/AAudio against AudioTrack on the same Xiaomi devices only after an output baseline exists. Select from timestamp and acoustic measurements, not API claims.
-9. Keep one primary implementation workstream. Do not start iOS, PWA, provider/queue, calibration, security, codec or transport expansion while the single-Speaker path remains blocked. Long/endurance work remains blocked by the foreground-service/wake-lock dependency.
+1. Keep the strict clock gate unchanged and replay the paired 8 Nov Host/Speaker probes through the canonical C++ estimator. The application/kernel residual alternatives remain above 0.25 ms; transport success must not be used to bypass READY.
+2. Add the feature-flagged diagnostic PCM RTP/UDP unicast path alongside PCM16/TCP. Bind UDP sockets to the selected Wi-Fi Network and authenticate/associate the UDP endpoint with the admitted TCP session. TCP remains the fallback.
+3. Feed each decoded 240-frame RTP sample range into the existing native sample-indexed PCM buffer. Measure receive rate, loss, reordering, duplicates, late packets, contiguous buffer fill and actual PCM signal energy.
+4. Run one Host + one Speaker on the same devices/router/audio source with TCP and RTP as the only A/B variable. Preserve Host/Speaker logs, reach READY → common ANCHOR → audible output, and record receiver-specific acoustic markers.
+5. Add Opus after diagnostic PCM RTP passes. Use the RFC 7587 48 kHz RTP clock and begin with 20 ms frames / 960 timestamp ticks. Measure codec latency, bitrate, CPU and decoded PCM continuity.
+6. Complete RTCP compound SR/RR with SDES/CNAME and populated report blocks. Use SR to observe the sender media clock and RR for receiver loss/jitter feedback; retain four-timestamp clock acquisition for inter-device monotonic offset.
+7. Map RTP sample time through receiver monotonic time to AudioTrack timestamp frame positions. Only then evaluate output-frame scheduling and drift correction.
+8. Add a second Speaker, prove p95 absolute acoustic skew ≤10 ms, then expand group resilience. Keep RTP feature-flagged and PCM/TCP available until physical acceptance is repeatable.
+9. Long/endurance/background tests remain blocked by the foreground-service and wake-lock dependency.
 
 
 
@@ -266,7 +266,7 @@ A successful desktop CI run verifies deterministic core behavior. A successful A
 
 The two 8 November v0.6.9-debug attempts are the latest physical evidence. Both used the same Android 12 Host (Xiaomi M2010J19SI) and Android 14 Speaker (Xiaomi 22101316I) on one Wi-Fi subnet. TCP admission, UDP time-sync response and PCM/TCP delivery were observed, but both attempts remained blocked at `CLOCK_UNSTABLE`. The full two-attempt application/kernel fit and hold-out comparison is recorded in [Test Results §2.6](Test_Results.md#26-test-record--2026-11-08--v069-debug-paired-applicationkernel-timestamp-replay).
 
-Kernel receive timestamps reduce residual RMS but do not meet the current 0.25 ms criterion. This is an investigation result, not a production estimator change. The next physical attempt should use the diagnostic timing-click source to remove intermittent system-playback silence from the same run. The project test order remains unchanged: single-Speaker READY → ANCHOR → audible output, then two-Speaker acoustic baseline, then codec/transport experiments. **RTP/RTCP audio transport is not implemented and remains gated behind those acceptance tests.**
+Kernel receive timestamps reduce residual RMS but do not meet the current 0.25 ms criterion. This is an investigation result, not a production estimator change. The next physical attempt should use the diagnostic timing-click source to remove intermittent system-playback silence from the same run. Per ADR-028, a narrow feature-flagged RTP/UDP diagnostic PCM migration is now authorized alongside the existing TCP fallback. The transport library has a 4×5 ms packetizer/decoder profile and wrap/reordering tests on the implementation branch. **The Android Host/Speaker session is not yet integrated with RTP; no physical RTP packet or audio result is claimed.** The clock threshold and READY → ANCHOR → audible-output acceptance gates remain unchanged.
 
 ## Repository map
 
