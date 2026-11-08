@@ -141,8 +141,16 @@ class ReceiverSessionClient(
                 diagnosticStage(attemptId, "AUDIO_PIPELINE_START") { pipeline.start() }
                 startControlReader(attemptId, control, pipeline)
 
-                onStatus("[DIAG $attemptId] JOIN_TRANSPORT_READY control=${control.localEndpoint}->${control.remoteEndpoint} audio=${audio.localEndpoint}->${audio.remoteEndpoint}")
-                onStatus("Control and audio channels established. Receiving PCM16 while acquiring the master clock…")
+                onStatus(
+                    "[DIAG $attemptId] JOIN_TRANSPORT_READY mediaTransport=${audioSource.transportName} " +
+                        "control=${control.localEndpoint}->${control.remoteEndpoint} " +
+                        "tcpAudioAdmission=${audio.localEndpoint}->${audio.remoteEndpoint} " +
+                        "rtpUdp=${rtpRegistration?.first?.localPort?.toString() ?: "disabled"}"
+                )
+                onStatus(
+                    "TCP control and ${audioSource.transportName} media data plane established. " +
+                        "Receiving diagnostic PCM16 while acquiring the master clock…"
+                )
                 runClockSync(
                     attemptId,
                     control,
