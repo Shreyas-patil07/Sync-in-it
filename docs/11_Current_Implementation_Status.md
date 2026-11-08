@@ -2,8 +2,8 @@
 
 **Status date:** 8 November 2026  
 **Main baseline:** PR #76 merged at `163faad3bde01b75d1e38d8b4b793d413393fdef`  
-**Release packaging commit:** `886bb9bcd894211f073d09ae0c571258e149ec1b`  
-**Latest published Android preview:** [`v0.6.7`](https://github.com/Shreyas-patil07/Sync-in-it/releases/tag/v0.6.7) — v0.6.8 release packaging in progress  
+**Release packaging commit:** `8e16eea24afaf0e671105b854df3b2d4fa735f3e`  
+**Latest published Android preview:** [`v0.6.8`](https://github.com/Shreyas-patil07/Sync-in-it/releases/tag/v0.6.8) — engineering prerelease  
 **Audience:** contributors, testers and anyone assessing what is implemented versus what is still a design target.
 
 This file is the source of truth for present-tense implementation claims. Product targets, architecture proposals and future behavior in the other design documents remain useful, but they must not be read as evidence that those features are already implemented or validated.
@@ -20,21 +20,21 @@ The earlier pre-PR #55 run remains relevant historical evidence: its Host-side 5
 
 | Item | Current state | Evidence / interpretation |
 |---|---|---|
-| Published preview | `v0.6.1` | Public GitHub engineering pre-release with signed APK and SHA-256 checksum |
-| APK asset | `SyncInIt-Android-preview-v0.6.1.apk` | 5,986,806 bytes; persistent preview signing key used; SHA-256 `053ee227455a0b420effd81a58c9f8967179052097537604d76b1000ed80c959` |
-| Release scope | Persistent app-private diagnostic history, user-initiated `.txt` export, replayable `CLOCK_PROBE` / `CLOCK_FIT` telemetry, plus the existing acoustic markers and backpressure diagnostics | See the [v0.6.1 release notes](https://github.com/Shreyas-patil07/Sync-in-it/releases/tag/v0.6.1) |
+| Published preview | `v0.6.8` | Public GitHub engineering prerelease with updateable signed APK and SHA-256 checksum |
+| APK asset | `SyncInIt-Android-preview-v0.6.8.apk` | 6,021,838 bytes; persistent preview signing key used; SHA-256 `99fdff4dd9d2ba47514bbcbffd85f40c02fb8bed3f68a99d5be114ef1ee5ce43` |
+| Release scope | Local-file sharing, consented Android app-playback capture, 20-second rolling capture buffer, common PCM/TCP/ANCHOR path, UDP recvmsg sender-address fix | See the [v0.6.8 release notes](../RELEASE_NOTES_v0.6.8.md) |
 | Current main | PR #76 merged at `163faad3bde0` | Adds local-file and user-consented Android system-playback sources, plus the UDP recvmsg sender-address fix; estimator thresholds, readiness gate and Speaker transport unchanged |
-| M0 simulator/native CI on release commit | Passed | [Workflow run 42230554383](https://github.com/Shreyas-patil07/Sync-in-it/actions/runs/42230554383) passed the Python 3.11/3.12/3.13 and C++17 matrix, vectors, simulator and queue scenarios |
-| Android/JNI CI on release commit | Passed | [Workflow run 42230554351](https://github.com/Shreyas-patil07/Sync-in-it/actions/runs/42230554351) passed build, Kotlin transport checks, signature verification and artifact upload |
-| Release publisher | Passed | [Workflow run 42230554362](https://github.com/Shreyas-patil07/Sync-in-it/actions/runs/42230554362) built the updateable APK, passed transport checks, verified its signature and uploaded the APK/checksum |
-| Physical validation | Partial post-fix device evidence; end-to-end playback not validated | 6 Nov Speaker log: ingress near 50 frames/sec, zero missing frames, buffer to ~19.94 s; clock residual 0.412–0.557 ms kept stable streak at 0 and blocked READY. Matching Host log and acoustic result absent |
+| M0 simulator/native CI on merged source | Passed | [Workflow run 42487998642](https://github.com/Shreyas-patil07/Sync-in-it/actions/runs/42487998642) passed Python 3.11/3.12/3.13 + C++17 tests |
+| Android/JNI CI on merged source | Passed | [Workflow run 42487998775](https://github.com/Shreyas-patil07/Sync-in-it/actions/runs/42487998775) passed Android build, transport checks, signature verification and artifact upload |
+| Release publisher | Passed | [Workflow run 42488294615](https://github.com/Shreyas-patil07/Sync-in-it/actions/runs/42488294615) built the updateable APK, passed transport checks, verified its signature and published the GitHub prerelease |
+| Physical validation | Not yet validated end-to-end | No Android 12/14 run has yet demonstrated app-playback capture, READY, ANCHOR and acoustic skew. Historical 6 Nov residual RMS of 0.412–0.557 ms remained above the strict 0.25 ms gate |
 
-The published `v0.6.1` APK is built from release commit `886bb9bcd894211f073d09ae0c571258e149ec1b` with the persistent preview signing key. [Release workflow run 42344911347](https://github.com/Shreyas-patil07/Sync-in-it/actions/runs/42344911347) passed the Android build, transport checks, APK signature verification and GitHub asset publication; [M0 workflow run 42344911344](https://github.com/Shreyas-patil07/Sync-in-it/actions/runs/42344911344) passed the Python 3.11/3.12/3.13 and C++17 matrix. The app now exports retained diagnostics as a user-selected `.txt` file. The latest physical evidence remains the 6 November Speaker-side run, which failed clock stability and did not demonstrate READY, ANCHOR or acoustic skew. CI remains distinct from physical synchronization evidence.
+The published `v0.6.8` APK is built from release commit `8e16eea24afaf0e671105b854df3b2d4fa735f3e` with the persistent preview signing key. [Release workflow run 42488294615](https://github.com/Shreyas-patil07/Sync-in-it/actions/runs/42488294615) passed the Android build, transport checks, APK signature verification and GitHub prerelease publication. Asset SHA-256: `99fdff4dd9d2ba47514bbcbffd85f40c02fb8bed3f68a99d5be114ef1ee5ce43`. The release includes local-file and user-consented system-audio sources. No successful physical READY/ANCHOR or acoustic-skew validation has been supplied; CI remains distinct from physical synchronization evidence.
 
 
-## Local audio file source — feature branch, not yet released
+## Media sources — local files and Android system playback capture
 
-The branch `feature/local-audio-file-sharing` introduces the first user-media source behind the existing PCM16/TCP transport:
+The main branch includes two user-media sources behind the existing PCM16/TCP transport:
 
 - The Host can select one `audio/*` content URI through Android's system document picker. A persistable read grant is requested; broad storage permissions are not added.
 - The Host decodes the selected track with Android MediaExtractor/MediaCodec and converts decoded PCM to the existing 48 kHz, stereo, signed PCM16 format. Mono is duplicated to stereo; multichannel sources use their first two channels; sample-rate conversion uses streaming linear interpolation.
@@ -42,7 +42,7 @@ The branch `feature/local-audio-file-sharing` introduces the first user-media so
 - After the admission window closes and the remaining cohort is READY, the Host starts the file at its first sample, sends a 2-second pre-roll, and then issues the shared ANCHOR at that first file sample.
 - The single selected track loops at EOF. The generated timing-click signal remains available for synchronization diagnostics.
 
-**Not included:** Android system-audio capture, DRM/protected playback capture, playlists, coordinated pause/seek, track queueing, background/foreground-service playback, or acoustic validation with real music. Device decoder/container compatibility still requires testing. The feature branch has not passed CI or physical-device validation yet.
+**Not included:** DRM/protected playback capture, playlists, coordinated pause/seek, track queueing, background network-session guarantees, or acoustic validation with real music. System playback capture requires Android 10+, RECORD_AUDIO permission and fresh MediaProjection consent; source apps can disable capture, so protected/capture-restricted playback may be silent. CI passed for the merged implementation; physical Android 12/14 capture, READY/ANCHOR and acoustic-skew validation remain pending.
 
 ## Final upgrade direction — 7 November 2026
 
@@ -299,3 +299,10 @@ The implementation is code-complete on the feature branch. GitHub Android app/JN
 PR #76 was merged at `163faad3bde01b75d1e38d8b4b793d413393fdef`. It adds local-file playback and consented Android playback capture using MediaProjection and a foreground service, both feeding the existing sample-indexed PCM/TCP fan-out and shared ANCHOR path. The same PR carries the previously separate UDP recvmsg sender-address fix.
 
 Post-merge main CI passed: [Android app/JNI run 42487998775](https://github.com/Shreyas-patil07/Sync-in-it/actions/runs/42487998775) and [M0 Python/C++ run 42487998642](https://github.com/Shreyas-patil07/Sync-in-it/actions/runs/42487998642). This is build/automated-test evidence only. Physical Android 12/14 app-playback capture, stable clock readiness, group ANCHOR, and acoustic-skew validation remain pending. See the release-specific notes for v0.6.8 before installing.
+
+
+### 8 November 2026 — v0.6.8 engineering prerelease published
+
+The release publisher [workflow run 42488294615](https://github.com/Shreyas-patil07/Sync-in-it/actions/runs/42488294615) published [v0.6.8](https://github.com/Shreyas-patil07/Sync-in-it/releases/tag/v0.6.8), with the updateable APK and SHA-256 asset. Source commit: `8e16eea24afaf0e671105b854df3b2d4fa735f3e`. APK SHA-256: `99fdff4dd9d2ba47514bbcbffd85f40c02fb8bed3f68a99d5be114ef1ee5ce43`.
+
+The prerelease contains local-file sharing and consented Android system-audio capture. The code passed post-merge Android/JNI and M0 automated workflows. Physical Android 12/14 app-playback capture, clock READY, common ANCHOR and acoustic-skew validation remain pending. See [release notes](../RELEASE_NOTES_v0.6.8.md).
