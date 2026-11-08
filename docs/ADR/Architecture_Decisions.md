@@ -334,3 +334,25 @@ These records consolidate decisions and open questions from [docs/System Structu
 **Security and network constraints:** UDP registration must be bound to the admitted TCP control peer, current session/receiver identity and admission credential; do not trust an SSRC alone. The existing LAN-discoverable token/security concern in ADR-020 remains open. Use a selected Wi-Fi Network for UDP sockets on Android, and test hotspots/APs with client isolation and UDP filtering. UDP congestion/loss handling and per-Speaker queue bounds must be explicit; unicast is not permission to ignore airtime or congestion.
 
 **Consequences:** The transport target is RTP/UDP + RTCP feedback + TCP control, but the active Android application remains PCM16/TCP until the feature-flagged RTP path passes the same end-to-end and acoustic gates. The diagnostic PCM packetizer currently added to the transport module is not evidence of Android integration or synchronized playback.
+
+
+## ADR-029 — LAN-local session coordination API
+
+**Status:** Accepted as an additive integration layer; Android direct-host protocol remains authoritative  
+**Date:** 9 November 2026
+
+**Context:** The product requirement is offline operation on a private Wi-Fi LAN without cloud accounts or a remote service. The Android Host already performs direct TCP admission/control, UDP clock acquisition and direct audio fan-out. A conventional cloud backend in the critical path would violate the offline requirement and introduce unnecessary network latency and availability dependencies.
+
+**Decision:**
+1. Add a versioned FastAPI + SQLite service for session metadata, join-code admission, device identity, coarse presence and diagnostic state.
+2. Treat this API as an optional LAN-local coordination service. It may run on a laptop or small LAN host during integration; it is not required for audio delivery or clock synchronization.
+3. Keep audio media direct from Host to each Speaker over the existing TCP or experimental RTP/UDP path. Do not proxy PCM through HTTP/WebSocket.
+4. Keep four-timestamp clock probes, READY, common ANCHOR and time-critical playback commands on the direct device protocol until a measured migration plan explicitly replaces them.
+5. Store only hashes of generated bearer tokens. Return raw credentials once, enforce protocol-version compatibility, use transactional receiver-capacity checks and rate-limit join attempts.
+6. Keep the Android app capable of operating without this service. A future embedded Android implementation or a no-backend local discovery path must preserve the product's offline guarantee.
+
+**Initial API scope:** create/close session, join by short code, Host device listing, Speaker heartbeat and coarse device-state reporting. The first implementation is under `backend/`.
+
+**Not a decision:** This ADR does not authorize a cloud account system, remote media relay, remote database, or a requirement for internet connectivity. The API is not yet integrated with Android/iOS clients and is not a production security boundary on untrusted networks.
+
+**Consequences:** Session metadata can be tested independently from audio timing and transport. API state must not be mistaken for device clock readiness or proof of audible playback. Integration, TLS/authenticated encryption, event delivery, migrations, and operational deployment remain follow-up work.
