@@ -448,6 +448,97 @@ private fun udpRejectsMalformedDatagrams() {
     }
 }
 
+
+private fun rtpPacketCodecRoundTrip() {
+    val original = RtpPacket(
+        payloadType = 96,
+        sequenceNumber = 65_530,
+        timestamp = 0xfedc_ba98L,
+        ssrc = 0x1234_5678L,
+        marker = true,
+        payload = byteArrayOf(0, 1, 2, 0xff.toByte())
+    )
+    val encoded = RtpPacketCodec.encode(original)
+    expect(encoded.size == RtpPacketCodec.HEADER_SIZE + original.payload.size, "RTP codec writes a 12-byte fixed header")
+    expect((encoded[0].toInt() and 0xff) == 0x80, "RTP codec writes version 2 with no optional header fields")
+    expect((encoded[1].toInt() and 0xff) == 0xe0, "RTP codec preserves marker and dynamic payload type")
+    val decoded = RtpPacketCodec.decode(encoded)
+    expect(decoded.payloadType == original.payloadType, "RTP payload type round-trips")
+    expect(decoded.sequenceNumber == original.sequenceNumber, "RTP sequence number round-trips")
+    expect(decoded.timestamp == original.timestamp, "RTP timestamp round-trips as unsigned uint32")
+    expect(decoded.ssrc == original.ssrc, "RTP SSRC round-trips as unsigned uint32")
+    expect(decoded.marker == original.marker, "RTP marker round-trips")
+    expect(decoded.payload.contentEquals(original.payload), "RTP payload bytes round-trip")
+
+    val maxPayload = ByteArray(RtpPacketCodec.MAX_PAYLOAD_SIZE)
+    expect(
+        RtpPacketCodec.encode(original.copy(payload = maxPayload)).size == RtpPacketCodec.MAX_DATAGRAM_SIZE,
+        "RTP codec accepts a packet exactly at the 1200-byte safe datagram limit"
+    )
+
+    var rejected = false
+    try { RtpPacketCodec.encode(original.copy(sequenceNumber = 65_536)) }
+    catch (_: IllegalArgumentException) { rejected = true }
+    expect(rejected, "RTP codec rejects sequence numbers outside uint16")
+
+    rejected = false
+    try { RtpPacketCodec.encode(original.copy(payload = ByteArray(RtpPacketCodec.MAX_PAYLOAD_SIZE + 1))) }
+    catch (_: IllegalArgumentException) { rejected = true }
+    expect(rejected, "RTP codec rejects payloads that exceed the safe MTU budget")
+
+    rejected = false
+    try { RtpPacketCodec.decode(ByteArray(11)) }
+    catch (_: FrameProtocolException) { rejected = true }
+    expect(rejected, "RTP codec rejects truncated fixed headers")
+
+    rejected = false
+    val unsupportedVersion = encoded.copyOf().apply { this[0] = 0x40 }
+    try { RtpPacketCodec.decode(unsupportedVersion) }
+    catch (_: FrameProtocolException) { rejected = true }
+    expect(rejected, "RTP codec rejects unsupported RTP versions")
+
+    rejected = false
+    val extensionHeader = encoded.copyOf().apply { this[0] = 0x90.toByte() }
+    try { RtpPacketCodec.decode(extensionHeader) }
+    catch (_: FrameProtocolException) { rejected = true }
+    expect(rejected, "RTP profile rejects unsupported CSRC/extension/padding flags")
+}
+
+private fun rtpUdpLoopback() {
+    val loopback = InetAddress.getByName("127.0.0.1")
+    RtpUdpSocket(loopback, receiveTimeoutMs = 3_000).use { receiver ->
+        RtpUdpSocket(loopback, receiveTimeoutMs = 3_000).use { sender ->
+            expect(receiver.isBound && sender.isBound, "RTP sockets bind successfully")
+            val failure = ArrayBlockingQueue<Throwable>(1)
+            val received = ArrayBlockingQueue<ReceivedRtpPacket>(1)
+            val worker = Thread {
+                try { received.offer(receiver.receive()) }
+                catch (error: Throwable) { failure.offer(error) }
+            }
+            worker.start()
+            val packet = RtpPacket(
+                payloadType = 96,
+                sequenceNumber = 7,
+                timestamp = 960,
+                ssrc = 0x1020_3040L,
+                payload = ByteArray(320) { it.toByte() }
+            )
+            sender.send(packet, InetSocketAddress(loopback, receiver.localPort))
+            worker.join(4_000)
+            failure.poll()?.let { throw it }
+            val incoming = received.poll(1, TimeUnit.SECONDS)
+                ?: throw AssertionError("RTP UDP datagram was not received")
+            expect(incoming.packet.sequenceNumber == packet.sequenceNumber, "RTP UDP preserves sequence number")
+            expect(incoming.packet.timestamp == packet.timestamp, "RTP UDP preserves media timestamp")
+            expect(incoming.packet.ssrc == packet.ssrc, "RTP UDP preserves SSRC")
+            expect(incoming.packet.payload.contentEquals(packet.payload), "RTP UDP preserves opaque payload")
+            expect(incoming.source.address == loopback, "RTP UDP reports source address")
+            expect(incoming.source.port == sender.localPort, "RTP UDP reports source port")
+            expect(incoming.receivedAtNs > 0L, "RTP UDP captures monotonic receive time")
+        }
+    }
+}
+
 fun main() {
     encodedFrameCodecRoundTrip()
     tcpRoundTrip()
@@ -460,5 +551,7 @@ fun main() {
     udpTimeSyncResponseT3Stamping()
     udpTimeSyncLoopback()
     udpRejectsMalformedDatagrams()
+    rtpPacketCodecRoundTrip()
+    rtpUdpLoopback()
     println("Kotlin TCP/UDP transport tests: all assertions passed")
 }
