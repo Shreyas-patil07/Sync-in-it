@@ -28,6 +28,7 @@ internal class LocalAudioFilePcmSource(
     private val appContext = context.applicationContext
     private var extractor: MediaExtractor? = null
     private var decoder: MediaCodec? = null
+    private var rawPcmTrack = false
     private val bufferInfo = MediaCodec.BufferInfo()
 
     private var outputIndex = -1
@@ -107,6 +108,55 @@ internal class LocalAudioFilePcmSource(
 
     private fun readSourceFrame(destination: FloatArray) {
         while (true) {
+            if (rawPcmTrack) {
+                val current = outputBuffer
+                if (current != null && current.remaining() >= sourceFrameBytes) {
+                    current.order(ByteOrder.LITTLE_ENDIAN)
+                    val left = readSample(current)
+                    val right = if (sourceChannels == 1) left else readSample(current)
+                    for (channel in 2 until sourceChannels) readSample(current)
+                    destination[0] = left
+                    destination[1] = right
+                    decodedFramesThisPass += 1L
+                    if (current.remaining() < sourceFrameBytes) {
+                        if (current.hasRemaining()) {
+                            throw IOException("Raw PCM packet ended in the middle of an audio frame")
+                        }
+                        outputBuffer = null
+                    }
+                    return
+                }
+
+                if (current != null) {
+                    if (current.hasRemaining()) {
+                        throw IOException("Raw PCM packet is smaller than one complete audio frame")
+                    }
+                    outputBuffer = null
+                }
+
+                val activeExtractor = extractor
+                    ?: throw IOException("Audio extractor is unavailable")
+                val rawPacket = ByteBuffer.allocate(RAW_PCM_PACKET_CAPACITY)
+                    .order(ByteOrder.LITTLE_ENDIAN)
+                val sampleSize = activeExtractor.readSampleData(rawPacket, 0)
+                if (sampleSize < 0) {
+                    if (decodedFramesThisPass == 0L) {
+                        throw IOException("Selected raw audio file contains no PCM samples")
+                    }
+                    activeExtractor.seekTo(0L, MediaExtractor.SEEK_TO_CLOSEST_SYNC)
+                    decodedFramesThisPass = 0L
+                    continue
+                }
+                if (sampleSize % sourceFrameBytes != 0) {
+                    throw IOException("Raw PCM packet is not aligned to complete audio frames")
+                }
+                rawPacket.position(0)
+                rawPacket.limit(sampleSize)
+                outputBuffer = rawPacket
+                activeExtractor.advance()
+                continue
+            }
+
             val current = outputBuffer
             if (current != null && current.remaining() >= sourceFrameBytes) {
                 current.order(ByteOrder.LITTLE_ENDIAN)
@@ -229,15 +279,27 @@ internal class LocalAudioFilePcmSource(
                 ?: throw IOException("Audio track has no MIME type")
             sourceSampleRateHz = trackFormat.getInteger(MediaFormat.KEY_SAMPLE_RATE)
             sourceChannels = trackFormat.getInteger(MediaFormat.KEY_CHANNEL_COUNT)
+            pcmEncoding = if (trackFormat.containsKey(MediaFormat.KEY_PCM_ENCODING)) {
+                trackFormat.getInteger(MediaFormat.KEY_PCM_ENCODING)
+            } else {
+                AudioFormat.ENCODING_PCM_16BIT
+            }
+            bytesPerSample = bytesPerSampleFor(pcmEncoding)
             requireSupportedSourceFormat()
+            rawPcmTrack = mime == MediaFormat.MIMETYPE_AUDIO_RAW
 
-            val newDecoder = MediaCodec.createDecoderByType(mime)
-            try {
-                newDecoder.configure(trackFormat, null, null, 0)
-                newDecoder.start()
-            } catch (error: Exception) {
-                newDecoder.release()
-                throw error
+            val newDecoder = if (rawPcmTrack) {
+                null
+            } else {
+                MediaCodec.createDecoderByType(mime).also { codec ->
+                    try {
+                        codec.configure(trackFormat, null, null, 0)
+                        codec.start()
+                    } catch (error: Exception) {
+                        codec.release()
+                        throw error
+                    }
+                }
             }
 
             extractor = newExtractor
@@ -249,6 +311,7 @@ internal class LocalAudioFilePcmSource(
             outputBufferEndsStream = false
             decodedFramesThisPass = 0L
             sourceFrameBytes = sourceChannels * bytesPerSample
+            outputBuffer = null
         } catch (error: Exception) {
             newExtractor.release()
             throw IOException(
@@ -276,16 +339,18 @@ internal class LocalAudioFilePcmSource(
             AudioFormat.ENCODING_PCM_16BIT
         }
 
-        bytesPerSample = when (pcmEncoding) {
-            AudioFormat.ENCODING_PCM_8BIT -> 1
-            AudioFormat.ENCODING_PCM_16BIT -> 2
-            AudioFormat.ENCODING_PCM_24BIT_PACKED -> 3
-            AudioFormat.ENCODING_PCM_32BIT,
-            AudioFormat.ENCODING_PCM_FLOAT -> 4
-            else -> throw IOException("Unsupported decoded PCM encoding: $pcmEncoding")
-        }
+        bytesPerSample = bytesPerSampleFor(pcmEncoding)
         requireSupportedSourceFormat()
         sourceFrameBytes = sourceChannels * bytesPerSample
+    }
+
+    private fun bytesPerSampleFor(encoding: Int): Int = when (encoding) {
+        AudioFormat.ENCODING_PCM_8BIT -> 1
+        AudioFormat.ENCODING_PCM_16BIT -> 2
+        AudioFormat.ENCODING_PCM_24BIT_PACKED -> 3
+        AudioFormat.ENCODING_PCM_32BIT,
+        AudioFormat.ENCODING_PCM_FLOAT -> 4
+        else -> throw IOException("Unsupported decoded PCM encoding: $encoding")
     }
 
     private fun readSample(buffer: ByteBuffer): Float {
@@ -334,5 +399,6 @@ internal class LocalAudioFilePcmSource(
         const val OUTPUT_CHANNELS = 2
         const val BYTES_PER_OUTPUT_SAMPLE = 2
         const val CODEC_TIMEOUT_US = 10_000L
+        const val RAW_PCM_PACKET_CAPACITY = 256 * 1024
     }
 }
