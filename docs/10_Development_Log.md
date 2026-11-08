@@ -1056,7 +1056,7 @@ Do not infer missing hardware/router metadata. Store raw recordings outside Git 
 ### 8 November 2026 — Android system-audio capture and synchronized fan-out
 
 **Type:** Implementation / Android media capture  
-**Status:** Implemented on feature branch; awaiting CI and paired-device verification  
+**Status:** CI passed on feature branch; awaiting paired-device verification  
 **Branch:** `feature/local-audio-file-sharing`
 
 **Summary:**
@@ -1066,8 +1066,8 @@ Do not infer missing hardware/router metadata. Store raw recordings outside Git 
 - Preserved the diagnostic test-signal and local-file sources, plus the existing UDP sender-address fix carried from PR #75.
 - Added cleanup for user stop, MediaProjection revocation, capture failure and host-session exit.
 
-**Verification:** GitHub Android app/JNI and M0 Python/C++ workflows were triggered for the branch. Their current result must be checked before creating a preview APK. No physical Android 12/14 app-playback capture or acoustic skew measurement has been completed.
+**Verification:** Android app/JNI workflow [42486059495](https://github.com/Shreyas-patil07/Sync-in-it/actions/runs/42486059495) passed Gradle compilation, debug APK build, transport checks, preview signature verification and artifact upload. The M0 Python 3.11/3.12/3.13 + C++17 matrix [42486059503](https://github.com/Shreyas-patil07/Sync-in-it/actions/runs/42486059503) passed. APK SHA-256: `e1c14932421828cfdf956f125085ebbdcbc4b77e6ee3b3b979827a0c6205974b`. No physical Android 12/14 app-playback capture or acoustic skew measurement has been completed.
 
 **Limits:** Capture is subject to Android playback usage and each source app's capture policy. DRM/protected or capture-restricted streams may be silent. This is not microphone recording or universal system-mixer capture. No clock-estimator threshold, wire-protocol or Speaker transport change is intended.
 
-**Next action:** Confirm CI, then run a two-phone Android 14 Host + Android 12 Speaker test using a capture-eligible media app. Export both diagnostics and measure audible skew before marking the feature validated.
+**Next action:** Run a two-phone Android 14 Host + Android 12 Speaker test using a capture-eligible media app. Export both diagnostics and measure audible skew before marking the feature validated.
