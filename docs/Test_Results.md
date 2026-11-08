@@ -280,6 +280,17 @@ The existing replay methodology trains on the first 70% of samples, then predict
 
 The kernel variant improves hold-out RMS in both runs, but the second run's p95 barely changes. Five or six hold-out points are insufficient to establish a robust generalization improvement.
 
+### Estimator policy sensitivity — exploratory offline check
+
+Both attempts were also replayed with low-RTT selection fractions of 25%, 50%, 75% and 100%, using both linear-skew and offset-only fits. This was an offline sensitivity check, not a production configuration change.
+
+- The 25% selection produced the lowest in-sample residual in every timestamp-source/run combination.
+- Expanding selection to 50% raised residual RMS to approximately 0.590–0.698 ms in attempt `3b0cf4b8` and 0.582–0.684 ms in attempt `eb1fc9dc`.
+- The 75% variants produced approximately 0.908–1.265 ms residual RMS; using all samples produced approximately 8.631–15.328 ms.
+- A 25% offset-only fit changed the residual only marginally (application: 0.3685 / 0.4572 ms; kernel: 0.3078 / 0.3100 ms). Hold-out results were mixed across the two attempts and remained based on only five or six points.
+
+No tested selection fraction or fit mode met the <0.25 ms readiness gate. The current lowest-RTT 25% policy should remain unchanged pending repeated tests with a clean diagnostic audio source and larger hold-out populations.
+
 ### Timestamp capture observations
 
 | Capture metric | Attempt `3b0cf4b8` median / p95 | Attempt `eb1fc9dc` median / p95 |
