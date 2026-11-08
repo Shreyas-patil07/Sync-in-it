@@ -957,6 +957,127 @@ class MasterSessionHost(
         return pcm
     }
 
+    private fun awaitRtpRegistration(receiverId: Int): InetSocketAddress {
+        val deadlineNs = System.nanoTime() +
+            (PreviewConfig.RTP_AUDIO_REGISTRATION_ATTEMPTS *
+                PreviewConfig.RTP_AUDIO_REGISTRATION_TIMEOUT_MS + 2_000L) * 1_000_000L
+        while (!closed.get()) {
+            registeredRtpPeers[receiverId]?.let { return it }
+            if (pendingRtpRegistrations[receiverId] == null) {
+                throw IOException("RTP UDP registration state disappeared for receiverId=$receiverId")
+            }
+            val remainingNs = deadlineNs - System.nanoTime()
+            if (remainingNs <= 0L) {
+                throw SocketTimeoutException(
+                    "Speaker $receiverId did not register its RTP UDP endpoint before the deadline"
+                )
+            }
+            Thread.sleep(20L)
+        }
+        throw IOException("Host closed while waiting for RTP UDP endpoint registration")
+    }
+
+    private fun startRtpAudioServer() {
+        check(rtpAudioThread == null) { "RTP audio listener is already running" }
+        val worker = Thread(::runRtpAudioServer, "syncinit-master-rtp-audio-registration").apply {
+            isDaemon = true
+        }
+        rtpAudioThread = worker
+        worker.start()
+    }
+
+    /**
+     * The existing TCP HELLO authenticates/adopts the receiver first. This UDP
+     * rendezvous then requires the same session, receiver ID, peer IP and token
+     * before pinning the source IP:port and acknowledging the media endpoint.
+     */
+    private fun runRtpAudioServer() {
+        val server = checkNotNull(rtpAudioServer) { "RTP UDP audio listener was not started" }
+        onStatus("DIAG HOST_RTP_UDP_SOCKET_READY bind=0.0.0.0:${server.localPort} bound=true")
+        var accepted = 0
+        var rejected = 0
+
+        try {
+            while (!closed.get()) {
+                val datagram = try {
+                    server.receive()
+                } catch (_: SocketTimeoutException) {
+                    continue
+                } catch (error: FrameProtocolException) {
+                    rejected += 1
+                    if (rejected == 1 || rejected % 10 == 0) {
+                        onStatus("DIAG HOST_RTP_UDP_REGISTRATION_REJECTED count=$rejected reason=malformed-packet")
+                    }
+                    continue
+                } catch (error: SocketException) {
+                    if (closed.get()) break
+                    throw error
+                }
+
+                if (datagram.packet.payloadType != RtpUdpRegistrationCodec.PAYLOAD_TYPE) {
+                    continue
+                }
+                val registration = try {
+                    RtpUdpRegistrationCodec.decode(datagram.packet)
+                } catch (_: Exception) {
+                    rejected += 1
+                    continue
+                }
+                val config = nativeSessionConfig ?: continue
+                if (registration.acknowledgement ||
+                    registration.sessionId != config.sessionId
+                ) {
+                    rejected += 1
+                    continue
+                }
+
+                val pending = pendingRtpRegistrations[registration.receiverId]
+                if (pending == null ||
+                    pending.expectedAddress != datagram.source.address ||
+                    !MessageDigest.isEqual(pending.token, registration.token)
+                ) {
+                    rejected += 1
+                    if (rejected == 1 || rejected % 10 == 0) {
+                        onStatus(
+                            "DIAG HOST_RTP_UDP_REGISTRATION_REJECTED count=$rejected " +
+                                "receiverId=${registration.receiverId} source=${datagram.source} " +
+                                "reason=unadmitted-peer-or-invalid-token"
+                        )
+                    }
+                    continue
+                }
+
+                val previousEndpoint = registeredRtpPeers.putIfAbsent(
+                    registration.receiverId,
+                    datagram.source
+                )
+                if (previousEndpoint != null && previousEndpoint != datagram.source) {
+                    rejected += 1
+                    onStatus(
+                        "DIAG HOST_RTP_UDP_REGISTRATION_REJECTED count=$rejected " +
+                            "receiverId=${registration.receiverId} source=${datagram.source} " +
+                            "reason=endpoint-already-pinned"
+                    )
+                    continue
+                }
+
+                server.send(RtpUdpRegistrationCodec.encodeAcknowledgement(registration), datagram.source)
+                if (previousEndpoint == null) {
+                    accepted += 1
+                    onStatus(
+                        "DIAG HOST_RTP_UDP_PEER_REGISTERED receiverId=${registration.receiverId} " +
+                            "sessionId=${registration.sessionId} endpoint=${datagram.source}"
+                    )
+                }
+            }
+        } catch (error: Exception) {
+            if (!closed.get()) {
+                onStatus("RTP UDP registration listener failed: ${error.message ?: error.javaClass.simpleName}")
+                close()
+            }
+        }
+    }
+
     private fun startTimeSyncServer() {
         check(timeSyncThread == null) { "UDP time-sync server is already running" }
         val worker = Thread(::runTimeSyncServer, "syncinit-master-time-sync").apply {
