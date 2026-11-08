@@ -873,17 +873,21 @@ class MasterSessionHost(
                         else -> ByteArray(PreviewConfig.CHUNK_FRAMES * PreviewConfig.CHANNELS * 2)
                     }
 
-                    val encoded = NativePcmJitterBuffer.encodeChunk(
-                        sessionId = sessionId,
-                        sequence = sequence,
-                        sampleIndex = sampleIndex,
-                        frames = PreviewConfig.CHUNK_FRAMES,
-                        channels = PreviewConfig.CHANNELS,
-                        pcm16LittleEndian = pcm
-                    )
+                    val encoded = if (PreviewConfig.RTP_AUDIO_ENABLED) {
+                        ByteArray(0)
+                    } else {
+                        NativePcmJitterBuffer.encodeChunk(
+                            sessionId = sessionId,
+                            sequence = sequence,
+                            sampleIndex = sampleIndex,
+                            frames = PreviewConfig.CHUNK_FRAMES,
+                            channels = PreviewConfig.CHANNELS,
+                            pcm16LittleEndian = pcm
+                        )
+                    }
                     val hostChunk = HostAudioChunk(
                         encodedFrame = encoded,
-                        pcm16LittleEndian = pcm.copyOf(),
+                        pcm16LittleEndian = if (PreviewConfig.RTP_AUDIO_ENABLED) pcm.copyOf() else ByteArray(0),
                         sequence = sequence,
                         sampleIndex = sampleIndex
                     )
