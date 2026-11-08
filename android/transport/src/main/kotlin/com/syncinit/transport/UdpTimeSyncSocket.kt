@@ -22,13 +22,7 @@ data class ReceivedTimeSyncDatagram(
     val source: InetSocketAddress,
     val receivedAtNs: Long,
     val kernelTimestamp: KernelReceiveTimestamp? = null
-) {
-    val estimatorTimestampNs: Long
-        get() = kernelTimestamp?.monotonicNs ?: receivedAtNs
-
-    val estimatorTimestampSource: String
-        get() = if (kernelTimestamp == null) "java-post-recv" else "kernel-so-timestampns"
-}
+)
 /**
  * Reads the v1 UDP time-sync sequence for cross-device diagnostic correlation.
  * The wire codec stores the unsigned 32-bit sequence at byte offset 10, little-endian.
@@ -104,13 +98,7 @@ data class ReceivedTimeSyncResponse(
     val bytes: ByteArray,
     val receivedAtNs: Long,
     val kernelTimestamp: KernelReceiveTimestamp? = null
-) {
-    val estimatorTimestampNs: Long
-        get() = kernelTimestamp?.monotonicNs ?: receivedAtNs
-
-    val estimatorTimestampSource: String
-        get() = if (kernelTimestamp == null) "java-post-recv" else "kernel-so-timestampns"
-}
+)
 
 class UdpTimeSyncClient(
     masterAddress: InetAddress,
