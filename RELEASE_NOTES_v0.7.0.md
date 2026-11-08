@@ -4,6 +4,7 @@
 **Platform:** Android Host + Android Speakers
 **Build:** Signed, updateable Android debug APK (`com.syncinit.app.debug`)
 **Previous preview:** v0.6.9
+**Build configuration:** CI compiles this APK with `syncinitRtpAudioEnabled=true`; ordinary `release/v*` branches continue to build with RTP disabled.
 
 ## What's new
 
