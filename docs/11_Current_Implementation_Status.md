@@ -229,7 +229,8 @@ The Speaker reuses a buffer snapshot for up to 250 ms rather than rescanning the
 | Host discovery and TCP join on physical LAN | Observed working in both 8 Nov v0.6.9-debug paired attempts; control/audio admission completed |
 | UDP time-sync response | Repeatedly observed in both 8 Nov paired attempts; matched Host/Speaker probes are available for offline replay |
 | Speaker clock stability / READY | Failed in both 8 Nov paired attempts: application residual RMS 0.368338 / 0.449305 ms; kernel alternative 0.304824 / 0.307115 ms; every stable streak remained 0; READY not demonstrated |
-| PCM/TCP delivery and buffering | Host queued/wrote counters remained balanced with zero queue depth; Speaker reached the 20-second rolling buffer with zero missing frames in the captured intervals. Audio content/audibility is not implied |\n| System-playback capture signal | Intermittent: signal-present windows occurred in the first attempt; repeated near-silent windows occurred in both attempts |\n| Group-start ANCHOR on physical phones | Not demonstrated |
+| PCM/TCP delivery and buffering | Host queued/wrote counters remained balanced with zero queue depth; Speaker reached the 20-second rolling buffer with zero missing frames in the captured intervals. Audio content/audibility is not implied |
+| System-playback capture signal | Intermittent: signal-present windows occurred in the first attempt; repeated near-silent windows occurred in both attempts |\n| Group-start ANCHOR on physical phones | Not demonstrated |
 | Audible two-/multi-phone synchronization | Not measured |
 | DAC timestamp regression on physical phones | Implemented in code; device evidence still required |
 | Drift correction / acoustic calibration | Not integrated/validated as end-to-end features |
