@@ -603,6 +603,88 @@ private fun rtcpUdpLoopback() {
     }
 }
 
+
+private fun rtpPcm16PacketizationAndReordering() {
+    val ssrc = 0x1357_2468L
+    val sampleIndex = 9_600L
+    val pcm = ByteArray(
+        RtpPcm16Packetizer.SOURCE_CHUNK_FRAMES *
+            RtpPcm16Packetizer.CHANNELS *
+            RtpPcm16Packetizer.BYTES_PER_SAMPLE
+    ) { index -> (index * 31).toByte() }
+
+    val packets = RtpPcm16Packetizer.packetize(
+        pcm16LittleEndian = pcm,
+        sampleIndex = sampleIndex,
+        firstSequenceNumber = 100,
+        ssrc = ssrc
+    )
+    expect(packets.size == 4, "one 20 ms PCM chunk is split into four 5 ms RTP packets")
+
+    packets.forEachIndexed { index, packet ->
+        expect(packet.payloadType == RtpPcm16Packetizer.PAYLOAD_TYPE, "diagnostic PCM uses its negotiated dynamic payload type")
+        expect(packet.sequenceNumber == 100 + index, "RTP sequence increments once per PCM fragment")
+        expect(packet.timestamp == sampleIndex + index * 240L, "RTP timestamp advances by 240 sample frames")
+        expect(packet.ssrc == ssrc, "all fragments retain the session SSRC")
+        expect(packet.payload.size == 960, "each stereo PCM fragment has a 960-byte payload")
+        expect(RtpPacketCodec.encode(packet).size <= RtpPacketCodec.MAX_DATAGRAM_SIZE,
+            "diagnostic PCM RTP packet stays within the 1,200-byte datagram budget")
+    }
+
+    val decoder = RtpPcm16Decoder(expectedSsrc = ssrc)
+    val decodedOutOfOrder = listOf(2, 0, 1, 3).map { decoder.decode(packets[it]) }
+    expect(
+        decodedOutOfOrder.map { it.sampleIndex } == listOf(10_080L, 9_600L, 9_840L, 10_320L),
+        "RTP timestamps preserve sample indices when packets arrive out of order"
+    )
+
+    val rebuilt = ByteArray(pcm.size)
+    decodedOutOfOrder.forEach { fragment ->
+        val byteOffset = ((fragment.sampleIndex - sampleIndex) *
+            RtpPcm16Packetizer.CHANNELS *
+            RtpPcm16Packetizer.BYTES_PER_SAMPLE).toInt()
+        fragment.pcm16LittleEndian.copyInto(rebuilt, byteOffset)
+    }
+    expect(rebuilt.contentEquals(pcm), "out-of-order RTP fragments retain the original PCM samples")
+
+    val wrapPackets = RtpPcm16Packetizer.packetize(
+        pcm16LittleEndian = pcm,
+        sampleIndex = 0xffff_ff00L,
+        firstSequenceNumber = 0xfffe,
+        ssrc = ssrc
+    )
+    val wrapDecoder = RtpPcm16Decoder(expectedSsrc = ssrc)
+    val decodedWrap = wrapPackets.map(wrapDecoder::decode)
+    expect(
+        decodedWrap.map { it.sampleIndex } == listOf(
+            0xffff_ff00L,
+            0xffff_fff0L,
+            0x1_0000_00e0L,
+            0x1_0000_01d0L
+        ),
+        "RTP timestamp extension remains monotonic across uint32 wrap"
+    )
+    expect(
+        decodedWrap.map { it.extendedSequenceNumber } == listOf(65_534L, 65_535L, 65_536L, 65_537L),
+        "RTP sequence extension remains monotonic across uint16 wrap"
+    )
+
+    var rejected = false
+    try { RtpPcm16Decoder(expectedSsrc = ssrc + 1).decode(packets.first()) }
+    catch (_: FrameProtocolException) { rejected = true }
+    expect(rejected, "diagnostic PCM decoder rejects an unexpected SSRC")
+
+    rejected = false
+    try { decoder.decode(packets.first().copy(payloadType = 97)) }
+    catch (_: FrameProtocolException) { rejected = true }
+    expect(rejected, "diagnostic PCM decoder rejects an unexpected payload type")
+
+    rejected = false
+    try { decoder.decode(packets.first().copy(payload = ByteArray(959))) }
+    catch (_: FrameProtocolException) { rejected = true }
+    expect(rejected, "diagnostic PCM decoder rejects partial or malformed PCM fragments")
+}
+
 fun main() {
     encodedFrameCodecRoundTrip()
     tcpRoundTrip()
@@ -616,6 +698,7 @@ fun main() {
     udpTimeSyncLoopback()
     udpRejectsMalformedDatagrams()
     rtpPacketCodecRoundTrip()
+    rtpPcm16PacketizationAndReordering()
     rtpUdpLoopback()
     rtcpPacketCodecRoundTrip()
     rtcpUdpLoopback()
