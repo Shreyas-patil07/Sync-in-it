@@ -143,7 +143,10 @@ test('routes valid signaling only between peers in the same room', async (t) => 
     targetPeerId: joined.peerId,
     payload: { kind: 'description', description: { type: 'answer', sdp: 'x'.repeat(12_001) } },
   });
-  assert.equal((await nextMessage(host, 'error', (message) => message.code === 'invalid_description')).code, 'invalid_description');
+  assert.equal(
+    (await nextMessage(speaker, 'error', (message) => message.code === 'invalid_description')).code,
+    'invalid_description',
+  );
 });
 
 test('host disconnect closes its room and releases speakers', async (t) => {
