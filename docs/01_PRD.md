@@ -5,11 +5,11 @@
 **Last updated:** 1 November 2026  
 **Scope:** Product requirements for the offline multi-phone audio synchronization system
 
-## Implementation status — 6 November 2026
+## Implementation status — 8 November 2026
 
-This PRD describes the product target; it is not a statement that every requirement is implemented. The current build is an Android-only engineering preview. Android Host discovery, multi-Speaker TCP admission, UDP clock exchange, generated PCM16 test-stream fan-out, rolling pre-ANCHOR buffering and a coordinated start-ANCHOR path are present in code. The current Android Host cap is eight Speakers, while the product target remains 6–10 phones total.
+This PRD describes the product target; it is not a statement that every requirement is implemented. The current build remains an Android-only engineering preview. Android Host discovery, multi-Speaker TCP admission, UDP clock exchange, generated PCM16 test-stream fan-out, rolling pre-ANCHOR buffering and a coordinated start-ANCHOR path are present in code. The current Android Host cap is eight Speakers, while the product target remains 6–10 phones total.
 
-The latest supplied physical run admitted multiple Speakers and returned UDP time-sync responses, but no Speaker reached READY before the 45-second deadline. A separate feature branch now implements a local-file Host source using MediaExtractor/MediaCodec and the existing PCM16 stream; this is code in progress, not a released or validated capability. A successful physical group start, acoustic skew measurement, long-run stability, user-media playback, iOS support, robust reconnect and acoustic calibration are not demonstrated. See [Current Implementation Status](11_Current_Implementation_Status.md) before treating an acceptance criterion as complete.
+The latest supplied physical run admitted multiple Speakers and returned UDP time-sync responses, but no Speaker reached READY before the 45-second deadline. Feature branch `feature/local-audio-file-sharing` now contains a local-file source and a user-consented Android MediaProjection/AudioPlaybackCapture source, both feeding the existing sample-indexed PCM/TCP path. The system-audio implementation uses a foreground capture service and bounded capture buffer; it is code in progress, not a released or physically validated capability. The existing clock residual/readiness gates have not been relaxed. A successful physical group start, acoustic skew measurement, long-run stability, system-audio capture on target Xiaomi devices, iOS support, robust reconnect and acoustic calibration are not demonstrated. See [Current Implementation Status](11_Current_Implementation_Status.md) before treating an acceptance criterion as complete.
 
 ## 1. Purpose
 
