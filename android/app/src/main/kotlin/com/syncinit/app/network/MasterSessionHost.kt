@@ -379,6 +379,7 @@ class MasterSessionHost(
         private val audioQueue = ArrayBlockingQueue<HostAudioChunk>(PreviewConfig.AUDIO_QUEUE_CHUNKS)
         private val audioFramesQueued = AtomicLong(0L)
         private val audioFramesWritten = AtomicLong(0L)
+        private val rtpPacketsSent = AtomicLong(0L)
         private val audioQueueHighWater = AtomicInteger(0)
         private val lastSlowAudioWriteDiagnosticAtNs = AtomicLong(0L)
         private val lastAudioWriteCompletedAtNs = AtomicLong(0L)
@@ -417,7 +418,10 @@ class MasterSessionHost(
                                     firstSequenceNumber = firstSequence,
                                     ssrc = sessionId
                                 )
-                                packets.forEach { packet -> socket.send(packet, rtpPeer) }
+                                packets.forEach { packet ->
+                                    socket.send(packet, rtpPeer)
+                                    rtpPacketsSent.incrementAndGet()
+                                }
                             } else {
                                 audio.writeEncodedFrame(chunk.encodedFrame)
                             }
@@ -439,6 +443,7 @@ class MasterSessionHost(
                                             "transport=${if (rtpPeer != null) "RTP_UDP" else "TCP"} " +
                                             "durationMs=${"%.1f".format(writeDurationNs / 1_000_000.0)} " +
                                             "queued=${audioFramesQueued.get()} written=${audioFramesWritten.get()} " +
+                                            "rtpPacketsSent=${rtpPacketsSent.get()} " +
                                             "queueDepth=${audioQueue.size} queueHighWater=${audioQueueHighWater.get()}"
                                     )
                                 }
@@ -450,6 +455,7 @@ class MasterSessionHost(
                                 "DIAG HOST_AUDIO_DELIVERY receiverId=$receiverId " +
                                     "transport=${if (rtpPeer != null) "RTP_UDP" else "TCP"} " +
                                     "queued=${audioFramesQueued.get()} written=$written " +
+                                    "rtpPacketsSent=${rtpPacketsSent.get()} " +
                                     "queueDepth=${audioQueue.size} queueHighWater=${audioQueueHighWater.get()}"
                             )
                         }
@@ -506,6 +512,7 @@ class MasterSessionHost(
                         "transport=${if (rtpPeer != null) "RTP_UDP" else "TCP"} " +
                         "uptimeMs=${(nowNs - admittedAtNs) / 1_000_000L} " +
                         "queued=${audioFramesQueued.get()} written=${audioFramesWritten.get()} " +
+                        "rtpPacketsSent=${rtpPacketsSent.get()} " +
                         "queueDepth=${audioQueue.size} queueHighWater=${audioQueueHighWater.get()} " +
                         "lastWriteDurationMs=${"%.2f".format(lastAudioWriteDurationNs.get() / 1_000_000.0)} " +
                         "controlLocal=${control.localEndpoint} controlRemote=${control.remoteEndpoint} " +
