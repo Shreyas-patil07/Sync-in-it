@@ -385,8 +385,8 @@ export default function BrowserRoom() {
   }, [audioFile, fileUrl, sourceMode]);
 
   const sampleStats = useCallback(async (pc: RTCPeerConnection, previous: {
-    bytes: number;
-    at: number;
+    lastBytes: number;
+    lastStatsAt: number;
   }) => {
     const report = await pc.getStats();
     const reports = [...report.values()] as Array<Record<string, unknown>>;
@@ -396,10 +396,10 @@ export default function BrowserRoom() {
     const active = inbound ?? outbound;
     const bytes = numberValue(active?.bytesReceived ?? active?.bytesSent);
     const timestamp = numberValue(active?.timestamp);
-    const elapsed = previous.at > 0 ? Math.max(0.001, (timestamp - previous.at) / 1000) : 0;
+    const elapsed = previous.lastStatsAt > 0 ? Math.max(0.001, (timestamp - previous.lastStatsAt) / 1000) : 0;
     const bitrateKbps = elapsed > 0 ? Math.max(0, (bytes - previous.bytes) * 8 / elapsed / 1000) : 0;
-    previous.bytes = bytes;
-    previous.at = timestamp;
+    previous.lastBytes = bytes;
+    previous.lastStatsAt = timestamp;
 
     return {
       packets: numberValue(inbound?.packetsReceived ?? outbound?.packetsSent),
@@ -578,7 +578,8 @@ export default function BrowserRoom() {
       const output = typeof context.getOutputTimestamp === 'function'
         ? context.getOutputTimestamp()
         : null;
-      const targetContextTime = output && output.performanceTime > 0
+      const targetContextTime = output && output.performanceTime !== undefined &&
+        output.contextTime !== undefined && output.performanceTime > 0
         ? output.contextTime + (localStartAtMs - output.performanceTime) / 1000
         : context.currentTime + Math.max(0, deltaMs) / 1000;
 
