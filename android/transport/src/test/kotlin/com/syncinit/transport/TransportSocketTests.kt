@@ -358,6 +358,56 @@ private fun udpTimeSyncSequenceMetadata() {
     expect(rejected, "UDP sequence metadata rejects invalid packet magic")
 }
 
+private fun udpReceiveTimestampPrefersKernelTimestamp() {
+    val kernel = KernelReceiveTimestamp(
+        realtimeNs = 1_700_000_000_000_000_000L,
+        monotonicNs = 900_000_000L,
+        mappingUncertaintyNs = 500L
+    )
+    val packet = ByteArray(UdpTimeSyncClient.PACKET_SIZE)
+
+    val responseWithKernel = ReceivedTimeSyncResponse(packet, 901_000_000L, kernel)
+    expect(
+        responseWithKernel.estimatorTimestampNs == kernel.monotonicNs,
+        "clock estimator prefers the kernel receive timestamp when available"
+    )
+    expect(
+        responseWithKernel.estimatorTimestampSource == "kernel-so-timestampns",
+        "kernel timestamp source is explicit"
+    )
+
+    val responseFallback = ReceivedTimeSyncResponse(packet, 902_000_000L)
+    expect(
+        responseFallback.estimatorTimestampNs == responseFallback.receivedAtNs,
+        "clock estimator falls back to the application receive timestamp"
+    )
+    expect(
+        responseFallback.estimatorTimestampSource == "java-post-recv",
+        "application timestamp fallback is explicit"
+    )
+
+    val datagramWithKernel = ReceivedTimeSyncDatagram(
+        bytes = packet,
+        source = InetSocketAddress(InetAddress.getLoopbackAddress(), 1234),
+        receivedAtNs = 903_000_000L,
+        kernelTimestamp = kernel
+    )
+    expect(
+        datagramWithKernel.estimatorTimestampNs == kernel.monotonicNs,
+        "Host estimator timestamp also prefers the kernel receive time"
+    )
+
+    val datagramFallback = ReceivedTimeSyncDatagram(
+        bytes = packet,
+        source = InetSocketAddress(InetAddress.getLoopbackAddress(), 1234),
+        receivedAtNs = 904_000_000L
+    )
+    expect(
+        datagramFallback.estimatorTimestampNs == datagramFallback.receivedAtNs,
+        "Host timestamp falls back to the app receive time when kernel data is absent"
+    )
+}
+
 private fun udpTimeSyncLoopback() {
     val loopback = InetAddress.getByName("127.0.0.1")
     UdpTimeSyncServer(loopback, 0, receiveTimeoutMs = 3_000).use { server ->
@@ -458,6 +508,7 @@ fun main() {
     tcpRejectsOversizedAndTruncatedFrames()
     udpTimeSyncSequenceMetadata()
     udpTimeSyncResponseT3Stamping()
+    udpReceiveTimestampPrefersKernelTimestamp()
     udpTimeSyncLoopback()
     udpRejectsMalformedDatagrams()
     println("Kotlin TCP/UDP transport tests: all assertions passed")
