@@ -19,8 +19,68 @@ import android.os.IBinder
 import android.os.Looper
 import android.util.Log
 import java.io.IOException
+import java.util.Locale
 import java.util.concurrent.atomic.AtomicBoolean
+import kotlin.math.abs
+import kotlin.math.log10
 import kotlin.math.max
+import kotlin.math.sqrt
+
+private data class PcmSignalLevel(
+    val windowFrames: Long,
+    val rmsDbfs: Double,
+    val peakDbfs: Double,
+    val nearZeroPercent: Double
+)
+
+private class PcmSignalLevelMeter {
+    private val targetSamples = SystemAudioCaptureBuffer.SAMPLE_RATE_HZ.toLong() *
+        SystemAudioCaptureBuffer.CHANNELS
+    private var sampleCount = 0L
+    private var nearZeroSamples = 0L
+    private var sumSquares = 0L
+    private var peak = 0
+
+    fun add(pcm16LittleEndian: ByteArray): PcmSignalLevel? {
+        require(pcm16LittleEndian.size % 2 == 0) { "PCM16 data must contain complete samples" }
+        var index = 0
+        while (index < pcm16LittleEndian.size) {
+            val sample = (
+                (pcm16LittleEndian[index + 1].toInt() shl 8) or
+                    (pcm16LittleEndian[index].toInt() and 0xff)
+                ).toShort().toInt()
+            val magnitude = abs(sample)
+            if (magnitude <= 2) nearZeroSamples += 1L
+            if (magnitude > peak) peak = magnitude
+            sumSquares += sample.toLong() * sample.toLong()
+            sampleCount += 1L
+            index += 2
+        }
+        if (sampleCount < targetSamples) return null
+
+        val rms = sqrt(sumSquares.toDouble() / sampleCount.toDouble())
+        val result = PcmSignalLevel(
+            windowFrames = sampleCount / SystemAudioCaptureBuffer.CHANNELS,
+            rmsDbfs = toDbfs(rms),
+            peakDbfs = toDbfs(peak.toDouble()),
+            nearZeroPercent = nearZeroSamples * 100.0 / sampleCount.toDouble()
+        )
+        reset()
+        return result
+    }
+
+    private fun reset() {
+        sampleCount = 0L
+        nearZeroSamples = 0L
+        sumSquares = 0L
+        peak = 0
+    }
+
+    private fun toDbfs(amplitude: Double): Double {
+        if (amplitude <= 0.0) return -120.0
+        return (20.0 * log10(amplitude / 32768.0)).coerceAtLeast(-120.0)
+    }
+}
 
 /** User-consented Android app-playback capture, constrained by each source app's capture policy. */
 class SystemAudioCaptureService : Service() {
@@ -148,6 +208,7 @@ class SystemAudioCaptureService : Service() {
                 "Android playback capture started · 48 kHz stereo PCM16 · media/game/unknown usages."
             )
             val chunk = ByteArray(CHUNK_BYTES)
+            val levelMeter = PcmSignalLevelMeter()
             var chunksCaptured = 0L
             while (running.get()) {
                 var filled = 0
@@ -164,6 +225,18 @@ class SystemAudioCaptureService : Service() {
                 if (filled == chunk.size && running.get()) {
                     SystemAudioCaptureBuffer.append(chunk)
                     chunksCaptured += 1L
+                    levelMeter.add(chunk)?.let { level ->
+                        val classification = if (
+                            level.rmsDbfs < -60.0 && level.peakDbfs < -45.0
+                        ) "near-silent" else "signal-present"
+                        SystemAudioCaptureBuffer.statusListener?.invoke(
+                            "SYSTEM_AUDIO_LEVEL windowFrames=${level.windowFrames} " +
+                                "rmsDbfs=${"%.1f".format(Locale.US, level.rmsDbfs)} " +
+                                "peakDbfs=${"%.1f".format(Locale.US, level.peakDbfs)} " +
+                                "nearZeroPercent=${"%.1f".format(Locale.US, level.nearZeroPercent)} " +
+                                "classification=$classification"
+                        )
+                    }
                     if (chunksCaptured == 1L || chunksCaptured % 250L == 0L) {
                         SystemAudioCaptureBuffer.statusListener?.invoke(
                             "SYSTEM_AUDIO_CAPTURE chunks=${chunksCaptured} capturedFrames=${chunksCaptured * SystemAudioCaptureBuffer.CHUNK_FRAMES}"
