@@ -139,6 +139,7 @@ std::vector<Probe> read_probes(
         const auto t2 = field(line, "t2Ns");
         const auto t3 = field(line, "t3Ns");
         const auto t4 = field(line, "t4Ns");
+        const auto app_t4 = field(line, "appT4Ns");
         const auto kernel_t4 = field(line, "kernelT4Ns");
         const auto speaker_uncertainty = field(line, "kernelT4MappingUncertaintyNs");
         if (!sequence || !t1 || !t2 || !t3 || !t4 ||
@@ -146,14 +147,23 @@ std::vector<Probe> read_probes(
             continue;
         }
         const auto host = host_timestamps.find(static_cast<std::uint64_t>(*sequence));
-        if (host == host_timestamps.end() || host->second.app_t2_ns != *t2) continue;
+        if (host == host_timestamps.end() ||
+            (host->second.app_t2_ns != *t2 && host->second.kernel_t2_ns != *t2)) {
+            continue;
+        }
 
+        // Live and historical logs use application T2/T4 for the production estimator.
+        // Kernel T2/T4 are retained as side-channel measurements for offline comparison.
+        const auto application_t4 = app_t4.value_or(*t4);
         Probe probe;
         probe.sequence = static_cast<std::uint64_t>(*sequence);
-        probe.application = {*t1, *t2, *t3, *t4, *t4};
-        probe.kernel = {*t1, host->second.kernel_t2_ns, *t3, *kernel_t4, *kernel_t4};
-        probe.host_capture_lag_ns = *t2 - host->second.kernel_t2_ns;
-        probe.speaker_capture_lag_ns = *t4 - *kernel_t4;
+        probe.application = {
+            *t1, host->second.app_t2_ns, *t3, application_t4, application_t4};
+        probe.kernel = {
+            *t1, host->second.kernel_t2_ns, *t3, *kernel_t4, *kernel_t4};
+        probe.host_capture_lag_ns =
+            host->second.app_t2_ns - host->second.kernel_t2_ns;
+        probe.speaker_capture_lag_ns = application_t4 - *kernel_t4;
         probe.host_mapping_uncertainty_ns = host->second.mapping_uncertainty_ns;
         probe.speaker_mapping_uncertainty_ns = *speaker_uncertainty;
         result.push_back(probe);

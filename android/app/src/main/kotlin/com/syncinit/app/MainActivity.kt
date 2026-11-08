@@ -69,10 +69,30 @@ class MainActivity : Activity() {
             runOnUiThread {
                 if (!isFinishing && !isDestroyed) {
                     appendDiagnostic("SYSTEM_AUDIO", message)
+                    if (message.startsWith("SYSTEM_AUDIO_LEVEL")) {
+                        return@runOnUiThread
+                    }
                     postStatus(message)
                     if (message.contains("failed", ignoreCase = true) ||
                         message.contains("stopped", ignoreCase = true)
-                    ) selectedSystemAudio = false
+                    ) {
+                        val wasSystemAudioSelected = selectedSystemAudio
+                        selectedSystemAudio = false
+                        if (wasSystemAudioSelected && selectedAudioUri == null &&
+                            selectedAudioName == null && ::audioSelectionDetails.isInitialized
+                        ) {
+                            audioSelectionDetails.text =
+                                "System audio capture stopped or unavailable · select Capture system audio again."
+                        }
+                    } else if (
+                        message.contains("capture service is active", ignoreCase = true) ||
+                        message.contains("playback capture started", ignoreCase = true)
+                    ) {
+                        if (::audioSelectionDetails.isInitialized) {
+                            audioSelectionDetails.text =
+                                "System audio selected · capture running. Play audio in an eligible app before starting the Host."
+                        }
+                    }
                 }
             }
         }
@@ -287,18 +307,18 @@ class MainActivity : Activity() {
         if (requestCode == REQUEST_PICK_AUDIO) {
             if (resultCode != RESULT_OK) return
             val uri = data?.data ?: return
+            stopHostForSourceChange("local-file")
             runCatching {
                 contentResolver.takePersistableUriPermission(
                     uri,
                     Intent.FLAG_GRANT_READ_URI_PERMISSION
                 )
             }
+            stopSystemAudioCapture("local-file-selected")
             selectedAudioUri = uri
             selectedAudioName = queryDisplayName(uri)
             audioSelectionDetails.text =
                 "Selected: ${selectedAudioName}\nThis file will be decoded and streamed to connected Speakers."
-            selectedSystemAudio = false
-            stopSystemAudioCapture("local-file-selected")
             appendDiagnostic("AUDIO_SOURCE_SELECTED", "name=${selectedAudioName} uri=$uri")
             return
         }
@@ -313,6 +333,7 @@ class MainActivity : Activity() {
                 putExtra(SystemAudioCaptureService.EXTRA_RESULT_DATA, data)
             }
             try {
+                stopHostForSourceChange("system-audio")
                 startForegroundService(serviceIntent)
                 selectedSystemAudio = true
                 selectedAudioUri = null
@@ -377,6 +398,10 @@ class MainActivity : Activity() {
             postStatus("System-audio capture requires Android 10 or newer. Use a local audio file on this device.")
             return
         }
+        if (SystemAudioCaptureBuffer.isActive()) {
+            postStatus("System-audio capture is already active. Start hosting when the source app is playing audio.")
+            return
+        }
         if (checkSelfPermission(Manifest.permission.RECORD_AUDIO) != PackageManager.PERMISSION_GRANTED) {
             requestPermissions(arrayOf(Manifest.permission.RECORD_AUDIO), REQUEST_RECORD_AUDIO_PERMISSION)
             return
@@ -401,7 +426,6 @@ class MainActivity : Activity() {
     }
 
     private fun chooseAudioFile() {
-        stopSystemAudioCapture("local-file-selected")
         val intent = Intent(Intent.ACTION_OPEN_DOCUMENT).apply {
             addCategory(Intent.CATEGORY_OPENABLE)
             type = "audio/*"
@@ -419,6 +443,7 @@ class MainActivity : Activity() {
     }
 
     private fun clearAudioSelection() {
+        stopHostForSourceChange("diagnostic-test-tone")
         stopSystemAudioCapture("diagnostic-source-selected")
         selectedAudioUri = null
         selectedAudioName = null
@@ -439,7 +464,7 @@ class MainActivity : Activity() {
 
     private fun startHosting() {
         if (selectedSystemAudio && !SystemAudioCaptureBuffer.isActive()) {
-            postStatus("System-audio capture is not active yet. Grant Android consent again and retry.")
+            postStatus("System-audio capture is starting or inactive. Wait for the capture-active status, then retry.")
             return
         }
         stopConnections(stopCapture = false)
@@ -566,6 +591,16 @@ class MainActivity : Activity() {
     private fun stopDiscovery() {
         nearbyBrowser?.close()
         nearbyBrowser = null
+    }
+
+    private fun stopHostForSourceChange(source: String) {
+        if (masterHost == null) return
+        appendDiagnostic(
+            "HOST_SOURCE_CHANGE",
+            "Stopping the active Host before changing audio source to $source."
+        )
+        stopConnections(stopCapture = false)
+        postStatus("Host stopped for audio source change. Select the source, then start hosting again.")
     }
 
     private fun stopConnections(stopCapture: Boolean = true) {

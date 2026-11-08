@@ -962,6 +962,7 @@ class MasterSessionHost(
                 onStatus(
                     "DIAG HOST_UDP_PROBE sessionId=$hostSessionId sequence=$sequence " +
                         "receiverId=${target.receiverId} appT2Ns=${datagram.receivedAtNs} " +
+                        "t2Ns=${datagram.receivedAtNs} t2Source=app-post-recv " +
                         "source=${datagram.source} receiveToT3Us=$receiveToT3Us " +
                         "responseReadyToT3Us=$responseReadyToT3Us sendElapsedUs=$sendElapsedUs" +
                         kernelT2Fields
