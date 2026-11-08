@@ -8,5 +8,5 @@
     "strict": true, "noUnusedLocals": true, "noUnusedParameters": true,
     "noFallthroughCasesInSwitch": true
   },
-  "include": ["src"], "references": []
+  "include": ["src", "vite-env.d.ts"], "references": []
 }
