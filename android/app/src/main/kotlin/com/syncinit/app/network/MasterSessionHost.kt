@@ -1223,6 +1223,13 @@ class MasterSessionHost(
         systemAudioSource = null
         timeSyncThread?.interrupt()
         timeSyncThread = null
+        closeQuietly(rtpAudioServer)
+        rtpAudioServer = null
+        rtpAudioThread?.interrupt()
+        rtpAudioThread = null
+        pendingRtpRegistrations.values.forEach { it.token.fill(0) }
+        pendingRtpRegistrations.clear()
+        registeredRtpPeers.clear()
 
         closeQuietly(controlServer)
         closeQuietly(audioServer)
