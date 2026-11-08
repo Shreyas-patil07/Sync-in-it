@@ -9,7 +9,7 @@
 
 This PRD describes the product target; it is not a statement that every requirement is implemented. The current build is an Android-only engineering preview. Android Host discovery, multi-Speaker TCP admission, UDP clock exchange, generated PCM16 test-stream fan-out, rolling pre-ANCHOR buffering and a coordinated start-ANCHOR path are present in code. The current Android Host cap is eight Speakers, while the product target remains 6–10 phones total.
 
-The latest supplied physical run admitted multiple Speakers and returned UDP time-sync responses, but no Speaker reached READY before the 45-second deadline. A successful physical group start, acoustic skew measurement, long-run stability, user-media playback, iOS support, robust reconnect and acoustic calibration are not demonstrated. See [Current Implementation Status](11_Current_Implementation_Status.md) before treating an acceptance criterion as complete.
+The latest supplied physical run admitted multiple Speakers and returned UDP time-sync responses, but no Speaker reached READY before the 45-second deadline. A separate feature branch now implements a local-file Host source using MediaExtractor/MediaCodec and the existing PCM16 stream; this is code in progress, not a released or validated capability. A successful physical group start, acoustic skew measurement, long-run stability, user-media playback, iOS support, robust reconnect and acoustic calibration are not demonstrated. See [Current Implementation Status](11_Current_Implementation_Status.md) before treating an acceptance criterion as complete.
 
 ## 1. Purpose
 
