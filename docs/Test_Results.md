@@ -237,6 +237,90 @@ Do not compare combined codec/transport changes as one result. First compare cod
 
 **Next action:** test branch `experiment/send-boundary-t3-debug-acquisition-window` on both phones. The branch moves final T3 stamping to the UDP transport send path and gives debug builds a 90-second readiness observation window. Keep all estimator and READY thresholds unchanged. Compare the new Host send-boundary metrics with Speaker raw four-timestamp samples by sequence.
 
+
+## 2.6 Test record — 2026-11-08 — v0.6.9-debug paired application/kernel timestamp replay
+
+- **Run IDs:** SIT-2026-11-08-04 (attempt `3b0cf4b8`) and SIT-2026-11-08-05 (attempt `eb1fc9dc`)
+- **Build:** Host and Speaker both report `0.6.9-debug (1794155082)` in their `APP_INSTANCE` records.
+- **Devices:** Host Xiaomi M2010J19SI / Android 12 / API 31; Speaker Xiaomi 22101316I / Android 14 / API 34.
+- **Network:** Both devices on Wi-Fi in `192.168.1.0/24`; AP model, band and channel were not recorded.
+- **Configuration:** One Host, one Speaker; 48 kHz stereo PCM16 over separate TCP control/audio channels; existing UDP four-timestamp clock probes.
+- **Source:** Android system-playback capture in both attempts.
+- **Test intent:** Correlate every Speaker clock probe with the matching Host receive timestamp and compare the production application-timestamp fit with an offline kernel-receive-timestamp variant. No production estimator or readiness-gate setting was changed.
+- **Evidence:** `SyncInIt-diagnostics-20261108-223010.txt` (Host) and `SyncInIt-diagnostics-20261108-223010 (1).txt` (Speaker).
+
+### Paired replay results
+
+The offline replay used the same four-timestamp calculation, 60-second estimator window, lowest-RTT 25% selection, linear skew fit, and stability requirements as the Android implementation. The application-timestamp results below reproduce the final on-device `CLOCK_FIT` values to the reported precision. Kernel timestamp values are an offline comparison only.
+
+| Metric | Attempt `3b0cf4b8` app | Attempt `3b0cf4b8` kernel | Attempt `eb1fc9dc` app | Attempt `eb1fc9dc` kernel |
+|---|---:|---:|---:|---:|
+| Host session ID | `1826297231` | `1826297231` | `2594760042` | `2594760042` |
+| Paired probes | 110 | 110 | 70 | 70 |
+| Selected samples / seen | 28 / 110 | 28 / 110 | 18 / 70 | 18 / 70 |
+| Selected sample span | 38,100.274 ms | 38,100.484 ms | 24,539.235 ms | 24,539.139 ms |
+| Selected-sample RTT p50 | 6.0708 ms | 5.1287 ms | 5.7162 ms | 4.5642 ms |
+| Residual RMS | **0.368338 ms** | **0.304824 ms** | **0.449305 ms** | **0.307115 ms** |
+| Estimated receiver skew | −0.891 ppm | +3.455 ppm | +9.553 ppm | −4.648 ppm |
+| Stable streak | 0 | 0 | 0 | 0 |
+| READY gate | **Blocked** | **Would remain blocked** | **Blocked** | **Would remain blocked** |
+
+All four residual values exceed the unchanged strict `<0.25 ms` readiness gate. The kernel timestamp variant improves residual RMS in both sessions, but it does not establish clock readiness or justify switching the production estimator.
+
+### Hold-out comparison
+
+The existing replay methodology trains on the first 70% of samples, then predicts later low-RTT offsets. The hold-out set is small in these runs, so treat this as preliminary evidence, not a production decision.
+
+| Metric | Attempt `3b0cf4b8` app | Attempt `3b0cf4b8` kernel | Attempt `eb1fc9dc` app | Attempt `eb1fc9dc` kernel |
+|---|---:|---:|---:|---:|
+| Hold-out samples | 6 | 6 | 5 | 6 |
+| RMS absolute offset error | 0.3284 ms | 0.2386 ms | 0.4730 ms | 0.3992 ms |
+| Median absolute offset error | 0.1730 ms | 0.1584 ms | 0.4603 ms | 0.1902 ms |
+| p95 absolute offset error | 0.6786 ms | 0.4722 ms | 0.7835 ms | 0.7725 ms |
+
+The kernel variant improves hold-out RMS in both runs, but the second run's p95 barely changes. Five or six hold-out points are insufficient to establish a robust generalization improvement.
+
+### Estimator policy sensitivity — exploratory offline check
+
+Both attempts were also replayed with low-RTT selection fractions of 25%, 50%, 75% and 100%, using both linear-skew and offset-only fits. This was an offline sensitivity check, not a production configuration change.
+
+- The 25% selection produced the lowest in-sample residual in every timestamp-source/run combination.
+- Expanding selection to 50% raised residual RMS to approximately 0.590–0.698 ms in attempt `3b0cf4b8` and 0.582–0.684 ms in attempt `eb1fc9dc`.
+- The 75% variants produced approximately 0.908–1.265 ms residual RMS; using all samples produced approximately 8.631–15.328 ms.
+- A 25% offset-only fit changed the residual only marginally (application: 0.3685 / 0.4572 ms; kernel: 0.3078 / 0.3100 ms). Hold-out results were mixed across the two attempts and remained based on only five or six points.
+
+No tested selection fraction or fit mode met the <0.25 ms readiness gate. The current lowest-RTT 25% policy should remain unchanged pending repeated tests with a clean diagnostic audio source and larger hold-out populations.
+
+### Timestamp capture observations
+
+| Capture metric | Attempt `3b0cf4b8` median / p95 | Attempt `eb1fc9dc` median / p95 |
+|---|---:|---:|
+| Host application T2 minus kernel T2 | 663 / 1,433 µs | 621 / 1,554 µs |
+| Speaker application T4 minus kernel T4 | 675 / 1,256 µs | 602 / 1,361 µs |
+| Host kernel timestamp mapping uncertainty | 6.745 / 16.797 µs | 6.550 / 17.422 µs |
+| Speaker kernel timestamp mapping uncertainty | 9.058 / 13.346 µs | 8.943 / 12.924 µs |
+
+The application timestamp is typically captured roughly 0.6–0.7 ms after the kernel receive timestamp. This is a plausible contributor to measurement noise, but the residual comparison alone does not prove it is the sole cause. Kernel timestamp mapping uncertainty was in the low-microsecond range for most probes; it is still measurement uncertainty and must remain part of the error budget.
+
+### Other observed results
+
+- Discovery, TCP control/audio admission and UDP time-sync exchanges completed in both attempts.
+- The Host's audio delivery counters remained balanced (queued/written), with queue depth at zero and a high-water mark of one in the captured intervals.
+- The Speaker received PCM near the expected 50 frames/sec cadence, reached the 20-second rolling buffer, and reported `missingFrames=0`.
+- These are transport and buffering observations only. They do not prove that the PCM carried non-silent audio or that AudioTrack played it.
+- System-capture level windows were intermittent: the first attempt included both near-silent and signal-present windows; the second attempt reported repeated near-silent windows. Source-content validation remains a separate issue.
+- Neither attempt demonstrated READY, a common ANCHOR, AudioTrack playback start or acoustic-marker output. The Host remained in `AUDIO_SOURCE_WAITING_FOR_READY_COHORT` while the Speaker clock gate remained blocked.
+
+### Interpretation and next action
+
+**Verdict: FAIL — clock stability / READY gate.** The PCM/TCP delivery path is not the observed blocker in these captures. Kernel receive timestamps improve the offline residuals but remain above the production threshold. The data does not justify lowering the threshold or replacing application timestamps in production.
+
+Next:
+1. Run the repository's canonical `tools/clock_probe_replay.cpp` against both raw log pairs and preserve its CSV output; verify parity with the on-device application fit and the offline kernel comparison.
+2. Repeat the single-Speaker test using the diagnostic timing-click source so source-app capture eligibility/silence is not mixed into the clock experiment.
+3. Keep the 0.25 ms residual gate, sample/span requirements and three-update stability streak unchanged until repeated hold-out tests support a measured change.
+4. Complete the single-Speaker READY → ANCHOR → audible-output gate, then the two-Speaker acoustic baseline. Only after those gates pass may codec/transport experiments begin.
+
 ## 3. Reusable template for future runs
 
 Copy this section for each new run and replace the placeholders. Preserve prior test records.
@@ -293,3 +377,4 @@ Copy this section for each new run and replace the placeholders. Preserve prior 
 
 - **2026-11-06:** Created this test record. Initial entry documents the v0.5.9 post-fix Speaker log and the remaining clock-stability blocker.
 - **2026-11-07:** Added the paired v0.6.3-debug Host/Speaker failure record and queue/clock findings.
+- **2026-11-08:** Added two v0.6.9-debug paired runs, application-versus-kernel timestamp replay, hold-out metrics and the unchanged READY-gate verdict.
