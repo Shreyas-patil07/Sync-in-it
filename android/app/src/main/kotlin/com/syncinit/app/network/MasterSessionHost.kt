@@ -4,7 +4,10 @@ package com.syncinit.app.network
 import com.syncinit.app.PreviewConfig
 
 import android.content.Context
+import android.net.Uri
 import android.os.Build
+import com.syncinit.app.audio.LocalAudioFilePcmSource
+import com.syncinit.app.audio.SystemAudioPcmSource
 import com.syncinit.app.audio.NativePcmJitterBuffer
 import com.syncinit.app.core.NativeProtocol
 import com.syncinit.app.core.NativeReceiverSession
@@ -48,7 +51,13 @@ private enum class AudioOfferResult {
 }
 
 /** Android master that admits several independent receivers into one shared audio session. */
-class MasterSessionHost(context: Context, private val onStatus: (String) -> Unit) : Closeable {
+class MasterSessionHost(
+    context: Context,
+    private val onStatus: (String) -> Unit,
+    private val audioFileUri: Uri? = null,
+    private val audioFileLabel: String? = null,
+    private val systemAudioCaptureEnabled: Boolean = false
+) : Closeable {
     private val appContext = context.applicationContext
     private val closed = AtomicBoolean(false)
     private val started = AtomicBoolean(false)
@@ -58,6 +67,8 @@ class MasterSessionHost(context: Context, private val onStatus: (String) -> Unit
     private val groupStartScheduled = AtomicBoolean(false)
     private val groupStartCheckQueued = AtomicBoolean(false)
     private val streamCursor = AtomicReference<StreamCursor?>(null)
+    private val mediaStartRequested = AtomicBoolean(false)
+    private val mediaPrerollComplete = AtomicBoolean(false)
     @Volatile private var firstReceiverAdmissionNs = 0L
     private val executor = Executors.newSingleThreadExecutor { task ->
         Thread(task, "syncinit-master-admission").apply { isDaemon = true }
@@ -70,6 +81,8 @@ class MasterSessionHost(context: Context, private val onStatus: (String) -> Unit
     @Volatile private var advertiser: LanSessionAdvertiser? = null
     @Volatile private var audioSenderThread: Thread? = null
     @Volatile private var timeSyncThread: Thread? = null
+    @Volatile private var localAudioSource: LocalAudioFilePcmSource? = null
+    @Volatile private var systemAudioSource: SystemAudioPcmSource? = null
 
     fun start(): HostInvitation {
         check(!closed.get()) { "host service is closed" }
@@ -615,6 +628,17 @@ class MasterSessionHost(context: Context, private val onStatus: (String) -> Unit
                 return
             }
 
+            if (audioFileUri != null || systemAudioCaptureEnabled) {
+                if (!mediaStartRequested.get()) {
+                    if (mediaStartRequested.compareAndSet(false, true)) {
+                        val sourceLabel = if (systemAudioCaptureEnabled) "live system audio" else "selected audio file"
+                        onStatus("Clock-ready cohort admitted · preparing $sourceLabel for the shared timeline.")
+                    }
+                    return
+                }
+                if (!mediaPrerollComplete.get()) return
+            }
+
             val cursor = streamCursor.get()
             if (cursor == null) {
                 onStatus("Group start is waiting for the shared audio timeline.")
@@ -687,17 +711,25 @@ class MasterSessionHost(context: Context, private val onStatus: (String) -> Unit
         }
     }
 
-    /** One producer generates a single sample-indexed stream; each speaker gets the same frames. */
+    /** One producer builds a single sample-indexed PCM stream and fans it out to every Speaker. */
     private fun startAudioTestStream(sessionId: Long) {
         if (audioSenderThread?.isAlive == true) return
         val sender = Thread({
+            var fileSource: LocalAudioFilePcmSource? = null
+            var systemSource: SystemAudioPcmSource? = null
+            var fileStartSampleIndex: Long? = null
             var sequence = 0L
             var sampleIndex = 0L
             var nextDeadlineNs = System.nanoTime()
             streamCursor.set(StreamCursor(sampleIndex, nextDeadlineNs))
 
             try {
-                onStatus("Shared 1 kHz timing-click source ready · fan-out limit ${PreviewConfig.MAX_SPEAKERS} speakers.")
+                when {
+                    audioFileUri != null -> onStatus("AUDIO_SOURCE_WAITING_FOR_READY_COHORT type=local-file label=${audioFileLabel ?: "selected audio"}")
+                    systemAudioCaptureEnabled -> onStatus("AUDIO_SOURCE_WAITING_FOR_READY_COHORT type=android-system-playback")
+                    else -> onStatus("AUDIO_SOURCE_READY type=diagnostic-test-tone frequencyHz=1000 fanOutLimit=${PreviewConfig.MAX_SPEAKERS}")
+                }
+
                 while (!closed.get()) {
                     val peers = receivers.values.toList()
                     if (peers.isEmpty()) {
@@ -707,20 +739,35 @@ class MasterSessionHost(context: Context, private val onStatus: (String) -> Unit
                         continue
                     }
 
-                    val pcm = ByteArray(PreviewConfig.CHUNK_FRAMES * PreviewConfig.CHANNELS * 2)
-                    for (frameIndex in 0 until PreviewConfig.CHUNK_FRAMES) {
-                        val absoluteSample = sampleIndex + frameIndex
-                        val positionInSecond = absoluteSample % PreviewConfig.SAMPLE_RATE_HZ.toLong()
-                        val sample = if (positionInSecond < 1_440L) {
-                            (sin(2.0 * PI * 1_000.0 * positionInSecond / PreviewConfig.SAMPLE_RATE_HZ) * 6_000.0).toInt()
+                    if ((audioFileUri != null || systemAudioCaptureEnabled) &&
+                        fileSource == null && systemSource == null && mediaStartRequested.get()
+                    ) {
+                        if (audioFileUri != null) {
+                            fileSource = LocalAudioFilePcmSource(appContext, audioFileUri).also {
+                                localAudioSource = it
+                                onStatus(
+                                    "AUDIO_SOURCE_READY type=local-file label=${audioFileLabel ?: "selected audio"} " +
+                                        "outputSampleRateHz=${PreviewConfig.SAMPLE_RATE_HZ} channels=${PreviewConfig.CHANNELS} looping=true"
+                                )
+                            }
                         } else {
-                            0
+                            systemSource = SystemAudioPcmSource().also {
+                                systemAudioSource = it
+                                onStatus(
+                                    "AUDIO_SOURCE_READY type=android-system-playback " +
+                                        "outputSampleRateHz=${PreviewConfig.SAMPLE_RATE_HZ} channels=${PreviewConfig.CHANNELS} " +
+                                        "sourceStartCaptureFrame=${it.startCaptureFrame}"
+                                )
+                            }
                         }
-                        for (channel in 0 until PreviewConfig.CHANNELS) {
-                            val offset = (frameIndex * PreviewConfig.CHANNELS + channel) * 2
-                            pcm[offset] = (sample and 0xff).toByte()
-                            pcm[offset + 1] = ((sample shr 8) and 0xff).toByte()
-                        }
+                        fileStartSampleIndex = sampleIndex
+                    }
+
+                    val pcm = when {
+                        audioFileUri == null && !systemAudioCaptureEnabled -> createTimingClickChunk(sampleIndex)
+                        fileSource != null -> fileSource!!.readFrames(PreviewConfig.CHUNK_FRAMES)
+                        systemSource != null -> systemSource!!.readFrames(PreviewConfig.CHUNK_FRAMES)
+                        else -> ByteArray(PreviewConfig.CHUNK_FRAMES * PreviewConfig.CHANNELS * 2)
                     }
 
                     val encoded = NativePcmJitterBuffer.encodeChunk(
@@ -746,6 +793,22 @@ class MasterSessionHost(context: Context, private val onStatus: (String) -> Unit
                     sampleIndex += PreviewConfig.CHUNK_FRAMES
                     nextDeadlineNs += PreviewConfig.CHUNK_PERIOD_NS
                     streamCursor.set(StreamCursor(sampleIndex, nextDeadlineNs))
+
+                    val sourceStart = fileStartSampleIndex
+                    if (sourceStart != null && !mediaPrerollComplete.get()) {
+                        val requiredPreRollFrames =
+                            PreviewConfig.SAMPLE_RATE_HZ.toLong() * PreviewConfig.GROUP_START_BUFFER_MS / 1_000L
+                        if (sampleIndex - sourceStart >= requiredPreRollFrames &&
+                            mediaPrerollComplete.compareAndSet(false, true)
+                        ) {
+                            onStatus("AUDIO_SOURCE_PREROLL_READY frames=$requiredPreRollFrames · scheduling playback from the media source start point.")
+                            Thread(::tryScheduleGroupStart, "syncinit-file-audio-ready").apply {
+                                isDaemon = true
+                                start()
+                            }
+                        }
+                    }
+
                     val remainingNs = nextDeadlineNs - System.nanoTime()
                     if (remainingNs > 0L) {
                         Thread.sleep(
@@ -760,13 +823,37 @@ class MasterSessionHost(context: Context, private val onStatus: (String) -> Unit
                 if (!closed.get()) Thread.currentThread().interrupt()
             } catch (error: Exception) {
                 if (!closed.get()) {
-                    onStatus("Shared PCM16 test stream stopped: ${error.message ?: error.javaClass.simpleName}")
+                    onStatus("Shared PCM16 audio stream stopped: ${error.message ?: error.javaClass.simpleName}")
                     close()
                 }
+            } finally {
+                fileSource?.close()
+                systemSource?.close()
+                if (localAudioSource === fileSource) localAudioSource = null
+                if (systemAudioSource === systemSource) systemAudioSource = null
             }
         }, "syncinit-master-audio-source").apply { isDaemon = true }
         audioSenderThread = sender
         sender.start()
+    }
+
+    private fun createTimingClickChunk(firstSampleIndex: Long): ByteArray {
+        val pcm = ByteArray(PreviewConfig.CHUNK_FRAMES * PreviewConfig.CHANNELS * 2)
+        for (frameIndex in 0 until PreviewConfig.CHUNK_FRAMES) {
+            val absoluteSample = firstSampleIndex + frameIndex
+            val positionInSecond = absoluteSample % PreviewConfig.SAMPLE_RATE_HZ.toLong()
+            val sample = if (positionInSecond < 1_440L) {
+                (sin(2.0 * PI * 1_000.0 * positionInSecond / PreviewConfig.SAMPLE_RATE_HZ) * 6_000.0).toInt()
+            } else {
+                0
+            }
+            for (channel in 0 until PreviewConfig.CHANNELS) {
+                val offset = (frameIndex * PreviewConfig.CHANNELS + channel) * 2
+                pcm[offset] = (sample and 0xff).toByte()
+                pcm[offset + 1] = ((sample shr 8) and 0xff).toByte()
+            }
+        }
+        return pcm
     }
 
     private fun startTimeSyncServer() {
@@ -907,6 +994,10 @@ class MasterSessionHost(context: Context, private val onStatus: (String) -> Unit
 
         audioSenderThread?.interrupt()
         audioSenderThread = null
+        localAudioSource?.close()
+        localAudioSource = null
+        systemAudioSource?.close()
+        systemAudioSource = null
         timeSyncThread?.interrupt()
         timeSyncThread = null
 

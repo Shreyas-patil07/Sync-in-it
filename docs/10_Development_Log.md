@@ -1031,3 +1031,43 @@ Do not infer missing hardware/router metadata. Store raw recordings outside Git 
 **Non-changes:** Kernel timestamps are not passed into the live estimator. The four-timestamp packet schema, current estimator selection, 60-second window, 0.25 ms gate, sample/span requirements, stable streak, READY/ANCHOR behavior and PCM/TCP path are unchanged.
 
 **Not yet verified:** Android Gradle/NDK build, SO_TIMESTAMPNS_OLD availability and ancillary payload format on Xiaomi Android 12 and Android 14, fallback behavior, capture-lag measurements, and whether kernel-corrected replay improves holdout prediction. Do not create a release or change estimator behavior until CI and physical validation pass.
+
+
+### 8 November 2026 — Local audio file source added on feature branch
+
+**Type:** Implementation / Audio pipeline  
+**Status:** In progress  
+**Branch:** `feature/local-audio-file-sharing`
+
+**Summary:**
+- Added a Host-side Android document picker for one selected local audio file while preserving the diagnostic timing signal as a fallback.
+- Added a MediaExtractor/MediaCodec source that converts decoded audio to the existing 48 kHz stereo PCM16 transport format using streaming sample-rate conversion.
+- Changed file-mode startup to send silence while Speakers acquire clock readiness. Once the admission window closes and all admitted Speakers are READY, the Host begins the file at its first sample, prebuffers two seconds, then schedules the shared ANCHOR at the first file sample.
+- Loops the selected track at end-of-file to keep the sample-indexed PCM stream continuous.
+- Updated Android and implementation-status documentation to distinguish this branch from released behavior.
+
+**Verification:** Not yet run through GitHub Actions or on physical devices. The feature needs Android debug build/transport CI, followed by testing with representative MP3/M4A/WAV files on Android 12 and Android 14.
+
+**Risks or limitations:** Android decoder/container support varies by device; no playlist, pause/seek, Android system-audio capture or background playback service is included. File looping and the first-sample ANCHOR behavior still require physical confirmation. No clock-estimator, wire-protocol, PCM buffer or readiness-threshold change is intended.
+
+**Next action:** Build and inspect CI, then test a selected file end-to-end on the hotspot with matching Host/Speaker diagnostics and an audible playback check.
+
+
+### 8 November 2026 — Android system-audio capture and synchronized fan-out
+
+**Type:** Implementation / Android media capture  
+**Status:** CI passed on feature branch; awaiting paired-device verification  
+**Branch:** `feature/local-audio-file-sharing`
+
+**Summary:**
+- Added a Host action to request Android app-playback capture. The flow requests `RECORD_AUDIO`, obtains fresh MediaProjection consent, then starts a user-visible `mediaProjection` foreground service.
+- Configured `AudioPlaybackCaptureConfiguration` for the Android-supported `USAGE_MEDIA`, `USAGE_GAME` and `USAGE_UNKNOWN` categories, with 48 kHz stereo PCM16 captured through `AudioRecord`.
+- Added a bounded 20-second sample-indexed rolling PCM buffer. After every admitted Speaker reaches the existing READY state and the admission window closes, the Host selects the recent two-second capture window, sends the pre-roll through the existing PCM16/TCP producer, and schedules the same common ANCHOR.
+- Preserved the diagnostic test-signal and local-file sources, plus the existing UDP sender-address fix carried from PR #75.
+- Added cleanup for user stop, MediaProjection revocation, capture failure and host-session exit.
+
+**Verification:** Android app/JNI workflow [42486059495](https://github.com/Shreyas-patil07/Sync-in-it/actions/runs/42486059495) passed Gradle compilation, debug APK build, transport checks, preview signature verification and artifact upload. The M0 Python 3.11/3.12/3.13 + C++17 matrix [42486059503](https://github.com/Shreyas-patil07/Sync-in-it/actions/runs/42486059503) passed. APK SHA-256: `e1c14932421828cfdf956f125085ebbdcbc4b77e6ee3b3b979827a0c6205974b`. No physical Android 12/14 app-playback capture or acoustic skew measurement has been completed.
+
+**Limits:** Capture is subject to Android playback usage and each source app's capture policy. DRM/protected or capture-restricted streams may be silent. This is not microphone recording or universal system-mixer capture. No clock-estimator threshold, wire-protocol or Speaker transport change is intended.
+
+**Next action:** Run a two-phone Android 14 Host + Android 12 Speaker test using a capture-eligible media app. Export both diagnostics and measure audible skew before marking the feature validated.

@@ -2,11 +2,17 @@
 package com.syncinit.app
 
 import android.app.Activity
+import android.Manifest
+import android.content.pm.PackageManager
+import android.media.projection.MediaProjectionManager
 import android.graphics.Color
 import android.graphics.Typeface
 import android.content.Intent
 import android.graphics.drawable.GradientDrawable
 import android.os.Bundle
+import android.os.Build
+import android.net.Uri
+import android.provider.OpenableColumns
 import android.widget.Toast
 import android.view.Gravity
 import android.widget.Button
@@ -20,6 +26,8 @@ import com.syncinit.app.diagnostics.DiagnosticLogStore
 import com.syncinit.app.core.NativeSessionSmokeTest
 import com.syncinit.app.core.NetworkHandshakeSmokeTest
 import com.syncinit.app.audio.PcmAudioSmokeTest
+import com.syncinit.app.audio.SystemAudioCaptureBuffer
+import com.syncinit.app.audio.SystemAudioCaptureService
 import com.syncinit.app.audio.DacClockSmokeTest
 import com.syncinit.app.network.LanSessionBrowser
 import com.syncinit.app.network.NetworkDiagnostics
@@ -31,6 +39,7 @@ class MainActivity : Activity() {
     private lateinit var status: TextView
     private lateinit var foundationStatus: TextView
     private lateinit var hostDetails: TextView
+    private lateinit var audioSelectionDetails: TextView
     private lateinit var discoveryStatus: TextView
     private lateinit var nearbySessionsContainer: LinearLayout
     private lateinit var debugLog: TextView
@@ -39,17 +48,34 @@ class MainActivity : Activity() {
 
     companion object {
         private const val REQUEST_EXPORT_DIAGNOSTICS = 4102
+        private const val REQUEST_PICK_AUDIO = 4103
+        private const val REQUEST_CAPTURE_SYSTEM_AUDIO = 4104
+        private const val REQUEST_RECORD_AUDIO_PERMISSION = 4105
     }
 
     @Volatile private var masterHost: MasterSessionHost? = null
     @Volatile private var receiverClient: ReceiverSessionClient? = null
     @Volatile private var hostServiceName: String? = null
     @Volatile private var nearbyBrowser: LanSessionBrowser? = null
+    @Volatile private var selectedAudioUri: Uri? = null
+    @Volatile private var selectedAudioName: String? = null
+    @Volatile private var selectedSystemAudio = false
     private val nearbySessions = LinkedHashMap<String, NearbySession>()
 
     override fun onCreate(savedInstanceState: Bundle?) {
         super.onCreate(savedInstanceState)
         diagnosticLogStore = DiagnosticLogStore(applicationContext)
+        SystemAudioCaptureBuffer.statusListener = { message ->
+            runOnUiThread {
+                if (!isFinishing && !isDestroyed) {
+                    appendDiagnostic("SYSTEM_AUDIO", message)
+                    postStatus(message)
+                    if (message.contains("failed", ignoreCase = true) ||
+                        message.contains("stopped", ignoreCase = true)
+                    ) selectedSystemAudio = false
+                }
+            }
+        }
         window.statusBarColor = Color.rgb(6, 9, 19)
         window.navigationBarColor = Color.rgb(6, 9, 19)
         window.decorView.systemUiVisibility = 0
@@ -149,9 +175,20 @@ class MainActivity : Activity() {
             parent = content,
             eyebrow = "01 / HOST",
             title = "Start a speaker group",
-            description = "This phone becomes the Host and shares one generated test stream with connected Speakers."
+            description = "Choose a local audio file to stream from this phone to every connected Speaker. The diagnostic timing signal remains available for sync tests."
         )
-        hostCard.addView(actionButton("Start hosting") { startHosting() }, sectionMargins(top = 12, bottom = 8))
+        hostCard.addView(actionButton("Choose audio file") { chooseAudioFile() }, sectionMargins(top = 12, bottom = 7))
+        hostCard.addView(actionButton("Capture system audio") { requestSystemAudioCapture() }, sectionMargins(bottom = 7))
+        audioSelectionDetails = TextView(this).apply {
+            text = "No file selected · diagnostic timing signal will be used."
+            textSize = 12f
+            setTextColor(Color.rgb(159, 174, 198))
+            setPadding(dp(12), dp(10), dp(12), dp(10))
+            background = insetBackground()
+        }
+        hostCard.addView(audioSelectionDetails, sectionMargins(bottom = 7))
+        hostCard.addView(actionButton("Use diagnostic test signal") { clearAudioSelection() }, sectionMargins(bottom = 8))
+        hostCard.addView(actionButton("Start hosting") { startHosting() }, sectionMargins(bottom = 8))
         hostDetails = TextView(this).apply {
             text = "You are not hosting a session."
             textSize = 13f
@@ -223,7 +260,7 @@ class MainActivity : Activity() {
         diagnosticsCard.addView(debugLog)
 
         TextView(this).apply {
-            text = "PLAYBACK NOTE\nThe Host waits for the admitted Speakers to become clock-stable and buffered, then sends a shared start anchor. AudioTrack is started by a writer thread against local monotonic time; DAC start accuracy is not yet validated. The generated 1 kHz click carries a low-level receiver-specific acoustic marker for recording-based skew measurement."
+            text = "PLAYBACK NOTE\nThe Host can stream a selected local file, capture eligible Android app playback with explicit system consent, or use the diagnostic signal. Both media sources feed the same 48 kHz stereo PCM16 timeline and TCP audio channel. Android may block capture for protected or capture-restricted apps. The Host waits for clock-stable, buffered Speakers before coordinating the shared start anchor."
             textSize = 11f
             setTextColor(Color.rgb(119, 137, 168))
             setLineSpacing(dp(2).toFloat(), 1f)
@@ -247,6 +284,48 @@ class MainActivity : Activity() {
     @Deprecated("Deprecated in Android API")
     override fun onActivityResult(requestCode: Int, resultCode: Int, data: Intent?) {
         super.onActivityResult(requestCode, resultCode, data)
+        if (requestCode == REQUEST_PICK_AUDIO) {
+            if (resultCode != RESULT_OK) return
+            val uri = data?.data ?: return
+            runCatching {
+                contentResolver.takePersistableUriPermission(
+                    uri,
+                    Intent.FLAG_GRANT_READ_URI_PERMISSION
+                )
+            }
+            selectedAudioUri = uri
+            selectedAudioName = queryDisplayName(uri)
+            audioSelectionDetails.text =
+                "Selected: ${selectedAudioName}\nThis file will be decoded and streamed to connected Speakers."
+            selectedSystemAudio = false
+            stopSystemAudioCapture("local-file-selected")
+            appendDiagnostic("AUDIO_SOURCE_SELECTED", "name=${selectedAudioName} uri=$uri")
+            return
+        }
+        if (requestCode == REQUEST_CAPTURE_SYSTEM_AUDIO) {
+            if (resultCode != RESULT_OK || data == null) {
+                appendDiagnostic("SYSTEM_AUDIO_CONSENT_DENIED", "MediaProjection permission was cancelled.")
+                postStatus("System-audio capture permission was not granted.")
+                return
+            }
+            val serviceIntent = Intent(this, SystemAudioCaptureService::class.java).apply {
+                putExtra(SystemAudioCaptureService.EXTRA_RESULT_CODE, resultCode)
+                putExtra(SystemAudioCaptureService.EXTRA_RESULT_DATA, data)
+            }
+            try {
+                startForegroundService(serviceIntent)
+                selectedSystemAudio = true
+                selectedAudioUri = null
+                selectedAudioName = null
+                audioSelectionDetails.text = "System audio capture selected · waiting for Android playback capture to start."
+                appendDiagnostic("SYSTEM_AUDIO_CONSENT_GRANTED", "MediaProjection consent granted; foreground capture service requested.")
+            } catch (error: Exception) {
+                selectedSystemAudio = false
+                appendDiagnostic("SYSTEM_AUDIO_START_FAILED", error.message ?: error.javaClass.simpleName)
+                postStatus("Could not start system-audio capture: ${error.message ?: error.javaClass.simpleName}")
+            }
+            return
+        }
         if (requestCode != REQUEST_EXPORT_DIAGNOSTICS || resultCode != RESULT_OK) return
         val destination = data?.data ?: return
         Thread({
@@ -277,9 +356,97 @@ class MainActivity : Activity() {
         }, "syncinit-diagnostic-export").apply { isDaemon = true }.start()
     }
 
+    @Deprecated("Deprecated in Android API")
+    override fun onRequestPermissionsResult(
+        requestCode: Int,
+        permissions: Array<out String>,
+        grantResults: IntArray
+    ) {
+        super.onRequestPermissionsResult(requestCode, permissions, grantResults)
+        if (requestCode != REQUEST_RECORD_AUDIO_PERMISSION) return
+        if (grantResults.firstOrNull() == PackageManager.PERMISSION_GRANTED) {
+            launchSystemAudioConsent()
+        } else {
+            postStatus("Android RECORD_AUDIO permission is required for playback capture.")
+            appendDiagnostic("SYSTEM_AUDIO_PERMISSION_DENIED", "RECORD_AUDIO runtime permission denied.")
+        }
+    }
+
+    private fun requestSystemAudioCapture() {
+        if (Build.VERSION.SDK_INT < Build.VERSION_CODES.Q) {
+            postStatus("System-audio capture requires Android 10 or newer. Use a local audio file on this device.")
+            return
+        }
+        if (checkSelfPermission(Manifest.permission.RECORD_AUDIO) != PackageManager.PERMISSION_GRANTED) {
+            requestPermissions(arrayOf(Manifest.permission.RECORD_AUDIO), REQUEST_RECORD_AUDIO_PERMISSION)
+            return
+        }
+        launchSystemAudioConsent()
+    }
+
+    private fun launchSystemAudioConsent() {
+        try {
+            val manager = getSystemService(MEDIA_PROJECTION_SERVICE) as MediaProjectionManager
+            startActivityForResult(manager.createScreenCaptureIntent(), REQUEST_CAPTURE_SYSTEM_AUDIO)
+        } catch (error: Exception) {
+            postStatus("Could not open Android capture consent: ${error.message ?: error.javaClass.simpleName}")
+            appendDiagnostic("SYSTEM_AUDIO_CONSENT_FAILED", error.message ?: error.javaClass.simpleName)
+        }
+    }
+
+    private fun stopSystemAudioCapture(reason: String) {
+        runCatching { stopService(Intent(this, SystemAudioCaptureService::class.java)) }
+        SystemAudioCaptureBuffer.stop(reason)
+        selectedSystemAudio = false
+    }
+
+    private fun chooseAudioFile() {
+        stopSystemAudioCapture("local-file-selected")
+        val intent = Intent(Intent.ACTION_OPEN_DOCUMENT).apply {
+            addCategory(Intent.CATEGORY_OPENABLE)
+            type = "audio/*"
+            addFlags(
+                Intent.FLAG_GRANT_READ_URI_PERMISSION or
+                    Intent.FLAG_GRANT_PERSISTABLE_URI_PERMISSION
+            )
+        }
+        try {
+            startActivityForResult(intent, REQUEST_PICK_AUDIO)
+        } catch (error: Exception) {
+            Toast.makeText(this, "No compatible audio file picker is available.", Toast.LENGTH_LONG).show()
+            appendDiagnostic("AUDIO_PICKER_FAILED", error.message ?: error.javaClass.simpleName)
+        }
+    }
+
+    private fun clearAudioSelection() {
+        stopSystemAudioCapture("diagnostic-source-selected")
+        selectedAudioUri = null
+        selectedAudioName = null
+        audioSelectionDetails.text = "No file selected · diagnostic timing signal will be used."
+        appendDiagnostic("AUDIO_SOURCE_SELECTED", "source=diagnostic-test-tone")
+    }
+
+    private fun queryDisplayName(uri: Uri): String {
+        return runCatching {
+            contentResolver.query(uri, arrayOf(OpenableColumns.DISPLAY_NAME), null, null, null)?.use { cursor ->
+                val index = cursor.getColumnIndex(OpenableColumns.DISPLAY_NAME)
+                if (index >= 0 && cursor.moveToFirst()) cursor.getString(index) else null
+            }
+        }.getOrNull()?.takeIf { it.isNotBlank() }
+            ?: uri.lastPathSegment?.substringAfterLast('/')?.takeIf { it.isNotBlank() }
+            ?: "Selected audio file"
+    }
+
     private fun startHosting() {
-        stopConnections()
-        val service = MasterSessionHost(applicationContext, ::postStatus)
+        if (selectedSystemAudio && !SystemAudioCaptureBuffer.isActive()) {
+            postStatus("System-audio capture is not active yet. Grant Android consent again and retry.")
+            return
+        }
+        stopConnections(stopCapture = false)
+        val audioUri = selectedAudioUri
+        val audioName = selectedAudioName
+        val useSystemAudio = selectedSystemAudio
+        val service = MasterSessionHost(applicationContext, ::postStatus, audioUri, audioName, useSystemAudio)
         masterHost = service
         postStatus("Starting a discoverable session…")
         Thread({
@@ -290,8 +457,13 @@ class MainActivity : Activity() {
                         service.close()
                     } else {
                         hostServiceName = invitation.serviceName
+                        val sourceDescription = when {
+                            useSystemAudio -> "Capturing eligible Android app playback"
+                            audioUri != null -> "Sharing local file: ${audioName ?: "selected audio"} (loops at end-of-file)"
+                            else -> "Diagnostic 1 kHz test signal"
+                        }
                         hostDetails.text =
-                            "Visible as ${invitation.serviceName}\nWaiting for up to ${PreviewConfig.MAX_SPEAKERS} Speakers. One shared 1 kHz timing-click stream will be sent to every connected speaker."
+                            "Visible as ${invitation.serviceName}\n$sourceDescription\nWaiting for up to ${PreviewConfig.MAX_SPEAKERS} Speakers."
                         postStatus("Session created. Nearby phones can see this device and tap to join.")
                         renderNearbySessions()
                     }
@@ -396,11 +568,17 @@ class MainActivity : Activity() {
         nearbyBrowser = null
     }
 
-    private fun stopConnections() {
+    private fun stopConnections(stopCapture: Boolean = true) {
         masterHost?.close()
         masterHost = null
         receiverClient?.close()
         receiverClient = null
+        if (stopCapture && selectedSystemAudio) {
+            stopSystemAudioCapture("session-stopped")
+            if (::audioSelectionDetails.isInitialized && selectedAudioUri == null) {
+                audioSelectionDetails.text = "No file selected · diagnostic timing signal will be used."
+            }
+        }
         hostServiceName = null
         if (::hostDetails.isInitialized) hostDetails.text = "You are not hosting a session."
         if (::status.isInitialized) status.text = "Disconnected."
@@ -426,6 +604,7 @@ class MainActivity : Activity() {
                 message.startsWith("Admitted receiver disconnected:")
             if (hostEnded && masterHost != null) {
                 masterHost = null
+                if (selectedSystemAudio) stopSystemAudioCapture("host-session-ended")
                 if (::hostDetails.isInitialized) {
                     hostDetails.text = "Host session ended. Tap Start hosting to advertise again."
                 }
@@ -613,6 +792,7 @@ class MainActivity : Activity() {
     override fun onDestroy() {
         stopDiscovery()
         stopConnections()
+        SystemAudioCaptureBuffer.statusListener = null
         super.onDestroy()
     }
 }
