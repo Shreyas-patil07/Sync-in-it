@@ -120,3 +120,12 @@ The receiver-specific marker is generated in `AcousticTestMarker.kt` and overlai
 The current Android output path remains `AudioTrack.MODE_STREAM` with a dedicated writer thread and a scheduled `AudioTrack.play()` call. Oboe/AAudio callbacks are not implemented. See [ADR-019](../docs/ADR/Architecture_Decisions.md).
 
 No foreground playback service or explicit CPU/Wi-Fi wake-lock lifecycle exists. Keep the first approximately two-minute skew test foregrounded and screen-on. Do not run endurance, background, screen-off or train trials until ADR-022 is implemented and validated.
+
+
+## Android system-audio capture
+
+The Host can request Android playback capture from other apps on Android 10 (API 29) and newer. The user must grant the runtime `RECORD_AUDIO` permission and approve a fresh MediaProjection consent prompt for each capture session. Capture runs in a foreground service declared with the `mediaProjection` service type; stopping the Sync In It session stops capture.
+
+Captured audio is read as 48 kHz, stereo, PCM16 and enters the same sample-indexed PCM producer as local-file playback. A bounded 20-second rolling buffer allows the Host to select a recent two-second pre-roll only after all admitted Speakers pass the existing clock-stability and buffer-readiness checks. The existing common ANCHOR and TCP fan-out then coordinate playback; the estimator thresholds and wire protocol are unchanged.
+
+**Capture is not guaranteed for every app.** Android playback capture is limited to supported media/game/unknown usages and is subject to the source app's capture policy and manifest opt-in. DRM/protected or capture-blocked playback may be silent. Android 10+ and matching user-profile requirements apply. This is playback capture, not microphone recording or a universal system mixer tap.
