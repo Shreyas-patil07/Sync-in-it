@@ -508,16 +508,19 @@ Android and iOS CI may be expanded after native project skeletons exist. Physica
 
 ## 10. Immediate next engineering actions — RTP/RTCP migration
 
-ADR-028 supersedes the TCP-only transport sequencing in ADR-027. This authorizes a narrow, feature-flagged diagnostic RTP/UDP path; it does not change the clock-readiness gate, declare the RTP path integrated, or remove PCM16/TCP fallback.
+ADR-028 supersedes the TCP-only transport sequencing in ADR-027. The feature branch now contains a code-integrated, build-time opt-in diagnostic RTP/UDP path alongside the existing PCM16/TCP fallback. This does not change the clock-readiness gate, prove physical audio delivery or authorize removing TCP.
 
 1. Preserve the latest paired Host/Speaker clock evidence and replay it through the current C++ estimator/gate. Keep residual RMS <0.25 ms, selected-sample/span requirements and the three-update streak unchanged.
-2. Complete the RTP diagnostic PCM profile in the transport module: 48 kHz stereo PCM16, split into MTU-safe 5 ms packets, 240 sample frames per packet, with sequence/timestamp wrap and out-of-order tests. This transport-library slice is groundwork, not Android app integration.
-3. Integrate RTP unicast behind a build-time feature flag. Bind each UDP endpoint to the selected Wi-Fi Network and associate registration with the admitted TCP control session, session ID, receiver ID and admission credential. Keep the existing TCP audio path available as fallback.
-4. Feed decoded RTP sample ranges into the existing bounded, sample-indexed native PCM jitter buffer. Record sequence gaps, duplicates, late packets, reordering, buffer fill and PCM signal energy. Packet arrival/count alone is not proof of audio delivery.
-5. Run controlled one-Host/one-Speaker A/B tests with the same diagnostic source and AudioTrack backend. Compare TCP and RTP delivery while holding the estimator, READY threshold and ANCHOR algorithm constant. Require READY → common ANCHOR → audible marker output and a physical recording.
-6. Add Opus only after diagnostic PCM over RTP passes the receive-buffer and audible-output tests. Begin with 20 ms Opus frames and 960 RTP timestamp ticks; measure encode/decode delay, bitrate, CPU and quality.
-7. Implement complete compound RTCP Sender/Receiver Reports (including SDES/CNAME and populated reception report blocks), then use SR/RR data for media-clock mapping and per-Speaker feedback. RTCP does not replace the four-timestamp clock estimator.
+2. Build both Host and Speaker with `-PsyncinitRtpAudioEnabled=true` and run a one-Host/one-Speaker diagnostic PCM test. Confirm TCP HELLO/WELCOME and AUDIO_HELLO admission, token-bound UDP endpoint registration, Host RTP datagrams sent and Speaker RTP ingress on UDP port 47803.
+3. Verify the receiver's per-packet RTP sequence/timestamp observations, out-of-order/duplicate counts, native-buffer duplicate/late/missing-frame metrics and non-silent PCM energy. A packet count alone is not proof of decoded audio.
+4. Compare PCM16/TCP and diagnostic PCM/RTP on the same devices, router and diagnostic source. Hold the estimator, strict READY gate, sample-indexed buffer and common ANCHOR algorithm constant. Require READY → common ANCHOR → audible marker output and a physical recording.
+5. Add Opus only after diagnostic PCM over RTP passes the receive-buffer and audible-output tests. Begin with 20 ms frames and 960 RTP timestamp ticks at 48 kHz; measure encode/decode delay, bitrate, CPU and decoded PCM continuity.
+6. Implement complete compound RTCP Sender/Receiver Reports (including SDES/CNAME and populated reception report blocks), then use SR/RR data for media-clock mapping and per-Speaker feedback. RTCP does not replace the four-timestamp clock estimator.
+7. Map the RTP sample timeline through receiver monotonic time to AudioTrack timestamp frame positions. Only then evaluate output-frame scheduling and drift correction.
 8. Add a second Speaker, measure p95 absolute acoustic skew ≤10 ms, then validate drift correction and group resilience. Keep RTP feature-flagged until physical acceptance is repeatable; retain TCP fallback during the migration.
+9. Long/endurance/background tests remain blocked by the foreground-service and wake-lock dependency.
+
+The public main branch and v0.6.9 release remain on PCM16/TCP until this feature branch is reviewed, merged and physically accepted. CI build success is not a device-audio or acoustic-sync result.
 
 ## 11. Source documents
 
