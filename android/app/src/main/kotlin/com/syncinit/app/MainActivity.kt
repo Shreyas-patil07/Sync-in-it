@@ -307,6 +307,7 @@ class MainActivity : Activity() {
         if (requestCode == REQUEST_PICK_AUDIO) {
             if (resultCode != RESULT_OK) return
             val uri = data?.data ?: return
+            stopHostForSourceChange("local-file")
             runCatching {
                 contentResolver.takePersistableUriPermission(
                     uri,
@@ -332,6 +333,7 @@ class MainActivity : Activity() {
                 putExtra(SystemAudioCaptureService.EXTRA_RESULT_DATA, data)
             }
             try {
+                stopHostForSourceChange("system-audio")
                 startForegroundService(serviceIntent)
                 selectedSystemAudio = true
                 selectedAudioUri = null
@@ -400,7 +402,6 @@ class MainActivity : Activity() {
             postStatus("System-audio capture is already active. Start hosting when the source app is playing audio.")
             return
         }
-        stopHostForSourceChange("system-audio")
         if (checkSelfPermission(Manifest.permission.RECORD_AUDIO) != PackageManager.PERMISSION_GRANTED) {
             requestPermissions(arrayOf(Manifest.permission.RECORD_AUDIO), REQUEST_RECORD_AUDIO_PERMISSION)
             return
@@ -425,7 +426,6 @@ class MainActivity : Activity() {
     }
 
     private fun chooseAudioFile() {
-        stopHostForSourceChange("local-file")
         val intent = Intent(Intent.ACTION_OPEN_DOCUMENT).apply {
             addCategory(Intent.CATEGORY_OPENABLE)
             type = "audio/*"
