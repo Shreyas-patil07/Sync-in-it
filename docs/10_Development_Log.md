@@ -1071,3 +1071,13 @@ Do not infer missing hardware/router metadata. Store raw recordings outside Git 
 **Limits:** Capture is subject to Android playback usage and each source app's capture policy. DRM/protected or capture-restricted streams may be silent. This is not microphone recording or universal system-mixer capture. No clock-estimator threshold, wire-protocol or Speaker transport change is intended.
 
 **Next action:** Run a two-phone Android 14 Host + Android 12 Speaker test using a capture-eligible media app. Export both diagnostics and measure audible skew before marking the feature validated.
+
+
+### 8 November 2026 — PR #76 merged to main
+
+**Merge commit:** `163faad3bde01b75d1e38d8b4b793d413393fdef`  
+**Release target:** `v0.6.8` engineering prerelease
+
+PR #76 merged the local-file source, user-consented Android system-audio capture, 20-second capture buffer, MediaProjection foreground service, and the UDP recvmsg sender-address correction into main. The Host media sources use the unchanged PCM16/TCP fan-out and common READY/ANCHOR schedule.
+
+Post-merge main workflows passed: Android app/JNI [42487998775](https://github.com/Shreyas-patil07/Sync-in-it/actions/runs/42487998775) and M0 Python/C++ [42487998642](https://github.com/Shreyas-patil07/Sync-in-it/actions/runs/42487998642). Physical Android 12/14 capture, successful READY/ANCHOR and acoustic-skew testing remain unverified. The release is therefore an engineering prerelease, not a validated synchronized-audio release.
