@@ -250,7 +250,9 @@ private class KernelTimestampUdpSocket private constructor(
         if (timeoutMs != null) setReceiveTimeout(timeoutMs)
 
         val payload = ByteBuffer.allocate(UdpTimeSyncClient.PACKET_SIZE + 1)
-        // Android's recvmsg bridge only copies msg_name back when a mutable destination is supplied.
+        // Android's recvmsg bridge only populates msg_name when the caller supplies
+        // a non-null SocketAddress instance as the mutable source-address destination.
+        // Keep a placeholder so unconnected server sockets receive the datagram sender.
         val message = StructMsghdr(InetSocketAddress(0), arrayOf(payload), null, 0)
         val byteCount = try {
             Os.recvmsg(descriptor, message, 0)
