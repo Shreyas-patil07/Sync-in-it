@@ -49,8 +49,8 @@ def main() -> int:
             )
             speaker_lines.append(
                 f"[DIAG {attempt}] CLOCK_PROBE sequence={sequence} t1Ns={t1} "
-                f"t2Ns={kernel_t2} t3Ns={t3} t4Ns={kernel_t4} appT4Ns={app_t4} "
-                f"roundTripNs={kernel_t4 - t1 - (t3 - kernel_t2)} rawOffsetNs=5000000 "
+                f"t2Ns={app_t2} t3Ns={t3} t4Ns={app_t4} appT4Ns={app_t4} "
+                f"roundTripNs={app_t4 - t1 - (t3 - app_t2)} rawOffsetNs=5000000 "
                 f"kernelT4Ns={kernel_t4} kernelT4RealtimeNs={kernel_t4 + 1_700_000_000_000_000_000} "
                 "kernelT4MappingUncertaintyNs=500"
             )
