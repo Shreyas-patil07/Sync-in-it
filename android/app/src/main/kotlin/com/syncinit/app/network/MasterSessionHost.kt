@@ -369,11 +369,13 @@ class MasterSessionHost(
         val receiverId: Int,
         val session: NativeReceiverSession,
         val control: TcpFrameConnection,
-        val audio: TcpFrameConnection
+        val audio: TcpFrameConnection,
+        val sessionId: Long,
+        val rtpPeer: InetSocketAddress?
     ) : Closeable {
         private val peerClosed = AtomicBoolean(false)
         private val audioQueueLock = Any()
-        private val audioQueue = ArrayBlockingQueue<ByteArray>(PreviewConfig.AUDIO_QUEUE_CHUNKS)
+        private val audioQueue = ArrayBlockingQueue<HostAudioChunk>(PreviewConfig.AUDIO_QUEUE_CHUNKS)
         private val audioFramesQueued = AtomicLong(0L)
         private val audioFramesWritten = AtomicLong(0L)
         private val audioQueueHighWater = AtomicInteger(0)
@@ -385,17 +387,39 @@ class MasterSessionHost(
         val isClosed: Boolean get() = peerClosed.get()
         private var audioWriter: Thread? = null
 
+        init {
+            check(PreviewConfig.RTP_AUDIO_ENABLED == (rtpPeer != null)) {
+                "RTP endpoint registration state does not match the build-time transport mode"
+            }
+        }
+
         fun startAudioWriter() {
             check(audioWriter == null) { "receiver audio writer has already started" }
             val writer = Thread({
                 val writerStartedAtNs = System.nanoTime()
                 try {
                     while (!peerClosed.get() && !closed.get()) {
-                        val frame = audioQueue.poll(500, TimeUnit.MILLISECONDS) ?: continue
+                        val chunk = audioQueue.poll(500, TimeUnit.MILLISECONDS) ?: continue
                         val writeStartedAtNs = System.nanoTime()
                         var writeSucceeded = false
                         try {
-                            audio.writeEncodedFrame(frame)
+                            if (rtpPeer != null) {
+                                val socket = checkNotNull(rtpAudioServer) {
+                                    "RTP audio socket closed before Speaker delivery"
+                                }
+                                val firstSequence = (
+                                    chunk.sequence * RtpPcm16Packetizer.PACKETS_PER_SOURCE_CHUNK.toLong()
+                                ).and(0xffffL).toInt()
+                                val packets = RtpPcm16Packetizer.packetize(
+                                    pcm16LittleEndian = chunk.pcm16LittleEndian,
+                                    sampleIndex = chunk.sampleIndex,
+                                    firstSequenceNumber = firstSequence,
+                                    ssrc = sessionId
+                                )
+                                packets.forEach { packet -> socket.send(packet, rtpPeer) }
+                            } else {
+                                audio.writeEncodedFrame(chunk.encodedFrame)
+                            }
                             writeSucceeded = true
                         } finally {
                             val writeCompletedAtNs = System.nanoTime()
@@ -410,7 +434,8 @@ class MasterSessionHost(
                                     lastSlowAudioWriteDiagnosticAtNs.compareAndSet(previousReportNs, nowNs)
                                 ) {
                                     onStatus(
-                                        "DIAG HOST_AUDIO_WRITE_SLOW receiverId=$receiverId " +
+                                        "DIAG HOST_AUDIO_SEND_SLOW receiverId=$receiverId " +
+                                            "transport=${if (rtpPeer != null) "RTP_UDP" else "TCP"} " +
                                             "durationMs=${"%.1f".format(writeDurationNs / 1_000_000.0)} " +
                                             "queued=${audioFramesQueued.get()} written=${audioFramesWritten.get()} " +
                                             "queueDepth=${audioQueue.size} queueHighWater=${audioQueueHighWater.get()}"
@@ -422,6 +447,7 @@ class MasterSessionHost(
                         if (written == 1L || written % 250L == 0L) {
                             onStatus(
                                 "DIAG HOST_AUDIO_DELIVERY receiverId=$receiverId " +
+                                    "transport=${if (rtpPeer != null) "RTP_UDP" else "TCP"} " +
                                     "queued=${audioFramesQueued.get()} written=$written " +
                                     "queueDepth=${audioQueue.size} queueHighWater=${audioQueueHighWater.get()}"
                             )
@@ -440,6 +466,7 @@ class MasterSessionHost(
                         }
                         onStatus(
                             "DIAG HOST_AUDIO_WRITER_FAILED receiverId=$receiverId " +
+                                "transport=${if (rtpPeer != null) "RTP_UDP" else "TCP"} " +
                                 "uptimeMs=${(nowNs - writerStartedAtNs) / 1_000_000L} " +
                                 "sinceLastWriteMs=$sinceLastWriteMs " +
                                 "lastWriteDurationMs=${"%.2f".format(lastAudioWriteDurationNs.get() / 1_000_000.0)} " +
@@ -450,7 +477,7 @@ class MasterSessionHost(
                         )
                         removeReceiver(
                             this,
-                            "audio channel failed: ${error.message ?: error.javaClass.simpleName}",
+                            "audio send failed: ${error.message ?: error.javaClass.simpleName}",
                             trigger = "audio-writer"
                         )
                     }
@@ -460,9 +487,9 @@ class MasterSessionHost(
             writer.start()
         }
 
-        fun offerAudio(frame: ByteArray): AudioOfferResult = synchronized(audioQueueLock) {
+        fun offerAudio(chunk: HostAudioChunk): AudioOfferResult = synchronized(audioQueueLock) {
             if (peerClosed.get()) return@synchronized AudioOfferResult.CLOSED
-            if (!audioQueue.offer(frame)) return@synchronized AudioOfferResult.FULL
+            if (!audioQueue.offer(chunk)) return@synchronized AudioOfferResult.FULL
             audioFramesQueued.incrementAndGet()
             val depth = audioQueue.size
             audioQueueHighWater.updateAndGet { previous -> maxOf(previous, depth) }
@@ -475,18 +502,22 @@ class MasterSessionHost(
                 val nowNs = System.nanoTime()
                 val diagnostic =
                     "DIAG HOST_RECEIVER_CLOSE receiverId=$receiverId trigger=$trigger reason=$reason " +
+                        "transport=${if (rtpPeer != null) "RTP_UDP" else "TCP"} " +
                         "uptimeMs=${(nowNs - admittedAtNs) / 1_000_000L} " +
                         "queued=${audioFramesQueued.get()} written=${audioFramesWritten.get()} " +
                         "queueDepth=${audioQueue.size} queueHighWater=${audioQueueHighWater.get()} " +
                         "lastWriteDurationMs=${"%.2f".format(lastAudioWriteDurationNs.get() / 1_000_000.0)} " +
                         "controlLocal=${control.localEndpoint} controlRemote=${control.remoteEndpoint} " +
-                        "audioLocal=${audio.localEndpoint} audioRemote=${audio.remoteEndpoint}"
+                        "audioLocal=${audio.localEndpoint} audioRemote=${audio.remoteEndpoint} " +
+                        "rtpPeer=${rtpPeer ?: "disabled"}"
                 audioQueue.clear()
                 diagnostic
             }
             onStatus(closeDiagnostic)
             audioWriter?.interrupt()
             audioWriter = null
+            pendingRtpRegistrations.remove(receiverId)?.token?.fill(0)
+            rtpPeer?.let { registeredRtpPeers.remove(receiverId, it) }
             closeQuietly(audio)
             closeQuietly(control)
             closeQuietly(session)
