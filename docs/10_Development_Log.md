@@ -1051,3 +1051,23 @@ Do not infer missing hardware/router metadata. Store raw recordings outside Git 
 **Risks or limitations:** Android decoder/container support varies by device; no playlist, pause/seek, Android system-audio capture or background playback service is included. File looping and the first-sample ANCHOR behavior still require physical confirmation. No clock-estimator, wire-protocol, PCM buffer or readiness-threshold change is intended.
 
 **Next action:** Build and inspect CI, then test a selected file end-to-end on the hotspot with matching Host/Speaker diagnostics and an audible playback check.
+
+
+### 8 November 2026 — Android system-audio capture and synchronized fan-out
+
+**Type:** Implementation / Android media capture  
+**Status:** Implemented on feature branch; awaiting CI and paired-device verification  
+**Branch:** `feature/local-audio-file-sharing`
+
+**Summary:**
+- Added a Host action to request Android app-playback capture. The flow requests `RECORD_AUDIO`, obtains fresh MediaProjection consent, then starts a user-visible `mediaProjection` foreground service.
+- Configured `AudioPlaybackCaptureConfiguration` for the Android-supported `USAGE_MEDIA`, `USAGE_GAME` and `USAGE_UNKNOWN` categories, with 48 kHz stereo PCM16 captured through `AudioRecord`.
+- Added a bounded 20-second sample-indexed rolling PCM buffer. After every admitted Speaker reaches the existing READY state and the admission window closes, the Host selects the recent two-second capture window, sends the pre-roll through the existing PCM16/TCP producer, and schedules the same common ANCHOR.
+- Preserved the diagnostic test-signal and local-file sources, plus the existing UDP sender-address fix carried from PR #75.
+- Added cleanup for user stop, MediaProjection revocation, capture failure and host-session exit.
+
+**Verification:** GitHub Android app/JNI and M0 Python/C++ workflows were triggered for the branch. Their current result must be checked before creating a preview APK. No physical Android 12/14 app-playback capture or acoustic skew measurement has been completed.
+
+**Limits:** Capture is subject to Android playback usage and each source app's capture policy. DRM/protected or capture-restricted streams may be silent. This is not microphone recording or universal system-mixer capture. No clock-estimator threshold, wire-protocol or Speaker transport change is intended.
+
+**Next action:** Confirm CI, then run a two-phone Android 14 Host + Android 12 Speaker test using a capture-eligible media app. Export both diagnostics and measure audible skew before marking the feature validated.
