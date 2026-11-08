@@ -479,6 +479,13 @@ export default function BrowserRoom() {
       if (pc.connectionState === 'failed' || pc.connectionState === 'closed') {
         peer.ready = false;
         patchHostPeer(peerId, { ready: false });
+        closeHostPeer(peerId);
+      }
+    };
+    pc.oniceconnectionstatechange = () => {
+      if (pc.iceConnectionState === 'failed' || pc.iceConnectionState === 'closed') {
+        peer.ready = false;
+        closeHostPeer(peerId);
       }
     };
 
@@ -670,7 +677,25 @@ export default function BrowserRoom() {
       setSpeakerState((current) => current ? { ...current, state: pc.connectionState } : current);
       if (pc.connectionState === 'failed' || pc.connectionState === 'closed') {
         speaker.readySent = false;
-        setStatus(`Peer connection ${pc.connectionState}.`);
+        speaker.playing = false;
+        if (speaker.gain) {
+          speaker.gain.gain.cancelScheduledValues(context.currentTime);
+          speaker.gain.gain.setTargetAtTime(0, context.currentTime, 0.015);
+        }
+        setScheduled(false);
+        setStatus(`Peer connection ${pc.connectionState}. Rejoin the room to restore playback.`);
+      }
+    };
+    pc.oniceconnectionstatechange = () => {
+      if (pc.iceConnectionState === 'failed' || pc.iceConnectionState === 'closed') {
+        speaker.readySent = false;
+        speaker.playing = false;
+        if (speaker.gain) {
+          speaker.gain.gain.cancelScheduledValues(context.currentTime);
+          speaker.gain.gain.setTargetAtTime(0, context.currentTime, 0.015);
+        }
+        setScheduled(false);
+        setStatus(`ICE connection ${pc.iceConnectionState}. Rejoin the room to restore playback.`);
       }
     };
     pc.ondatachannel = (event) => {
@@ -836,6 +861,10 @@ export default function BrowserRoom() {
       case 'error':
         setError(String(message.message ?? 'Signaling server error.'));
         setStatus('Signaling error.');
+        if (message.code === 'room_not_found' || message.code === 'room_full' ||
+            message.code === 'already_in_room' || message.code === 'rate_limited') {
+          setBusy(false);
+        }
         break;
       case 'left-room':
         setStatus('Left the room.');
