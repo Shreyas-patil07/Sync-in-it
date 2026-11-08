@@ -539,6 +539,69 @@ private fun rtpUdpLoopback() {
     }
 }
 
+
+private fun rtcpPacketCodecRoundTrip() {
+    val sender = RtcpSenderReport(
+        ssrc = 0xfedc_ba98L,
+        ntpSeconds = 0x1234_5678L,
+        ntpFraction = 0x9abc_def0L,
+        rtpTimestamp = 0x8765_4321L,
+        packetCount = 65_535,
+        octetCount = 0x1020_3040L
+    )
+    val encoded = RtcpPacketCodec.encodeSenderReport(sender)
+    expect(encoded.size == RtcpPacketCodec.SENDER_REPORT_SIZE, "RTCP sender report has the RFC fixed size")
+    expect((encoded[0].toInt() and 0xff) == 0x80, "RTCP sender report uses version 2 and zero report blocks")
+    expect((encoded[1].toInt() and 0xff) == RtcpPacketCodec.SENDER_REPORT_TYPE, "RTCP sender report uses packet type 200")
+    expect(RtcpPacketCodec.decodeSenderReport(encoded) == sender, "RTCP sender report fields round-trip")
+
+    val receiver = RtcpReceiverReport(ssrc = 0x0102_0304L)
+    val receiverBytes = RtcpPacketCodec.encodeReceiverReport(receiver)
+    expect(receiverBytes.size == RtcpPacketCodec.RECEIVER_REPORT_SIZE, "empty RTCP receiver report has the expected size")
+    expect(RtcpPacketCodec.decodeReceiverReport(receiverBytes) == receiver, "RTCP receiver report SSRC round-trips")
+
+    var rejected = false
+    try { RtcpPacketCodec.decodeSenderReport(encoded.copyOf(encoded.size - 1)) }
+    catch (_: FrameProtocolException) { rejected = true }
+    expect(rejected, "RTCP codec rejects malformed sender-report lengths")
+
+    rejected = false
+    val badLength = encoded.copyOf().apply { this[3] = 5 }
+    try { RtcpPacketCodec.decodeSenderReport(badLength) }
+    catch (_: FrameProtocolException) { rejected = true }
+    expect(rejected, "RTCP codec rejects inconsistent length fields")
+
+    rejected = false
+    val badType = encoded.copyOf().apply { this[1] = 201.toByte() }
+    try { RtcpPacketCodec.decodeSenderReport(badType) }
+    catch (_: FrameProtocolException) { rejected = true }
+    expect(rejected, "RTCP codec rejects an unexpected packet type")
+}
+
+private fun rtcpUdpLoopback() {
+    val loopback = InetAddress.getByName("127.0.0.1")
+    RtcpUdpSocket(loopback, receiveTimeoutMs = 3_000).use { receiver ->
+        RtcpUdpSocket(loopback, receiveTimeoutMs = 3_000).use { sender ->
+            val failure = ArrayBlockingQueue<Throwable>(1)
+            val received = ArrayBlockingQueue<ReceivedRtcpDatagram>(1)
+            val worker = Thread {
+                try { received.offer(receiver.receive()) }
+                catch (error: Throwable) { failure.offer(error) }
+            }
+            worker.start()
+            val report = RtcpSenderReport(77, 1_700_000_000, 0x8000_0000L, 48_000, 1, 960)
+            sender.sendSenderReport(report, InetSocketAddress(loopback, receiver.localPort))
+            worker.join(4_000)
+            failure.poll()?.let { throw it }
+            val incoming = received.poll(1, TimeUnit.SECONDS)
+                ?: throw AssertionError("RTCP sender report was not received")
+            expect(RtcpPacketCodec.decodeSenderReport(incoming.bytes) == report, "RTCP sender report traverses UDP intact")
+            expect(incoming.source.port == sender.localPort, "RTCP UDP reports source port")
+            expect(incoming.receivedAtNs > 0L, "RTCP UDP captures monotonic receive time")
+        }
+    }
+}
+
 fun main() {
     encodedFrameCodecRoundTrip()
     tcpRoundTrip()
@@ -553,5 +616,7 @@ fun main() {
     udpRejectsMalformedDatagrams()
     rtpPacketCodecRoundTrip()
     rtpUdpLoopback()
+    rtcpPacketCodecRoundTrip()
+    rtcpUdpLoopback()
     println("Kotlin TCP/UDP transport tests: all assertions passed")
 }
