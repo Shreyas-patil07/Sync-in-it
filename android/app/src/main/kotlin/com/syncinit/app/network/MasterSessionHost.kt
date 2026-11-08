@@ -17,11 +17,15 @@ import com.syncinit.transport.TcpFrameConnection
 import com.syncinit.transport.TcpFrameServer
 import com.syncinit.transport.FrameProtocolException
 import com.syncinit.transport.UdpTimeSyncPacketMetadata
+import com.syncinit.transport.RtpPcm16Packetizer
+import com.syncinit.transport.RtpUdpSocket
+import com.syncinit.transport.RtpUdpRegistrationCodec
 import java.io.Closeable
 import java.net.InetAddress
 import java.net.InetSocketAddress
 import java.net.SocketException
 import java.net.SocketTimeoutException
+import java.security.MessageDigest
 import java.security.SecureRandom
 import java.util.concurrent.ArrayBlockingQueue
 import java.util.concurrent.ConcurrentHashMap
@@ -44,6 +48,18 @@ private data class StreamCursor(
     val nextChunkDueNs: Long
 )
 
+private data class PendingRtpRegistration(
+    val expectedAddress: InetAddress,
+    val token: ByteArray
+)
+
+private data class HostAudioChunk(
+    val encodedFrame: ByteArray,
+    val pcm16LittleEndian: ByteArray,
+    val sequence: Long,
+    val sampleIndex: Long
+)
+
 private enum class AudioOfferResult {
     QUEUED,
     CLOSED,
@@ -63,6 +79,8 @@ class MasterSessionHost(
     private val started = AtomicBoolean(false)
     private val nextReceiverId = AtomicInteger(1)
     private val receivers = ConcurrentHashMap<Int, HostReceiverPeer>()
+    private val pendingRtpRegistrations = ConcurrentHashMap<Int, PendingRtpRegistration>()
+    private val registeredRtpPeers = ConcurrentHashMap<Int, InetSocketAddress>()
     private val groupStartLock = Any()
     private val groupStartScheduled = AtomicBoolean(false)
     private val groupStartCheckQueued = AtomicBoolean(false)
@@ -77,10 +95,12 @@ class MasterSessionHost(
     @Volatile private var controlServer: TcpFrameServer? = null
     @Volatile private var audioServer: TcpFrameServer? = null
     @Volatile private var timeSyncServer: TimeSyncUdpServer? = null
+    @Volatile private var rtpAudioServer: RtpUdpSocket? = null
     @Volatile private var nativeSessionConfig: ReceiverSessionConfig? = null
     @Volatile private var advertiser: LanSessionAdvertiser? = null
     @Volatile private var audioSenderThread: Thread? = null
     @Volatile private var timeSyncThread: Thread? = null
+    @Volatile private var rtpAudioThread: Thread? = null
     @Volatile private var localAudioSource: LocalAudioFilePcmSource? = null
     @Volatile private var systemAudioSource: SystemAudioPcmSource? = null
 
@@ -91,6 +111,7 @@ class MasterSessionHost(
         var control: TcpFrameServer? = null
         var audio: TcpFrameServer? = null
         var time: TimeSyncUdpServer? = null
+        var rtp: RtpUdpSocket? = null
         try {
             val anyAddress = InetAddress.getByName("0.0.0.0")
             val audioListener = TcpFrameServer(
@@ -107,6 +128,13 @@ class MasterSessionHost(
                 anyAddress, PreviewConfig.TIME_PORT, PreviewConfig.TIME_SYNC_RECEIVE_TIMEOUT_MS
             )
             time = timeListener
+            val rtpListener = if (PreviewConfig.RTP_AUDIO_ENABLED) {
+                RtpUdpSocket(
+                    bindAddress = anyAddress,
+                    localPort = PreviewConfig.RTP_AUDIO_PORT,
+                    receiveTimeoutMs = PreviewConfig.RTP_AUDIO_REGISTRATION_TIMEOUT_MS
+                ).also { rtp = it }
+            } else null
 
             val random = SecureRandom()
             val token = ByteArray(16).also(random::nextBytes)
@@ -124,19 +152,22 @@ class MasterSessionHost(
             check(audioListener.isListening) { "audio TCP listener did not bind" }
             onStatus(
                 "DIAG HOST_LISTENERS_BOUND control=${controlListener.localBindAddress}:${controlListener.localPort} " +
-                    "audio=${audioListener.localBindAddress}:${audioListener.localPort} udp=0.0.0.0:${PreviewConfig.TIME_PORT} " +
+                    "audio=${audioListener.localBindAddress}:${audioListener.localPort} " +
+                    "udp=0.0.0.0:${PreviewConfig.TIME_PORT} rtpUdp=0.0.0.0:${rtpListener?.localPort ?: "disabled"} " +
                     "udpTimestampMode=${timeListener.timestampMode}"
             )
             onStatus(NetworkDiagnostics.networkSnapshot(appContext))
             controlServer = controlListener
             audioServer = audioListener
             timeSyncServer = timeListener
+            rtpAudioServer = rtpListener
             nativeSessionConfig = config
 
             // These loops are independent: admission accepts new TCP pairs while UDP serves every
             // admitted receiver, and the shared audio producer fans identical chunks out to peers.
             executor.execute(::serve)
             startTimeSyncServer()
+            if (rtpListener != null) startRtpAudioServer()
 
             val deviceLabel = Build.MODEL.trim().take(32).ifBlank { "Android" }
             val serviceName = "Sync In It - $deviceLabel ${token.toHex().take(4)}"
@@ -144,7 +175,7 @@ class MasterSessionHost(
             advertiser = serviceAdvertiser
             serviceAdvertiser.start(serviceName, controlListener.localPort, token.toHex())
 
-            onStatus("DIAG HOST_READY controlPort=${controlListener.localPort} audioPort=${audioListener.localPort} timePort=${PreviewConfig.TIME_PORT} controlListening=${controlListener.isListening} audioListening=${audioListener.isListening}")
+            onStatus("DIAG HOST_READY controlPort=${controlListener.localPort} audioPort=${audioListener.localPort} timePort=${PreviewConfig.TIME_PORT} rtpAudioPort=${rtpListener?.localPort ?: "disabled"} controlListening=${controlListener.isListening} audioListening=${audioListener.isListening}")
             onStatus("TCP listener ready on port ${controlListener.localPort}. Advertising a session for up to ${PreviewConfig.MAX_SPEAKERS} speakers.")
             onStatus("Waiting for speakers · 0/${PreviewConfig.MAX_SPEAKERS} connected.")
             return HostInvitation(serviceName, controlListener.localPort)
@@ -157,6 +188,7 @@ class MasterSessionHost(
             closeQuietly(control)
             closeQuietly(audio)
             closeQuietly(time)
+            closeQuietly(rtp)
             closeResources()
             throw error
         }
