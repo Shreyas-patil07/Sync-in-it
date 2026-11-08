@@ -2,7 +2,7 @@
 
 **Document status:** Draft verification plan  
 **Version:** 1.0  
-**Last updated:** 7 November 2026
+**Last updated:** 9 November 2026
 
 ## Latest physical test evidence — 9 November 2026 (v0.7.0-debug RTP/UDP)
 
@@ -32,7 +32,7 @@ The latest two-phone test reversed Host/Speaker roles on the same pair of Xiaomi
 
 See [the paired device report](Test_Results.md#25-test-record--2026-11-07--v064-debug-paired-per-probe-run).
 
-## Previous physical test evidence — 7 November 2026 (v0.6.3-debug)
+## Historical physical test evidence — 7 November 2026 (v0.6.3-debug)
 
 The latest supplied v0.6.3-debug two-phone run is a **clock-acquisition / READY-gate failure**. Host and Speaker discovery, TCP admission, UDP exchanges and PCM delivery worked, but clock residual RMS remained above the strict threshold:
 
