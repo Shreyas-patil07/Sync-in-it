@@ -139,17 +139,14 @@ function sendSignal(socket, message) {
     return;
   }
 
-  const target = clients.get(
-    [...clients.keys()].find((candidate) => clients.get(candidate)?.peerId === message.targetPeerId),
-  );
+  const roomPeerSockets = client.role === 'host'
+    ? room.listeners
+    : new Set([room.host]);
+  const targetSocket = [...roomPeerSockets].find((candidate) =>
+    clients.get(candidate)?.peerId === message.targetPeerId);
+  const target = targetSocket ? clients.get(targetSocket) : null;
   if (!target || target.roomCode !== client.roomCode) {
     sendError(socket, 'peer_not_found', 'The target peer is no longer in this room.');
-    return;
-  }
-
-  const targetSocket = [...clients.entries()].find(([, value]) => value === target)?.[0];
-  if (!targetSocket) {
-    sendError(socket, 'peer_not_found', 'The target peer is no longer connected.');
     return;
   }
 
