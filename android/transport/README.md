@@ -47,7 +47,16 @@ The transport module contains an isolated RTP v2 packet profile and unconnected 
 - The four packets retain one session SSRC. The decoder validates payload type, SSRC and exact payload size, and extends 16-bit sequence / 32-bit timestamp counters across wrap.
 - The Android native PCM buffer already stores samples by sample index and accepts out-of-order ranges and duplicates. The intended receiver adapter will insert each decoded 240-frame packet into that buffer; packet arrival order must never become playback order.
 
-This profile is a transport-library primitive with packetizer/decoder tests. **It is not yet wired into the Android Host/Speaker session**; the current application path remains PCM16/TCP. The next integration must be feature-flagged, use per-Speaker unicast endpoints, preserve the TCP fallback and prove received PCM energy as well as packet continuity.
+The Android app now wires this profile into a build-time opt-in path on the `feature/android-rtp-pcm-first-slice` branch:
+
+- Build with `-PsyncinitRtpAudioEnabled=true`; the property defaults to `false`, so standard builds continue to use PCM16/TCP.
+- TCP still owns HELLO/WELCOME and AUDIO_HELLO admission, clock acquisition, READY, common ANCHOR and session control.
+- After TCP admission, the Speaker registers its UDP source endpoint using its session ID, receiver ID and existing 16-byte admission token. The Host checks the registration against the admitted TCP peer IP and pins the receiver's UDP source endpoint before creating the Host peer.
+- The Host's existing bounded per-Speaker queue retains the shared sample-indexed PCM and sends the four RTP fragments to that receiver's pinned unicast endpoint.
+- The Speaker validates the Host source IP/port, session SSRC and payload type; each 240-frame range is wrapped in the existing native PCM chunk envelope and inserted into the existing sample-indexed native jitter buffer.
+- Both transports share the same receiver output, strict clock gate and common ANCHOR logic. The TCP AUDIO_HELLO channel remains open for compatibility/admission, but the RTP build does not use it as the media data plane.
+
+This is code integration, not physical validation. TCP remains the default and fallback. The feature-flagged branch still needs a paired Android run that proves UDP registration, actual non-silent PCM energy, receive continuity, READY, common ANCHOR and acoustic output. CI success cannot establish those results.
 
 ### RTCP boundary
 
