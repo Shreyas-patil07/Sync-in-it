@@ -1096,3 +1096,21 @@ Post-merge main workflows passed: Android app/JNI [42487998775](https://github.c
 **Release scope:** local audio-file sharing, consented Android app-playback capture through MediaProjection, bounded rolling PCM capture, shared sample-indexed TCP fan-out and the existing group READY/ANCHOR path. Includes the UDP recvmsg sender-address fix.
 
 **Evidence boundary:** Post-merge Android/JNI and M0 workflows passed. No physical Android 12/14 system-capture run has yet demonstrated READY, ANCHOR or measured acoustic skew. The prerelease must not be described as acoustically validated.
+
+
+### 8 November 2026 — PR #78 merged and v0.6.9 engineering prerelease published
+
+**PR:** [#78 — Harden audio source lifecycle and capture diagnostics](https://github.com/Shreyas-patil07/Sync-in-it/pull/78)  
+**Merge commit / release source:** `79c50372a22a1378d265a2a4f9308a477863540c`  
+**Release:** [v0.6.9](https://github.com/Shreyas-patil07/Sync-in-it/releases/tag/v0.6.9)  
+**Publisher workflow:** [42499713865](https://github.com/Shreyas-patil07/Sync-in-it/actions/runs/42499713865) — passed APK build, transport checks, signature verification and publication.
+
+- Added Host source-switch lifecycle safeguards so a confirmed source change stops the active Host, while cancelling a picker or denying MediaProjection consent does not.
+- Added one-second aggregate PCM16 capture metrics (RMS dBFS, peak dBFS, near-zero percentage); raw captured audio is not logged.
+- Extended offline clock-probe replay to compare application and kernel receive timestamps. Kernel timestamps remain diagnostic-only because the paired device replay did not show consistent improvement; production estimator inputs and the strict <0.25 ms gate are unchanged.
+- Kotlin transport checks passed; M0 Python 3.11/3.12/3.13 and C++17 tests passed; Android/JNI CI, APK signing and the release publisher passed.
+- Published APK: `SyncInIt-Android-preview-v0.6.9.apk` (6,038,222 bytes), SHA-256 `349a6503b47f40b460f3b86f88ccd6535bbab9151854bed52b359478a71df5da`.
+
+**Release workflow note:** Creating `release/v0.6.9` triggered the publisher before the release-notes commit was added. The first run published v0.6.9 using the workflow's generic fallback notes; the subsequent run correctly refused to overwrite the existing release. Detailed release notes were then merged into main through PR #79. No APK or tag was overwritten.
+
+**Validation boundary:** The release is still an engineering prerelease. There is no post-v0.6.9 physical run proving non-silent app-playback capture, READY on every Speaker, common ANCHOR, audible output or measured acoustic skew.
