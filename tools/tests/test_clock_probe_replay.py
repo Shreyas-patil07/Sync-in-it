@@ -19,10 +19,12 @@ def main() -> int:
         attempt = "replay-smoke"
         session_id = 77
         receiver_id = 3
-        speaker_lines = [
+        welcome = (
             f"[DIAG {attempt}] WELCOME_ACCEPTED sessionId={session_id} receiverId={receiver_id} "
             "audioPort=47801 timePort=47802"
-        ]
+        )
+        speaker_lines = [welcome]
+        legacy_speaker_lines = [welcome]
         host_lines = []
         base_ns = 100_000_000_000
 
@@ -46,6 +48,13 @@ def main() -> int:
                 "kernelT2MappingUncertaintyNs=500"
             )
             speaker_lines.append(
+                f"[DIAG {attempt}] CLOCK_PROBE sequence={sequence} t1Ns={t1} "
+                f"t2Ns={kernel_t2} t3Ns={t3} t4Ns={kernel_t4} appT4Ns={app_t4} "
+                f"roundTripNs={kernel_t4 - t1 - (t3 - kernel_t2)} rawOffsetNs=5000000 "
+                f"kernelT4Ns={kernel_t4} kernelT4RealtimeNs={kernel_t4 + 1_700_000_000_000_000_000} "
+                "kernelT4MappingUncertaintyNs=500"
+            )
+            legacy_speaker_lines.append(
                 f"[DIAG {attempt}] CLOCK_PROBE sequence={sequence} t1Ns={t1} "
                 f"t2Ns={app_t2} t3Ns={t3} t4Ns={app_t4} "
                 f"roundTripNs={app_t4 - t1 - (t3 - app_t2)} rawOffsetNs=5000000 "
@@ -94,6 +103,25 @@ def main() -> int:
             raise AssertionError(
                 "kernel receive timestamps must improve future-offset holdout error:\\n" + output
             )
+
+        # Keep replay compatibility with diagnostic exports produced before kernel
+        # timestamps were fed into the live estimator.
+        speaker_log.write_text("\\n".join(legacy_speaker_lines), encoding="utf-8")
+        legacy_completed = subprocess.run(
+            [
+                executable,
+                "--speaker-log", str(speaker_log),
+                "--host-log", str(host_log),
+                "--attempt", attempt,
+            ],
+            check=True,
+            capture_output=True,
+            text=True,
+        )
+        if "matchedKernelProbes=40" not in legacy_completed.stdout:
+            raise AssertionError("legacy app-timestamp logs no longer replay:\\n" + legacy_completed.stdout)
+        if "kernelReceiveFit residualRmsMs=0.000000" not in legacy_completed.stdout:
+            raise AssertionError("legacy log kernel comparison failed:\\n" + legacy_completed.stdout)
     return 0
 
 
