@@ -302,3 +302,35 @@ These records consolidate decisions and open questions from [docs/System Structu
 
 **Consequences:** Transport/codec design becomes a measured optimization after synchronization correctness, not an additional parallel project layer.
 
+## ADR-028 — RTP/UDP audio data plane with RTCP feedback
+
+**Status:** Accepted as the target migration architecture; staged implementation in progress  
+**Date:** 9 November 2026  
+**Supersedes:** The TCP-only transport sequencing recommendation in ADR-027. It does not relax ADR-024's clock-readiness gate or authorize removing the existing TCP fallback.
+
+**Context:** The Android preview currently sends 48 kHz stereo PCM16 over a dedicated TCP audio connection per Speaker. The project already has isolated RTP v2 and basic RTCP packet/socket primitives, but neither is integrated into the Android Host/Speaker audio path. Replacing TCP with UDP alone would not fix the current clock-readiness failure: the receiver must reconstruct the media timeline and map it to its local AudioTrack presentation clock.
+
+**Decision:**
+1. Use RTP over UDP unicast for the target audio data plane. Each Speaker has an independent UDP destination and RTCP feedback path. Multicast is deferred.
+2. Retain the existing TCP control channel for pairing/admission, session identity, transport negotiation, group-start ANCHOR, and play/pause/resynchronization commands. Keep the current PCM16/TCP data path as a feature-flagged fallback until the RTP path passes physical acceptance.
+3. Migrate in separate stages. First send diagnostic PCM16 through RTP without Opus. Then integrate the sample-indexed receiver buffer, add Opus, implement complete RTCP feedback, and finally validate clock mapping/group playout and drift correction. Do not combine transport, codec and clock-estimator changes in one untestable switch.
+4. Keep the current strict device clock gate unchanged: residual RMS <0.25 ms, required sample count/span and three consecutive stable updates. UDP packet arrival, RTCP reports or buffer fill do not satisfy the clock gate by themselves.
+5. Keep one authoritative media timeline. The Host's 48 kHz RTP timestamp represents the sample time of the first sample in a packet. A common group ANCHOR continues to bind a future Host monotonic time to a 64-bit media sample index. Receivers map that time through the existing four-timestamp clock estimate and later correlate media sample positions with AudioTrack output timestamps.
+6. Use RTCP Sender Reports to correlate the RTP media clock with the sender's NTP-format reference clock, and Receiver Reports to return reception statistics. RTCP is feedback and media-clock observation, not a replacement for inter-device monotonic clock acquisition.
+
+**Diagnostic PCM packet profile:** A 20 ms 48 kHz stereo PCM16 chunk is 3,840 bytes and exceeds the current 1,188-byte RTP payload budget. The initial diagnostic profile therefore splits it into four 5 ms packets of 240 stereo frames / 960 bytes each. Sequence numbers advance per datagram; 48 kHz RTP timestamps advance by 240. This is intentionally different from the eventual Opus profile, where one 20 ms payload advances the RTP timestamp by 960 ticks.
+
+**RTCP compliance boundary:** The existing SR and empty RR codec primitives are not a complete RTCP implementation. Production feedback must use RFC 3550 compound RTCP packets (including SDES/CNAME), and Receiver Reports must carry report blocks with loss, extended highest sequence, interarrival jitter, LSR and DLSR data as applicable. Periodic scheduling, sender/receiver state and report validation remain to be implemented. Do not label the current primitives RFC-complete.
+
+**Required migration stages and acceptance:**
+1. **Diagnostic PCM RTP profile:** packetization, 16-/32-bit wrap and out-of-order timestamp tests. This is transport-library groundwork only; Android Host/Speaker integration is not complete.
+2. **Feature-flagged unicast integration:** authenticate/associate UDP registration with the already-admitted TCP session; verify each receiver's source endpoint, session, SSRC and token; keep TCP audio fallback available. Report packet rate, bytes, duplicates, reordering, loss and receiver buffer fill.
+3. **Receiver playout-buffer integration:** feed decoded sample-indexed packets into the bounded native PCM jitter buffer. Test out-of-order delivery, duplicates, missing ranges, late packets, bounded memory and underrun behavior. Verify received PCM energy rather than packet counts alone.
+4. **Opus:** integrate a 48 kHz stereo Opus profile using RFC 7587; begin with 20 ms frames / 960 RTP ticks, and measure codec delay, bitrate, decode time and audio quality.
+5. **RTCP:** implement periodic compound Sender Reports and per-Speaker Receiver Reports with SDES/CNAME and populated reception report blocks. Map RTP timestamps to the Host reference clock; correlate that clock with the existing Host monotonic timebase.
+6. **Synchronized group playout:** preserve one shared future `(masterTimeNs, sampleIndex)` ANCHOR. Establish the relation among RTP timestamps, receiver monotonic time and AudioTrack timestamp frame positions before changing output scheduling.
+7. **Drift and physical validation:** measure offset/skew and correct playout without changing sample identity; test one Host/one Speaker first, then two Speakers, then the wider group. Require repeated acoustic recordings with p95 absolute skew ≤10 ms before replacing the TCP fallback.
+
+**Security and network constraints:** UDP registration must be bound to the admitted TCP control peer, current session/receiver identity and admission credential; do not trust an SSRC alone. The existing LAN-discoverable token/security concern in ADR-020 remains open. Use a selected Wi-Fi Network for UDP sockets on Android, and test hotspots/APs with client isolation and UDP filtering. UDP congestion/loss handling and per-Speaker queue bounds must be explicit; unicast is not permission to ignore airtime or congestion.
+
+**Consequences:** The transport target is RTP/UDP + RTCP feedback + TCP control, but the active Android application remains PCM16/TCP until the feature-flagged RTP path passes the same end-to-end and acoustic gates. The diagnostic PCM packetizer currently added to the transport module is not evidence of Android integration or synchronized playback.
