@@ -104,9 +104,8 @@ def main() -> int:
                 "kernel receive timestamps must improve future-offset holdout error:\\n" + output
             )
 
-        # Keep replay compatibility with diagnostic exports produced before kernel
-        # timestamps were fed into the live estimator.
-        speaker_log.write_text("\\n".join(legacy_speaker_lines), encoding="utf-8")
+        # Keep replay compatibility with historical exports that lack appT4Ns.
+        speaker_log.write_text("\n".join(legacy_speaker_lines), encoding="utf-8")
         legacy_completed = subprocess.run(
             [
                 executable,
