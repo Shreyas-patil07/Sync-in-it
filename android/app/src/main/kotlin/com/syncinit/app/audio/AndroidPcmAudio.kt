@@ -11,7 +11,6 @@ import com.syncinit.app.core.ClockSyncMeasurement
 import com.syncinit.app.core.NativeCore
 import com.syncinit.app.core.NativeProtocol
 import com.syncinit.app.core.WelcomeParameters
-import com.syncinit.transport.TcpFrameConnection
 import java.io.Closeable
 import java.io.IOException
 import java.util.concurrent.atomic.AtomicBoolean
@@ -295,7 +294,7 @@ private class AndroidPcmAudioOutput(
 }
 
 class PcmAudioReceiver(
-    private val audioConnection: TcpFrameConnection,
+    private val audioSource: PcmAudioFrameSource,
     private val controlConnection: TcpFrameConnection,
     private val welcome: WelcomeParameters,
     private val onStatus: (String) -> Unit,
@@ -356,11 +355,9 @@ class PcmAudioReceiver(
         var ingressReportStartedAtNs = System.nanoTime()
         try {
             while (!closed.get()) {
-                val frame = audioConnection.readFrame() ?: throw IOException("master closed the audio channel")
-                if (frame.messageType != 0x80 || frame.flags != 0) {
-                    throw IOException("unexpected frame on the audio channel")
-                }
-                when (buffer.insertEncodedFrame(frame.toEncodedBytes())) {
+                val encodedChunk = audioSource.readEncodedPcmChunk()
+                    ?: throw IOException("master closed the ${audioSource.transportName} audio source")
+                when (buffer.insertEncodedFrame(encodedChunk)) {
                     PcmChunkInsertResult.Inserted,
                     PcmChunkInsertResult.PartialLate,
                     PcmChunkInsertResult.Duplicate,
@@ -402,10 +399,10 @@ class PcmAudioReceiver(
                     val rateFps = framesSinceIngressReport * 1_000_000_000.0 /
                         ingressElapsedNs.toDouble()
                     onStatus(
-                        "DIAG SPEAKER_AUDIO_INGRESS totalFrames=$totalFramesReceived " +
-                            "intervalFrames=$framesSinceIngressReport " +
+                        "DIAG SPEAKER_AUDIO_INGRESS transport=${audioSource.transportName} totalPackets=$totalFramesReceived " +
+                            "intervalPackets=$framesSinceIngressReport " +
                             "intervalMs=${"%.1f".format(ingressElapsedNs / 1_000_000.0)} " +
-                            "rateFps=${"%.1f".format(rateFps)} bufferedMs=$bufferedMs " +
+                            "ratePps=${"%.1f".format(rateFps)} bufferedMs=$bufferedMs " +
                             "windowAdvances=${snapshot.windowAdvanceCount} " +
                             "missingFrames=${snapshot.missingFrames}"
                     )
@@ -546,7 +543,7 @@ class PcmAudioReceiver(
 
     override fun close() {
         if (!closed.compareAndSet(false, true)) return
-        audioConnection.close()
+        audioSource.close()
         output.close()
         buffer.close()
         reader?.interrupt()
