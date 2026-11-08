@@ -161,8 +161,9 @@ std::vector<Probe> read_probes(
             *t1, host->second.app_t2_ns, *t3, application_t4, application_t4};
         probe.kernel = {
             *t1, host->second.kernel_t2_ns, *t3, *kernel_t4, *kernel_t4};
-        probe.host_capture_lag_ns = *t2 - host->second.kernel_t2_ns;
-        probe.speaker_capture_lag_ns = *t4 - *kernel_t4;
+        probe.host_capture_lag_ns =
+            host->second.app_t2_ns - host->second.kernel_t2_ns;
+        probe.speaker_capture_lag_ns = application_t4 - *kernel_t4;
         probe.host_mapping_uncertainty_ns = host->second.mapping_uncertainty_ns;
         probe.speaker_mapping_uncertainty_ns = *speaker_uncertainty;
         result.push_back(probe);
