@@ -685,6 +685,42 @@ private fun rtpPcm16PacketizationAndReordering() {
     expect(rejected, "diagnostic PCM decoder rejects partial or malformed PCM fragments")
 }
 
+
+private fun rtpUdpRegistrationCodecRoundTrip() {
+    val sessionId = 0x1357_2468L
+    val receiverId = 23
+    val token = ByteArray(RtpUdpRegistrationCodec.TOKEN_BYTES) { (it * 7 + 3).toByte() }
+    val nonce = 0x1234_5678_9abc_def0L
+    val hello = RtpUdpRegistrationCodec.encodeHello(sessionId, receiverId, token, nonce)
+    val decodedHello = RtpUdpRegistrationCodec.decode(RtpPacketCodec.decode(RtpPacketCodec.encode(hello)))
+
+    expect(!decodedHello.acknowledgement, "UDP registration request is identified as HELLO")
+    expect(decodedHello.sessionId == sessionId, "UDP registration binds the RTP SSRC to the session ID")
+    expect(decodedHello.receiverId == receiverId, "UDP registration preserves the admitted receiver ID")
+    expect(decodedHello.token.contentEquals(token), "UDP registration carries the admission token")
+    expect(decodedHello.nonce == nonce, "UDP registration preserves its challenge nonce")
+
+    val ack = RtpUdpRegistrationCodec.encodeAcknowledgement(decodedHello)
+    expect(
+        RtpUdpRegistrationCodec.matchesAcknowledgement(ack, sessionId, receiverId, token, nonce),
+        "matching UDP registration acknowledgement is accepted"
+    )
+    expect(
+        !RtpUdpRegistrationCodec.matchesAcknowledgement(ack, sessionId, receiverId + 1, token, nonce),
+        "UDP registration acknowledgement for another receiver is rejected"
+    )
+    val wrongToken = token.copyOf().apply { this[0] = (this[0].toInt() xor 0x7f).toByte() }
+    expect(
+        !RtpUdpRegistrationCodec.matchesAcknowledgement(ack, sessionId, receiverId, wrongToken, nonce),
+        "UDP registration acknowledgement with a different admission token is rejected"
+    )
+
+    var rejected = false
+    try { RtpUdpRegistrationCodec.decode(hello.copy(payload = hello.payload.copyOf(31))) }
+    catch (_: FrameProtocolException) { rejected = true }
+    expect(rejected, "UDP registration rejects malformed payload lengths")
+}
+
 fun main() {
     encodedFrameCodecRoundTrip()
     tcpRoundTrip()
@@ -699,6 +735,7 @@ fun main() {
     udpRejectsMalformedDatagrams()
     rtpPacketCodecRoundTrip()
     rtpPcm16PacketizationAndReordering()
+    rtpUdpRegistrationCodecRoundTrip()
     rtpUdpLoopback()
     rtcpPacketCodecRoundTrip()
     rtcpUdpLoopback()
