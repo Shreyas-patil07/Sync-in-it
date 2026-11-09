@@ -106,6 +106,19 @@ def test_websocket_presence_state_commands_and_acknowledgements(tmp_path):
             assert ack_event["command_id"] == "clock-check-1"
             assert ack_event["accepted"] is True
 
+            speaker_ws.send_json(
+                {
+                    "type": "command.ack",
+                    "command_id": "not-issued-by-host",
+                    "accepted": True,
+                }
+            )
+            invalid_ack = speaker_ws.receive_json()
+            assert invalid_ack == {
+                "type": "protocol.error",
+                "code": "unknown_or_expired_command",
+            }
+
             speaker_ws.send_json({"type": "heartbeat"})
             heartbeat_ack = speaker_ws.receive_json()
             assert heartbeat_ack["type"] == "heartbeat.ack"
@@ -154,3 +167,45 @@ def test_speaker_cannot_issue_host_commands(tmp_path):
             "type": "protocol.error",
             "code": "unsupported_message_or_role",
         }
+
+
+
+def test_host_removal_closes_authenticated_speaker_socket(tmp_path):
+    from starlette.websockets import WebSocketDisconnect
+
+    client = TestClient(create_app(tmp_path / "remove-device.sqlite3"))
+    host = client.post("/api/v1/sessions", json={}).json()
+    speaker = client.post(
+        "/api/v1/sessions/join",
+        json={"join_code": host["join_code"], "device_name": "Speaker"},
+    ).json()
+    ws_url = f"/api/v1/sessions/{host['session_id']}/ws"
+
+    with client.websocket_connect(ws_url) as host_ws:
+        host_ws.send_json({"type": "authenticate", "token": host["host_token"]})
+        host_ws.receive_json()
+        host_ws.receive_json()
+
+        with client.websocket_connect(ws_url) as speaker_ws:
+            speaker_ws.send_json(
+                {"type": "authenticate", "token": speaker["device_token"]}
+            )
+            speaker_ws.receive_json()
+            speaker_ws.receive_json()
+            host_ws.receive_json()
+
+            response = client.delete(
+                f"/api/v1/sessions/{host['session_id']}/devices/{speaker['device_id']}",
+                headers={"Authorization": f"Bearer {host['host_token']}"},
+            )
+            assert response.status_code == 204
+            assert speaker_ws.receive_json() == {
+                "type": "device.removed",
+                "device_id": speaker["device_id"],
+            }
+            try:
+                speaker_ws.receive_json()
+            except WebSocketDisconnect as error:
+                assert error.code == 4003
+            else:
+                raise AssertionError("Removed device socket was not closed")
