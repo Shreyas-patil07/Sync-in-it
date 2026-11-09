@@ -321,6 +321,83 @@ Next:
 3. Keep the 0.25 ms residual gate, sample/span requirements and three-update stability streak unchanged until repeated hold-out tests support a measured change.
 4. Complete the single-Speaker READY → ANCHOR → audible-output gate, then the two-Speaker acoustic baseline. Only after those gates pass may codec/transport experiments begin.
 
+
+## 2.7 Test record — 2026-11-09 — v0.7.0-debug paired RTP/UDP role-reversal runs
+
+- **Run IDs:** SIT-2026-11-09-06 (attempt `5d00c1cb`, session `2772428285`) and SIT-2026-11-09-07 (attempt `42667fea`, session `2396816099`).
+- **Build:** Both diagnostic export headers report `0.7.0-debug (1794168545)`. The retained log-initialization header still says `0.6.1-debug`, because the app-private log history predates the current build. The exports do not record the installed APK filename or package hash.
+- **Devices:** Xiaomi 22101316I / Android 14 / API 34 and Xiaomi M2010J19SI / Android 12 / API 31.
+- **Network:** Both phones on Wi-Fi in `192.168.1.0/24`; AP model, band and channel were not recorded.
+- **Configuration:** One Host and one Speaker, 48 kHz stereo PCM16, RTP/UDP media on port 47803, UDP clock probes on port 47802 and TCP control/admission on port 47800.
+- **Test duration:** Attempt `5d00c1cb` ran about 33.0 seconds; attempt `42667fea` ran about 32.7 seconds. Both ended before the 60-second duration recommended in the v0.7.0 release notes.
+- **Test intent:** Verify physical RTP registration and PCM ingress with both Host/Speaker role assignments, while keeping the existing clock estimator and READY gate unchanged.
+- **Evidence:** `SyncInIt-diagnostics-20261109-014552.txt` (Xiaomi 22101316I, Android 14) and `SyncInIt-diagnostics-20261109-014554.txt` (Xiaomi M2010J19SI, Android 12).
+
+### Paired results
+
+| Metric | Attempt `5d00c1cb` — Android 12 Host / Android 14 Speaker | Attempt `42667fea` — Android 14 Host / Android 12 Speaker |
+|---|---:|---:|
+| RTP registration | Accepted on both endpoints | Accepted on both endpoints |
+| Host PCM chunks queued / written | 1,652 / 1,652 | 1,635 / 1,635 |
+| Host RTP datagrams sent at close | 6,608 | 6,540 |
+| Host queue depth / high-water | 0 / 3 | 0 / 1 |
+| Host slow-send observations | 2 (21.1 ms and 20.5 ms) | 1 (30.9 ms) |
+| Speaker last logged RTP packet count | 6,425 | 6,489 |
+| RTP sequence-gap observations | 8 | 0 |
+| RTP out-of-order / duplicate observations | 0 / 0 | 0 / 2 |
+| Malformed / source / payload / session rejects | 0 | 0 |
+| Maximum logged buffered PCM | 19,040 ms | 20,000 ms |
+| Missing PCM frames in reported snapshots | 0 | 0 |
+| Clock probes paired in offline replay | 84 | 83 |
+| Selected samples / seen | 21 / 84 | 21 / 83 |
+| Selected sample span | 30,997 ms | 31,799 ms |
+| Application-fit RTT p50 | 4.958 ms | 5.715 ms |
+| Application-fit residual RMS | **0.315513 ms** | **0.281073 ms** |
+| Application-fit receiver skew | −4.548 ppm | −1.069 ppm |
+| Kernel-receive offline residual RMS | **0.272710 ms** | **0.319622 ms** |
+| Stable streak | 0 | 0 |
+| READY / common ANCHOR | Not reached | Not reached |
+
+Speaker packet totals above are the last logged ingress snapshots, not guaranteed final receive totals. The first run also records eight sequence-gap observations; the second records two duplicate observations. Neither report records missing PCM frames in the observed snapshots. Do not subtract the Host close counter from the Speaker's last snapshot and label the difference as packet loss: there is no final Speaker counter at teardown, and the snapshots are not an atomic cross-device measurement.
+
+### Offline clock comparison
+
+The raw paired probes were replayed against the repository estimator policy: four-timestamp offset/RTT, a 60-second sample window, lowest-RTT 25% selection, linear skew fit, and the existing readiness requirements. The application-fit results reproduce the final on-device values to the displayed precision. This replay was an estimator-equivalent local analysis; the canonical C++ replay executable was not run in this environment.
+
+Kernel receive timestamps were evaluated as a diagnostic-only alternative:
+
+- In attempt `5d00c1cb`, residual RMS improved from 0.315513 ms to 0.272710 ms, but remained above the strict 0.25 ms gate.
+- In attempt `42667fea`, residual RMS worsened from 0.281073 ms to 0.319622 ms.
+- The kernel timestamp path therefore does not provide a consistent readiness fix and must not replace production application timestamps on this evidence.
+
+The paired replay also measured application-minus-kernel receive capture lag. Host T2 median / p95 was 574 / 1,246 µs in attempt `5d00c1cb` and 619 / 1,128 µs in attempt `42667fea`. Speaker T4 median / p95 was 307 / 740 µs and 526 / 1,485 µs respectively. Kernel mapping uncertainty was mostly in the low tens of microseconds, but remains part of the timing error budget.
+
+### Other observed results and limits
+
+- Both sessions completed token-bound RTP UDP registration, TCP admission, Host RTP delivery and Speaker RTP ingress. This is a physical data-plane result, not merely a successful build or simulator test.
+- Host send counters balanced by teardown in both sessions. The measured slow-send durations exceed the nominal 20 ms source-chunk cadence; the first Host also reached queue high-water 3. Keep sender pacing/queue behavior under investigation.
+- Host system-audio capture logs contain signal-present windows in both sessions. They also log `AUDIO_SOURCE_WAITING_FOR_READY_COHORT type=android-system-playback`; Host capture-level telemetry does not prove that those samples were delivered as non-silent RTP payload or rendered by the Speaker.
+- No Speaker output-energy measurement, AudioTrack presentation result, audible-marker confirmation, READY, common ANCHOR, playback-start event or acoustic recording is present.
+- The two attempts were shorter than 60 seconds and therefore are not full-duration acceptance runs.
+
+### Interpretation and verdict
+
+**PARTIAL PASS — RTP registration and packet ingress. FAIL — clock stability / READY. Audio output and acoustic synchronization — NOT DEMONSTRATED.**
+
+The RTP path is now physically observed in both role directions, with no malformed/session-rejected packets and zero missing PCM frames in the reported buffer snapshots. However, clock residuals remained above 0.25 ms in both application fits and both kernel comparisons; stable streak stayed at zero. The Speaker therefore did not send READY, the Host did not schedule a common ANCHOR, and synchronized playback was not reached.
+
+This evidence does not justify lowering the threshold, switching production timestamp sources, adding Opus/RTCP, or removing the TCP fallback.
+
+### Next actions
+
+1. Keep the strict <0.25 ms residual gate, sample/span requirements and three-update streak unchanged. Keep RTP experimental and retain the TCP fallback.
+2. Repeat both role directions for at least 60 seconds with a deterministic, continuously non-silent PCM test source. Separate source-capture eligibility from transport validation; Host capture-level signal is not proof of Speaker output.
+3. Run the canonical C++ `tools/clock_probe_replay.cpp` on the paired exports and preserve its CSV/output. Compare the application and kernel variants against this provisional replay, including hold-out prediction error.
+4. Investigate timestamp capture and probe send boundaries using the same paired sequence IDs. Do not adopt kernel timestamps unless repeated runs show a consistent hold-out improvement and the full error budget is understood.
+5. Investigate RTP send pacing and slow-write events separately from clock acquisition. Preserve datagram sequence, native buffer, queue and teardown counters.
+6. Do not begin Opus, complete RTCP work or multi-Speaker acceptance until one Speaker passes READY → common ANCHOR → verified audible output.
+
+
 ## 3. Reusable template for future runs
 
 Copy this section for each new run and replace the placeholders. Preserve prior test records.
@@ -378,3 +455,4 @@ Copy this section for each new run and replace the placeholders. Preserve prior 
 - **2026-11-06:** Created this test record. Initial entry documents the v0.5.9 post-fix Speaker log and the remaining clock-stability blocker.
 - **2026-11-07:** Added the paired v0.6.3-debug Host/Speaker failure record and queue/clock findings.
 - **2026-11-08:** Added two v0.6.9-debug paired runs, application-versus-kernel timestamp replay, hold-out metrics and the unchanged READY-gate verdict.
+- **2026-11-09:** Added the v0.7.0-debug role-reversal RTP/UDP physical test, paired application/kernel clock replay, transport counters and the blocked READY/acoustic verdict.

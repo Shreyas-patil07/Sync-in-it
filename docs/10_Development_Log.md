@@ -1114,3 +1114,29 @@ Post-merge main workflows passed: Android app/JNI [42487998775](https://github.c
 **Release workflow note:** Creating `release/v0.6.9` triggered the publisher before the release-notes commit was added. The first run published v0.6.9 using the workflow's generic fallback notes; the subsequent run correctly refused to overwrite the existing release. Detailed release notes were then merged into main through PR #79. No APK or tag was overwritten.
 
 **Validation boundary:** The release is still an engineering prerelease. There is no post-v0.6.9 physical run proving non-silent app-playback capture, READY on every Speaker, common ANCHOR, audible output or measured acoustic skew.
+
+
+### 9 November 2026 — v0.7.0 RTP experimental prerelease and paired physical test
+
+**Type:** Release / Physical-device validation  
+**Status:** Prerelease published; RTP packet ingress partially validated; synchronized playback blocked  
+**Release:** [v0.7.0 RTP Experimental Preview](https://github.com/Shreyas-patil07/Sync-in-it/releases/tag/v0.7.0)  
+**Source commit:** `6facffceb6d5cc84cc52d11164e3ec9b0a89656d`  
+**Publisher workflow:** [42518559995](https://github.com/Shreyas-patil07/Sync-in-it/actions/runs/42518559995) — all build, transport-test, signing, asset-preparation and prerelease-publication steps passed.
+
+**Release asset:**
+- `SyncInIt-Android-preview-v0.7.0-RTP-experimental.apk` — 6,054,606 bytes.
+- SHA-256: `1fa20770b736ed6a0dee3a24798e883aacb0b0a80c6e905d55dadc9fb3252ae3`.
+- `SHA256SUMS.txt` was uploaded with the APK.
+- The release is an engineering prerelease. It does not claim physical synchronized playback.
+
+**Physical evidence:**
+- Paired diagnostic exports from Xiaomi 22101316I / Android 14 and Xiaomi M2010J19SI / Android 12 show RTP UDP registration and media ingress with Host/Speaker roles reversed.
+- Host close counters recorded 6,608 and 6,540 RTP datagrams sent. Speaker ingress snapshots recorded 6,425 and 6,489 packets; the first run observed eight sequence-gap events, while the second observed two duplicates. Both reported zero missing PCM frames in their buffer snapshots.
+- Application clock residual RMS was 0.315513 ms and 0.281073 ms. Offline kernel-receive comparisons were 0.272710 ms and 0.319622 ms. All remained at or above the strict 0.25 ms threshold; stable streak was zero in both.
+- Neither attempt reached READY, common ANCHOR or measured acoustic playback. Each run lasted about 33 seconds, below the 60-second test target.
+- Host source-capture telemetry included signal-present windows, but the logs do not establish non-silent RTP payload at the Speaker or audible output.
+
+**Result:** RTP registration and packet ingress are physically observed in both role directions. The clock/READY gate remains the blocker; the audio output and acoustic result are unverified. Kernel receive timestamps are not a consistent substitute for application timestamps. No readiness threshold or production timestamp policy was changed.
+
+**Next action:** Run a 60-second deterministic non-silent PCM test in both role directions, replay the paired logs with the canonical C++ clock-probe tool, and investigate capture/send-boundary timing plus RTP slow-send/pacing behavior before changing transport or readiness policy.
