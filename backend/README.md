@@ -1,7 +1,7 @@
 # Sync In It LAN Backend API
 
-**Status:** Foundation / API v1  
-**Runtime:** Python 3.11+ / FastAPI / SQLite  
+**Status:** Foundation / API v1.1  
+**Runtime:** Python 3.11+ / FastAPI / SQLite / WebSocket  
 **Purpose:** Session metadata, admission, device presence and health state for the local-network system.
 
 ## Architecture boundary
@@ -69,7 +69,8 @@ Content-Type: application/json
 ## Not implemented yet
 
 - Android/iOS client integration.
-- Event push/WebSocket subscriptions and command delivery.
+- Durable event history, offline command queue and replay.
+- Multi-instance event fan-out (Redis/pub-sub or equivalent).
 - Session invitation QR payload generation.
 - Durable audit/event history and schema migrations.
 - TLS / authenticated encryption for untrusted networks.
