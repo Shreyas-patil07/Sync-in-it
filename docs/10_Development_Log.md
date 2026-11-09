@@ -1140,3 +1140,19 @@ Post-merge main workflows passed: Android app/JNI [42487998775](https://github.c
 **Result:** RTP registration and packet ingress are physically observed in both role directions. The clock/READY gate remains the blocker; the audio output and acoustic result are unverified. Kernel receive timestamps are not a consistent substitute for application timestamps. No readiness threshold or production timestamp policy was changed.
 
 **Next action:** Run a 60-second deterministic non-silent PCM test in both role directions, replay the paired logs with the canonical C++ clock-probe tool, and investigate capture/send-boundary timing plus RTP slow-send/pacing behavior before changing transport or readiness policy.
+
+
+### 9 November 2026 — Backend API v1.1 realtime event channel
+
+**PR:** [#88 — Add authenticated realtime session events](https://github.com/Shreyas-patil07/Sync-in-it/pull/88) — open, pending merge  
+**Branch:** `feature/backend-realtime-events`
+
+- Added an authenticated per-session WebSocket. Bearer credentials are sent in the first frame rather than a URL query parameter.
+- Added Host notifications for Speaker join, connection, disconnection and coarse state changes; added Host presence events for Speakers.
+- Added non-real-time Host requests (`refresh_status`, `request_diagnostics`, `request_clock_sync`) and correlated per-Speaker acknowledgements.
+- Added one active event connection per Host/Speaker identity, stale-connection replacement, message-size limits, command expiry/target validation, and active WebSocket revocation when a Host removes a Speaker.
+- Added WebSocket integration coverage: 8 backend tests passed on each of Python 3.11, 3.12 and 3.13 in [workflow run 42670896310](https://github.com/Shreyas-patil07/Sync-in-it/actions/runs/42670896310).
+- Recorded the process-local and timing boundaries in ADR-030. WebSockets carry no PCM, four-timestamp measurements, READY, ANCHOR or playout deadlines. Clock requests remain advisory and actual clock synchronization stays direct over the LAN.
+
+**Deployment status:** The HTTP foundation from merged PR #87 is live on Render and passed live create-session/join checks. PR #88 has not yet been merged, so its WebSocket endpoint is not yet present in the deployed service. Android and iOS integration remain future work.
+
