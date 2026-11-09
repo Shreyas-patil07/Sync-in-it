@@ -356,3 +356,22 @@ These records consolidate decisions and open questions from [docs/System Structu
 **Not a decision:** This ADR does not authorize a cloud account system, remote media relay, remote database, or a requirement for internet connectivity. The API is not yet integrated with Android/iOS clients and is not a production security boundary on untrusted networks.
 
 **Consequences:** Session metadata can be tested independently from audio timing and transport. API state must not be mistaken for device clock readiness or proof of audible playback. Integration, TLS/authenticated encryption, event delivery, migrations, and operational deployment remain follow-up work.
+
+
+## ADR-030 — Authenticated WebSocket event channel
+
+**Status:** Accepted for the API foundation; process-local preview implementation  
+**Date:** 9 November 2026
+
+**Context:** The HTTP API can create sessions and update device state, but Host clients need prompt notification when Speakers join, connect, disconnect or change state. Polling alone adds unnecessary delay and request overhead. The backend also needs a bounded way to forward non-time-critical operational requests from the Host to connected Speakers.
+
+**Decision:**
+1. Add one authenticated WebSocket endpoint per session. The client sends its bearer credential in the first WebSocket frame, not a query parameter. Authentication must complete within 10 seconds.
+2. Permit one live connection per Host identity and one per admitted Speaker identity in a backend process. A newly authenticated socket replaces the previous socket for that identity.
+3. Push device join/connect/disconnect/state events to the Host and Host presence events to Speakers. On reconnect, clients obtain a fresh HTTP/WebSocket session snapshot; the preview does not replay a durable event log.
+4. Permit only the operational Host requests `refresh_status`, `request_diagnostics`, and `request_clock_sync`. Route acknowledgements only from the Speaker that received the corresponding, still-valid command.
+5. Keep WebSocket delivery out of the media and precision-timing path. It does not carry PCM, four-timestamp samples, READY, ANCHOR or output deadlines. A clock-sync request asks the client to initiate the existing direct LAN clock protocol; it is not itself a timing measurement.
+6. Keep connection and pending-command state process-local for the single-instance preview. A multi-worker or multi-instance deployment requires shared pub/sub and durable event/command state before it is supported.
+
+**Consequences:** Host presence and coarse device state can update in real time without putting audio or clock exchanges through the backend. Events may be missed during disconnection or process restart, so clients must reconcile against the session snapshot. This is not a durable command queue or a substitute for direct Host/Speaker control.
+

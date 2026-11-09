@@ -318,3 +318,12 @@ Post-merge main CI passed: [Android app/JNI run 42487998775](https://github.com/
 The release publisher [workflow run 42488294615](https://github.com/Shreyas-patil07/Sync-in-it/actions/runs/42488294615) published [v0.6.8](https://github.com/Shreyas-patil07/Sync-in-it/releases/tag/v0.6.8), with the updateable APK and SHA-256 asset. Source commit: `8e16eea24afaf0e671105b854df3b2d4fa735f3e`. APK SHA-256: `99fdff4dd9d2ba47514bbcbffd85f40c02fb8bed3f68a99d5be114ef1ee5ce43`.
 
 The prerelease contains local-file sharing and consented Android system-audio capture. The code passed post-merge Android/JNI and M0 automated workflows. Physical Android 12/14 app-playback capture, clock READY, common ANCHOR and acoustic-skew validation remain pending. See [release notes](../RELEASE_NOTES_v0.6.8.md).
+
+
+## Backend coordination API — 9 November 2026
+
+The standalone FastAPI + SQLite service is deployed at [`https://sync-in-it.onrender.com`](https://sync-in-it.onrender.com). Its health endpoint returned `status=ok` and service identity `sync-in-it-lan-api`; the user also verified live session creation and Speaker admission (HTTP 201 for both). The HTTP foundation was merged through [PR #87](https://github.com/Shreyas-patil07/Sync-in-it/pull/87).
+
+The next increment is [PR #88 — authenticated realtime session events](https://github.com/Shreyas-patil07/Sync-in-it/pull/88). It adds per-session authenticated WebSockets, device join/connect/disconnect/state events, Host operational requests and Speaker acknowledgements. **PR #88 is not yet merged or deployed to Render.** Backend CI ran the HTTP and WebSocket suite on Python 3.11, 3.12 and 3.13: 8 tests passed on each version.
+
+This remains a coordination service, not a media relay. Android/iOS clients do not yet use this API or event channel. Current WebSocket connections and pending commands are process-local; events are not durable or replayed. The service must use one worker until shared pub/sub and durable command/event storage are implemented. The Render deployment is useful for integration tests, but it is not a LAN-local offline backend, and its current free/ephemeral storage is not a reliable persistent session store. These limitations do not change the direct Host/Speaker audio and clock-sync architecture.
