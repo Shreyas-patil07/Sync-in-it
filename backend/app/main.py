@@ -1,7 +1,9 @@
 # SPDX-License-Identifier: Apache-2.0
 from __future__ import annotations
 
+import asyncio
 import hashlib
+import json
 import os
 import secrets
 import sqlite3
@@ -11,14 +13,15 @@ from contextlib import contextmanager
 from pathlib import Path
 from typing import Annotated, Literal
 
-from fastapi import Depends, FastAPI, Header, HTTPException, Request, status
-from pydantic import BaseModel, Field
+from fastapi import Depends, FastAPI, Header, HTTPException, Request, WebSocket, WebSocketDisconnect, status
+from pydantic import BaseModel, Field, ValidationError
 
 ROOM_ALPHABET = "ABCDEFGHJKLMNPQRSTUVWXYZ23456789"
 SESSION_TTL_SECONDS = 2 * 60 * 60
 JOIN_LIMIT = 20
 JOIN_WINDOW_SECONDS = 60
 MAX_SPEAKERS_HARD_LIMIT = 8
+MAX_WS_MESSAGE_BYTES = 16 * 1024
 DEVICE_STATES = {
     "joining",
     "syncing",
@@ -28,6 +31,7 @@ DEVICE_STATES = {
     "degraded",
     "disconnected",
 }
+CONTROL_COMMANDS = {"refresh_status", "request_diagnostics", "request_clock_sync"}
 
 
 class CreateSessionRequest(BaseModel):
@@ -49,6 +53,130 @@ class DeviceStateRequest(BaseModel):
         "playing", "degraded", "disconnected"
     ]
     detail: str | None = Field(default=None, max_length=240)
+
+
+class WsAuthenticate(BaseModel):
+    type: Literal["authenticate"]
+    token: str = Field(min_length=32, max_length=256)
+
+
+class WsDeviceState(BaseModel):
+    type: Literal["device.state"]
+    state: Literal[
+        "joining", "syncing", "buffering", "ready",
+        "playing", "degraded", "disconnected"
+    ]
+    detail: str | None = Field(default=None, max_length=240)
+
+
+class WsControlCommand(BaseModel):
+    type: Literal["control.command"]
+    command: Literal["refresh_status", "request_diagnostics", "request_clock_sync"]
+    command_id: str | None = Field(default=None, min_length=1, max_length=64)
+    target_device_ids: list[str] | None = Field(default=None, max_length=8)
+
+
+class WsCommandAck(BaseModel):
+    type: Literal["command.ack"]
+    command_id: str = Field(min_length=1, max_length=64)
+    accepted: bool
+    detail: str | None = Field(default=None, max_length=240)
+
+
+class ConnectionManager:
+    """One authenticated live connection per Host or Speaker in this process."""
+
+    def __init__(self):
+        self._connections: dict[str, dict[str, tuple[WebSocket, str]]] = {}
+        self._lock = asyncio.Lock()
+
+    async def register(
+        self, session_id: str, client_id: str, role: str, websocket: WebSocket
+    ) -> WebSocket | None:
+        async with self._lock:
+            room = self._connections.setdefault(session_id, {})
+            previous = room.get(client_id)
+            room[client_id] = (websocket, role)
+            return previous[0] if previous and previous[0] is not websocket else None
+
+    async def unregister(
+        self, session_id: str, client_id: str, websocket: WebSocket
+    ) -> bool:
+        async with self._lock:
+            room = self._connections.get(session_id)
+            current = room.get(client_id) if room else None
+            if not current or current[0] is not websocket:
+                return False
+            room.pop(client_id, None)
+            if not room:
+                self._connections.pop(session_id, None)
+            return True
+
+    async def send_to(
+        self, session_id: str, client_id: str, message: dict
+    ) -> bool:
+        async with self._lock:
+            current = self._connections.get(session_id, {}).get(client_id)
+        if not current:
+            return False
+        try:
+            await current[0].send_json(message)
+            return True
+        except (RuntimeError, WebSocketDisconnect):
+            return False
+
+    async def send_host(self, session_id: str, message: dict) -> bool:
+        return await self.send_to(session_id, "host", message)
+
+    async def send_device(
+        self, session_id: str, device_id: str, message: dict
+    ) -> bool:
+        return await self.send_to(session_id, device_id, message)
+
+    async def send_speakers(
+        self,
+        session_id: str,
+        message: dict,
+        target_device_ids: list[str] | None = None,
+    ) -> list[str]:
+        async with self._lock:
+            room = dict(self._connections.get(session_id, {}))
+        targets = {
+            client_id: socket
+            for client_id, (socket, role) in room.items()
+            if role == "speaker"
+            and (target_device_ids is None or client_id in target_device_ids)
+        }
+        delivered: list[str] = []
+        for device_id, websocket in targets.items():
+            try:
+                await websocket.send_json(message)
+                delivered.append(device_id)
+            except (RuntimeError, WebSocketDisconnect):
+                continue
+        return delivered
+
+    async def connected_devices(self, session_id: str) -> set[str]:
+        async with self._lock:
+            return {
+                client_id
+                for client_id, (_, role) in self._connections.get(session_id, {}).items()
+                if role == "speaker"
+            }
+
+    async def is_host_connected(self, session_id: str) -> bool:
+        async with self._lock:
+            return "host" in self._connections.get(session_id, {})
+
+    async def close_session(self, session_id: str, message: dict):
+        async with self._lock:
+            room = dict(self._connections.pop(session_id, {}))
+        for websocket, _ in room.values():
+            try:
+                await websocket.send_json(message)
+                await websocket.close(code=4000, reason="session-closed")
+            except (RuntimeError, WebSocketDisconnect):
+                continue
 
 
 class SessionDatabase:
@@ -114,7 +242,7 @@ def make_join_code() -> str:
     return "".join(secrets.choice(ROOM_ALPHABET) for _ in range(8))
 
 
-def public_device(row: sqlite3.Row) -> dict:
+def public_device(row: sqlite3.Row, transport_connected: bool = False) -> dict:
     now = time.time()
     return {
         "device_id": row["id"],
@@ -124,7 +252,8 @@ def public_device(row: sqlite3.Row) -> dict:
         "state_detail": row["state_detail"],
         "joined_at": row["joined_at"],
         "last_seen_at": row["last_seen_at"],
-        "online": now - row["last_seen_at"] <= 15,
+        "online": transport_connected or now - row["last_seen_at"] <= 15,
+        "transport_connected": transport_connected,
     }
 
 
@@ -133,17 +262,19 @@ def create_app(database_path: str | Path | None = None) -> FastAPI:
         "SYNCINIT_BACKEND_DB", "data/sync-in-it.sqlite3"
     )
     database = SessionDatabase(db_path)
+    manager = ConnectionManager()
     join_attempts: dict[str, list[float]] = {}
 
     app = FastAPI(
         title="Sync In It LAN API",
-        version="0.1.0",
+        version="0.2.0",
         description=(
             "LAN-local session and device coordination. Audio and clock-sync "
             "packets remain on the direct Host/Speaker data paths."
         ),
     )
     app.state.database = database
+    app.state.connections = manager
 
     def bearer_token(authorization: Annotated[str | None, Header()] = None) -> str:
         if not authorization or not authorization.startswith("Bearer "):
@@ -185,6 +316,33 @@ def create_app(database_path: str | Path | None = None) -> FastAPI:
         ):
             raise HTTPException(status_code=401, detail="invalid_device_session")
         return row
+
+    def websocket_identity(session_id: str, token: str):
+        digest = token_hash(token)
+        with database.connect() as db:
+            host = db.execute(
+                "SELECT * FROM sessions WHERE id = ? AND host_token_hash = ?",
+                (session_id, digest),
+            ).fetchone()
+            if host and host["state"] == "active" and host["expires_at"] > time.time():
+                return {"role": "host", "client_id": "host", "device": None}
+
+            device = db.execute(
+                """
+                SELECT devices.*, sessions.state AS session_state,
+                       sessions.expires_at AS session_expires_at
+                FROM devices JOIN sessions ON sessions.id = devices.session_id
+                WHERE devices.session_id = ? AND devices.token_hash = ?
+                """,
+                (session_id, digest),
+            ).fetchone()
+        if (
+            device
+            and device["session_state"] == "active"
+            and device["session_expires_at"] > time.time()
+        ):
+            return {"role": "speaker", "client_id": device["id"], "device": device}
+        return None
 
     @app.get("/healthz")
     def health():
@@ -236,7 +394,7 @@ def create_app(database_path: str | Path | None = None) -> FastAPI:
         }
 
     @app.post("/api/v1/sessions/join", status_code=201)
-    def join_session(payload: JoinSessionRequest, request: Request):
+    async def join_session(payload: JoinSessionRequest, request: Request):
         ip = request.client.host if request.client else "unknown"
         now = time.time()
         recent = [
@@ -298,6 +456,21 @@ def create_app(database_path: str | Path | None = None) -> FastAPI:
             )
             db.commit()
 
+        await manager.send_host(
+            session["id"],
+            {
+                "type": "device.joined",
+                "device": {
+                    "device_id": device_id,
+                    "device_name": payload.device_name,
+                    "platform": payload.platform,
+                    "state": "joining",
+                    "joined_at": now,
+                    "transport_connected": False,
+                },
+                "occurred_at": now,
+            },
+        )
         return {
             "session_id": session["id"],
             "device_id": device_id,
@@ -326,13 +499,18 @@ def create_app(database_path: str | Path | None = None) -> FastAPI:
         }
 
     @app.get("/api/v1/sessions/{session_id}/devices")
-    def list_devices(session_id: str, host=Depends(require_host)):
+    async def list_devices(session_id: str, host=Depends(require_host)):
+        connected = await manager.connected_devices(session_id)
         with database.connect() as db:
             rows = db.execute(
                 "SELECT * FROM devices WHERE session_id = ? ORDER BY joined_at",
                 (session_id,),
             ).fetchall()
-        return {"devices": [public_device(row) for row in rows]}
+        return {
+            "devices": [
+                public_device(row, row["id"] in connected) for row in rows
+            ]
+        }
 
     @app.post("/api/v1/sessions/{session_id}/devices/me/heartbeat")
     def heartbeat(session_id: str, device=Depends(require_device)):
@@ -345,7 +523,7 @@ def create_app(database_path: str | Path | None = None) -> FastAPI:
         return {"ok": True, "server_time": now, "device_id": device["id"]}
 
     @app.patch("/api/v1/sessions/{session_id}/devices/me/state")
-    def update_device_state(
+    async def update_device_state(
         session_id: str,
         payload: DeviceStateRequest,
         device=Depends(require_device),
@@ -360,19 +538,33 @@ def create_app(database_path: str | Path | None = None) -> FastAPI:
                 """,
                 (payload.state, payload.detail, now, device["id"]),
             )
+        await manager.send_host(
+            session_id,
+            {
+                "type": "device.state_changed",
+                "device_id": device["id"],
+                "state": payload.state,
+                "detail": payload.detail,
+                "occurred_at": now,
+            },
+        )
         return {"ok": True, "device_id": device["id"], "state": payload.state}
 
     @app.delete("/api/v1/sessions/{session_id}", status_code=204)
-    def close_session(session_id: str, host=Depends(require_host)):
+    async def close_session(session_id: str, host=Depends(require_host)):
+        now = time.time()
         with database.connect() as db:
             db.execute(
                 "UPDATE sessions SET state = 'closed' WHERE id = ?",
                 (session_id,),
             )
+        await manager.close_session(
+            session_id, {"type": "session.closed", "occurred_at": now}
+        )
         return None
 
     @app.delete("/api/v1/sessions/{session_id}/devices/{device_id}", status_code=204)
-    def remove_device(session_id: str, device_id: str, host=Depends(require_host)):
+    async def remove_device(session_id: str, device_id: str, host=Depends(require_host)):
         with database.connect() as db:
             cursor = db.execute(
                 "DELETE FROM devices WHERE session_id = ? AND id = ?",
@@ -380,7 +572,258 @@ def create_app(database_path: str | Path | None = None) -> FastAPI:
             )
         if cursor.rowcount == 0:
             raise HTTPException(status_code=404, detail="device_not_found")
+        await manager.send_device(
+            session_id, device_id, {"type": "device.removed", "device_id": device_id}
+        )
         return None
+
+    @app.websocket("/api/v1/sessions/{session_id}/ws")
+    async def session_events(websocket: WebSocket, session_id: str):
+        await websocket.accept()
+        identity = None
+        client_id = None
+        registered = False
+        try:
+            try:
+                raw_auth = await asyncio.wait_for(websocket.receive_text(), timeout=10)
+                if len(raw_auth.encode("utf-8")) > MAX_WS_MESSAGE_BYTES:
+                    await websocket.close(code=4400, reason="message-too-large")
+                    return
+                auth_message = WsAuthenticate.model_validate(json.loads(raw_auth))
+            except asyncio.TimeoutError:
+                await websocket.close(code=4408, reason="authentication-timeout")
+                return
+            except (json.JSONDecodeError, ValidationError, ValueError):
+                await websocket.close(code=4400, reason="invalid-authentication-message")
+                return
+
+            identity = websocket_identity(session_id, auth_message.token)
+            if not identity:
+                await websocket.close(code=4401, reason="invalid-session-credentials")
+                return
+
+            client_id = identity["client_id"]
+            previous = await manager.register(
+                session_id, client_id, identity["role"], websocket
+            )
+            registered = True
+            if previous:
+                try:
+                    await previous.close(code=4001, reason="connection-replaced")
+                except RuntimeError:
+                    pass
+
+            if identity["role"] == "speaker":
+                now = time.time()
+                with database.connect() as db:
+                    db.execute(
+                        "UPDATE devices SET last_seen_at = ? WHERE id = ?",
+                        (now, client_id),
+                    )
+
+            await websocket.send_json(
+                {
+                    "type": "authenticated",
+                    "session_id": session_id,
+                    "role": identity["role"],
+                    "device_id": client_id if identity["role"] == "speaker" else None,
+                    "server_time": time.time(),
+                }
+            )
+
+            if identity["role"] == "host":
+                with database.connect() as db:
+                    rows = db.execute(
+                        "SELECT * FROM devices WHERE session_id = ? ORDER BY joined_at",
+                        (session_id,),
+                    ).fetchall()
+                connected = await manager.connected_devices(session_id)
+                await websocket.send_json(
+                    {
+                        "type": "session.snapshot",
+                        "session_id": session_id,
+                        "state": "active",
+                        "devices": [
+                            public_device(row, row["id"] in connected) for row in rows
+                        ],
+                    }
+                )
+                await manager.send_speakers(
+                    session_id,
+                    {"type": "session.host_connected", "occurred_at": time.time()},
+                )
+            else:
+                await websocket.send_json(
+                    {
+                        "type": "session.snapshot",
+                        "session_id": session_id,
+                        "host_connected": await manager.is_host_connected(session_id),
+                    }
+                )
+                await manager.send_host(
+                    session_id,
+                    {
+                        "type": "device.connected",
+                        "device_id": client_id,
+                        "occurred_at": time.time(),
+                    },
+                )
+
+            while True:
+                raw = await websocket.receive_text()
+                if len(raw.encode("utf-8")) > MAX_WS_MESSAGE_BYTES:
+                    await websocket.close(code=4409, reason="message-too-large")
+                    break
+                try:
+                    message = json.loads(raw)
+                    if not isinstance(message, dict):
+                        raise ValueError("message-must-be-object")
+                except (json.JSONDecodeError, ValueError):
+                    await websocket.send_json(
+                        {"type": "protocol.error", "code": "invalid_json"}
+                    )
+                    continue
+
+                message_type = message.get("type")
+                if message_type == "heartbeat" and identity["role"] == "speaker":
+                    now = time.time()
+                    with database.connect() as db:
+                        db.execute(
+                            "UPDATE devices SET last_seen_at = ? WHERE id = ?",
+                            (now, client_id),
+                        )
+                    await websocket.send_json(
+                        {"type": "heartbeat.ack", "server_time": now}
+                    )
+                    continue
+
+                if message_type == "device.state" and identity["role"] == "speaker":
+                    try:
+                        state_message = WsDeviceState.model_validate(message)
+                    except ValidationError:
+                        await websocket.send_json(
+                            {"type": "protocol.error", "code": "invalid_device_state"}
+                        )
+                        continue
+                    now = time.time()
+                    with database.connect() as db:
+                        db.execute(
+                            """
+                            UPDATE devices
+                            SET state = ?, state_detail = ?, last_seen_at = ?
+                            WHERE id = ? AND session_id = ?
+                            """,
+                            (
+                                state_message.state,
+                                state_message.detail,
+                                now,
+                                client_id,
+                                session_id,
+                            ),
+                        )
+                    await manager.send_host(
+                        session_id,
+                        {
+                            "type": "device.state_changed",
+                            "device_id": client_id,
+                            "state": state_message.state,
+                            "detail": state_message.detail,
+                            "occurred_at": now,
+                        },
+                    )
+                    await websocket.send_json(
+                        {
+                            "type": "device.state.ack",
+                            "state": state_message.state,
+                            "server_time": now,
+                        }
+                    )
+                    continue
+
+                if message_type == "control.command" and identity["role"] == "host":
+                    try:
+                        command = WsControlCommand.model_validate(message)
+                    except ValidationError:
+                        await websocket.send_json(
+                            {"type": "protocol.error", "code": "invalid_command"}
+                        )
+                        continue
+                    command_id = command.command_id or str(uuid.uuid4())
+                    issued_at = time.time()
+                    event = {
+                        "type": "control.command",
+                        "command_id": command_id,
+                        "command": command.command,
+                        "issued_at": issued_at,
+                    }
+                    delivered = await manager.send_speakers(
+                        session_id, event, command.target_device_ids
+                    )
+                    await websocket.send_json(
+                        {
+                            "type": "control.command.result",
+                            "command_id": command_id,
+                            "command": command.command,
+                            "delivered_device_ids": delivered,
+                            "delivered_count": len(delivered),
+                            "accepted": len(delivered) > 0,
+                        }
+                    )
+                    continue
+
+                if message_type == "command.ack" and identity["role"] == "speaker":
+                    try:
+                        ack = WsCommandAck.model_validate(message)
+                    except ValidationError:
+                        await websocket.send_json(
+                            {"type": "protocol.error", "code": "invalid_command_ack"}
+                        )
+                        continue
+                    await manager.send_host(
+                        session_id,
+                        {
+                            "type": "command.ack",
+                            "device_id": client_id,
+                            "command_id": ack.command_id,
+                            "accepted": ack.accepted,
+                            "detail": ack.detail,
+                            "occurred_at": time.time(),
+                        },
+                    )
+                    continue
+
+                await websocket.send_json(
+                    {"type": "protocol.error", "code": "unsupported_message_or_role"}
+                )
+
+        except WebSocketDisconnect:
+            pass
+        except (RuntimeError, json.JSONDecodeError):
+            pass
+        finally:
+            if registered and identity and client_id:
+                removed = await manager.unregister(session_id, client_id, websocket)
+                if removed:
+                    with database.connect() as db:
+                        session = db.execute(
+                            "SELECT state FROM sessions WHERE id = ?", (session_id,)
+                        ).fetchone()
+                    if session and session["state"] == "active":
+                        now = time.time()
+                        if identity["role"] == "host":
+                            await manager.send_speakers(
+                                session_id,
+                                {"type": "session.host_disconnected", "occurred_at": now},
+                            )
+                        else:
+                            await manager.send_host(
+                                session_id,
+                                {
+                                    "type": "device.disconnected",
+                                    "device_id": client_id,
+                                    "occurred_at": now,
+                                },
+                            )
 
     return app
 
