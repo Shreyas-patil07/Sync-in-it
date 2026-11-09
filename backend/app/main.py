@@ -88,6 +88,7 @@ class ConnectionManager:
 
     def __init__(self):
         self._connections: dict[str, dict[str, tuple[WebSocket, str]]] = {}
+        self._pending_commands: dict[str, dict[str, tuple[set[str], float]]] = {}
         self._lock = asyncio.Lock()
 
     async def register(
@@ -164,6 +165,54 @@ class ConnectionManager:
                 if role == "speaker"
             }
 
+    async def register_pending_command(
+        self, session_id: str, command_id: str, device_ids: set[str]
+    ) -> bool:
+        if not device_ids:
+            return True
+        now = time.monotonic()
+        async with self._lock:
+            pending = self._pending_commands.setdefault(session_id, {})
+            expired = [
+                key for key, (_, deadline) in pending.items() if deadline <= now
+            ]
+            for key in expired:
+                pending.pop(key, None)
+            if command_id in pending:
+                return False
+            pending[command_id] = (set(device_ids), now + 60)
+            return True
+
+    async def acknowledge_command(
+        self, session_id: str, command_id: str, device_id: str
+    ) -> bool:
+        now = time.monotonic()
+        async with self._lock:
+            pending = self._pending_commands.get(session_id, {})
+            expired = [
+                key for key, (_, deadline) in pending.items() if deadline <= now
+            ]
+            for key in expired:
+                pending.pop(key, None)
+            item = pending.get(command_id)
+            if not item or device_id not in item[0]:
+                return False
+            item[0].remove(device_id)
+            if not item[0]:
+                pending.pop(command_id, None)
+            return True
+
+    async def close_device(self, session_id: str, device_id: str, message: dict):
+        async with self._lock:
+            current = self._connections.get(session_id, {}).get(device_id)
+        if not current:
+            return
+        try:
+            await current[0].send_json(message)
+            await current[0].close(code=4003, reason="device-removed")
+        except (RuntimeError, WebSocketDisconnect):
+            return
+
     async def is_host_connected(self, session_id: str) -> bool:
         async with self._lock:
             return "host" in self._connections.get(session_id, {})
@@ -171,6 +220,7 @@ class ConnectionManager:
     async def close_session(self, session_id: str, message: dict):
         async with self._lock:
             room = dict(self._connections.pop(session_id, {}))
+            self._pending_commands.pop(session_id, None)
         for websocket, _ in room.values():
             try:
                 await websocket.send_json(message)
@@ -572,7 +622,7 @@ def create_app(database_path: str | Path | None = None) -> FastAPI:
             )
         if cursor.rowcount == 0:
             raise HTTPException(status_code=404, detail="device_not_found")
-        await manager.send_device(
+        await manager.close_device(
             session_id, device_id, {"type": "device.removed", "device_id": device_id}
         )
         return None
@@ -756,8 +806,25 @@ def create_app(database_path: str | Path | None = None) -> FastAPI:
                         "command": command.command,
                         "issued_at": issued_at,
                     }
+                    connected = await manager.connected_devices(session_id)
+                    targets = (
+                        connected
+                        if command.target_device_ids is None
+                        else connected.intersection(command.target_device_ids)
+                    )
+                    if targets and not await manager.register_pending_command(
+                        session_id, command_id, targets
+                    ):
+                        await websocket.send_json(
+                            {
+                                "type": "protocol.error",
+                                "code": "command_id_in_use",
+                                "command_id": command_id,
+                            }
+                        )
+                        continue
                     delivered = await manager.send_speakers(
-                        session_id, event, command.target_device_ids
+                        session_id, event, sorted(targets)
                     )
                     await websocket.send_json(
                         {
@@ -777,6 +844,13 @@ def create_app(database_path: str | Path | None = None) -> FastAPI:
                     except ValidationError:
                         await websocket.send_json(
                             {"type": "protocol.error", "code": "invalid_command_ack"}
+                        )
+                        continue
+                    if not await manager.acknowledge_command(
+                        session_id, ack.command_id, client_id
+                    ):
+                        await websocket.send_json(
+                            {"type": "protocol.error", "code": "unknown_or_expired_command"}
                         )
                         continue
                     await manager.send_host(
@@ -808,6 +882,13 @@ def create_app(database_path: str | Path | None = None) -> FastAPI:
                         session = db.execute(
                             "SELECT state FROM sessions WHERE id = ?", (session_id,)
                         ).fetchone()
+                    device_still_registered = True
+                    if identity["role"] == "speaker":
+                        with database.connect() as db:
+                            device_still_registered = db.execute(
+                                "SELECT 1 FROM devices WHERE id = ? AND session_id = ?",
+                                (client_id, session_id),
+                            ).fetchone() is not None
                     if session and session["state"] == "active":
                         now = time.time()
                         if identity["role"] == "host":
@@ -815,7 +896,7 @@ def create_app(database_path: str | Path | None = None) -> FastAPI:
                                 session_id,
                                 {"type": "session.host_disconnected", "occurred_at": now},
                             )
-                        else:
+                        elif device_still_registered:
                             await manager.send_host(
                                 session_id,
                                 {
