@@ -109,6 +109,13 @@ class ConnectionManager:
             if not current or current[0] is not websocket:
                 return False
             room.pop(client_id, None)
+            pending = self._pending_commands.get(session_id, {})
+            for command_id, (targets, _) in list(pending.items()):
+                targets.discard(client_id)
+                if not targets:
+                    pending.pop(command_id, None)
+            if not pending:
+                self._pending_commands.pop(session_id, None)
             if not room:
                 self._connections.pop(session_id, None)
             return True
@@ -178,7 +185,7 @@ class ConnectionManager:
             ]
             for key in expired:
                 pending.pop(key, None)
-            if command_id in pending:
+            if command_id in pending or len(pending) >= 128:
                 return False
             pending[command_id] = (set(device_ids), now + 60)
             return True
@@ -818,7 +825,7 @@ def create_app(database_path: str | Path | None = None) -> FastAPI:
                         await websocket.send_json(
                             {
                                 "type": "protocol.error",
-                                "code": "command_id_in_use",
+                                "code": "command_id_unavailable",
                                 "command_id": command_id,
                             }
                         )
