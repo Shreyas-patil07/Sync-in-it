@@ -334,3 +334,8 @@ This remains a coordination service, not a media relay. Android/iOS clients do n
 The FastAPI coordination service is present on main through PR #88 and the Android app now has a separate `android/backend` Kotlin/JVM client module in the pending Android backend-client change. The module defines typed REST operations for session/device coordination and an authenticated WebSocket event client. MockWebServer contract tests cover HTTP request/response behavior, bearer-token placement, conflict handling and WebSocket first-frame authentication.
 
 **This is client-library integration only.** The launcher UI and Host/Speaker session lifecycle do not yet create or join backend sessions. The existing NSD discovery, direct TCP admission/audio path, UDP clock probes, READY and ANCHOR remain unchanged. Backend availability is optional; the local playback path must continue to operate without internet. WebSocket commands remain advisory and may only trigger existing direct-LAN operations. See ADR-031 and `android/backend/README.md`.
+
+
+## Backend connection lifecycle groundwork — 10 November 2026
+
+The Android backend module now includes a `BackendSessionCoordinator` for Host/Speaker WebSocket lifecycle, bounded transient reconnect, server-snapshot reconciliation and Speaker REST heartbeat fallback. MockWebServer tests cover Host authentication/snapshot delivery and Speaker heartbeat fallback. This component is still library-level groundwork; no launcher UI or direct-LAN session lifecycle has been wired to it. See ADR-032.
