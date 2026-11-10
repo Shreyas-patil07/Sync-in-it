@@ -13,7 +13,7 @@ from contextlib import contextmanager
 from pathlib import Path
 from typing import Annotated, Literal
 
-from fastapi import Depends, FastAPI, Header, HTTPException, Request, WebSocket, WebSocketDisconnect, status
+from fastapi import Depends, FastAPI, Header, HTTPException, Request, Response, WebSocket, WebSocketDisconnect, status
 from pydantic import BaseModel, Field, ValidationError
 
 ROOM_ALPHABET = "ABCDEFGHJKLMNPQRSTUVWXYZ23456789"
@@ -404,6 +404,10 @@ def create_app(database_path: str | Path | None = None) -> FastAPI:
     @app.get("/healthz")
     def health():
         return {"status": "ok", "service": "sync-in-it-lan-api", "api_version": "v1"}
+
+    @app.head("/healthz", include_in_schema=False)
+    def health_head():
+        return Response(status_code=status.HTTP_200_OK)
 
     @app.post("/api/v1/sessions", status_code=201)
     def create_session(payload: CreateSessionRequest):

@@ -27,16 +27,28 @@ python -m pip install -e ".[test]"
 uvicorn app.main:app --host 0.0.0.0 --port 8788
 ```
 
-- Health: `GET http://127.0.0.1:8788/healthz`
+- Health: `GET` or `HEAD` `http://127.0.0.1:8788/healthz`
 - OpenAPI: `http://127.0.0.1:8788/docs`
 - SQLite defaults to `backend/data/sync-in-it.sqlite3`; set `SYNCINIT_BACKEND_DB` to change it.
 - Bind to a trusted private LAN only. Do not expose this preview service directly to the public internet.
+
+## Uptime monitoring on Render Free
+
+The public health endpoint supports both GET and HEAD. UptimeRobot's standard HTTP monitor uses HEAD by default, so configure an HTTP(S) monitor with this URL:
+
+```text
+https://sync-in-it.onrender.com/healthz
+```
+
+Use UptimeRobot's 5-minute Free monitoring interval. HEAD returns HTTP 200 without a response body and does not touch session data.
+
+This can prevent Render's 15-minute inactivity spin-down while the monitor is running. It is not an uptime guarantee: Render can restart free instances, its 750 free instance-hours are shared across the workspace, and the SQLite filesystem is ephemeral. Do not treat the Render Free deployment as durable production storage.
 
 ## API v1
 
 | Method | Endpoint | Purpose | Authentication |
 |---|---|---|---|
-| GET | `/healthz` | Liveness | None |
+| GET, HEAD | `/healthz` | Liveness (HEAD returns an empty 200 response) | None |
 | POST | `/api/v1/sessions` | Create session and issue Host token | None |
 | POST | `/api/v1/sessions/join` | Join by 8-character code and issue device token | Join code + rate limit |
 | GET | `/api/v1/sessions/{id}` | Session snapshot | Host bearer token |
