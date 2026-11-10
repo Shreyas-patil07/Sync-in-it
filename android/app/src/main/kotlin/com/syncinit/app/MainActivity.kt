@@ -562,9 +562,12 @@ class MainActivity : Activity() {
                     backendState?.let(::closeBackendHostState)
                 }
 
+                val readyBackendState = backendState
+                val readyQrBitmap = qrBitmap
+                val readyBackendFailure = backendFailure
                 runOnUiThread {
                     if (isFinishing || isDestroyed || masterHost !== service) {
-                        backendState?.let { staleState ->
+                        readyBackendState?.let { staleState ->
                             Thread({
                                 closeBackendHostState(staleState)
                             }, "syncinit-backend-stale-host-cleanup").apply { isDaemon = true }.start()
@@ -573,7 +576,7 @@ class MainActivity : Activity() {
                         return@runOnUiThread
                     }
                     hostServiceName = invitation.serviceName
-                    hostBackendSession = backendState
+                    hostBackendSession = readyBackendState
                     val sourceDescription = when {
                         useSystemAudio -> "Capturing eligible Android app playback"
                         audioUri != null -> "Sharing local file: ${audioName ?: "selected audio"} (loops at end-of-file)"
@@ -581,15 +584,15 @@ class MainActivity : Activity() {
                     }
                     hostDetails.text =
                         "Visible as ${invitation.serviceName}\n$sourceDescription\nWaiting for up to ${PreviewConfig.MAX_SPEAKERS} Speakers."
-                    if (backendState != null && qrBitmap != null) {
+                    if (readyBackendState != null && readyQrBitmap != null) {
                         hostJoinCodeDetails.text =
-                            "Backend join code: ${backendState.joinCode}\nScan this QR on each Speaker. Both devices must stay on the same local Wi-Fi."
-                        hostQrImage.setImageBitmap(qrBitmap)
+                            "Backend join code: ${readyBackendState.joinCode}\nScan this QR on each Speaker. Both devices must stay on the same local Wi-Fi."
+                        hostQrImage.setImageBitmap(readyQrBitmap)
                         hostQrImage.visibility = ImageView.VISIBLE
                         postStatus("Local Host started. Backend session connected; QR invitation is ready.")
                     } else {
                         hostJoinCodeDetails.text =
-                            "QR pairing unavailable: ${backendFailure?.message ?: "backend did not return an invitation"}. Nearby LAN join remains available."
+                            "QR pairing unavailable: ${readyBackendFailure?.message ?: "backend did not return an invitation"}. Nearby LAN join remains available."
                         hostQrImage.setImageDrawable(null)
                         hostQrImage.visibility = ImageView.GONE
                         postStatus("Local Host started. Backend unavailable; use nearby discovery for this session.")
@@ -690,47 +693,54 @@ class MainActivity : Activity() {
             var joinedDeviceToken: String? = null
             var coordinator: BackendSessionCoordinator? = null
             try {
-                api = BackendApiClient(BACKEND_BASE_URL)
-                val joined = api.joinSession(
+                val backendApi = BackendApiClient(BACKEND_BASE_URL)
+                api = backendApi
+                val joined = backendApi.joinSession(
                     joinCode = invite.joinCode,
                     deviceName = Build.MODEL.trim().take(48).ifBlank { "Android Speaker" }
                 )
                 joinedSessionId = joined.sessionId
                 joinedDeviceToken = joined.deviceToken
                 runCatching {
-                    api.updateDeviceState(
+                    backendApi.updateDeviceState(
                         joined.sessionId,
                         joined.deviceToken,
                         BackendDeviceState.SYNCING,
                         "Direct LAN media connection established"
                     )
                 }
-                coordinator = createBackendCoordinator(
-                    api = api,
+                val activeCoordinator = createBackendCoordinator(
+                    api = backendApi,
                     sessionId = joined.sessionId,
                     token = joined.deviceToken,
                     role = BackendSessionRole.SPEAKER,
                     label = "Speaker"
                 )
+                coordinator = activeCoordinator
                 if (receiverClient !== localClient || isFinishing || isDestroyed) {
-                    coordinator.close()
-                    api.leaveSession(joined.sessionId, joined.deviceToken)
+                    activeCoordinator.close()
+                    backendApi.leaveSession(joined.sessionId, joined.deviceToken)
                     return@Thread
                 }
                 val speakerState = SpeakerBackendSession(
-                    api = api,
+                    api = backendApi,
                     sessionId = joined.sessionId,
                     deviceToken = joined.deviceToken,
-                    coordinator = coordinator
+                    coordinator = activeCoordinator
                 )
                 speakerBackendSession = speakerState
-                coordinator.start()
+                activeCoordinator.start()
                 appendDiagnostic("BACKEND_SPEAKER_JOINED", "sessionId=${joined.sessionId} deviceId=${joined.deviceId}")
                 postStatus("Speaker joined backend coordination; WebSocket connection starting.")
             } catch (error: Exception) {
                 coordinator?.close()
-                if (api != null && joinedSessionId != null && joinedDeviceToken != null) {
-                    runCatching { api.leaveSession(joinedSessionId, joinedDeviceToken) }
+                val cleanupApi = api
+                val cleanupSessionId = joinedSessionId
+                val cleanupDeviceToken = joinedDeviceToken
+                if (cleanupApi != null && cleanupSessionId != null && cleanupDeviceToken != null) {
+                    runCatching {
+                        cleanupApi.leaveSession(cleanupSessionId, cleanupDeviceToken)
+                    }
                 }
                 if (receiverClient === localClient) {
                     postStatus(
