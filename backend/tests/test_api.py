@@ -117,7 +117,18 @@ def test_host_can_close_session_and_tokens_are_not_returned_again(tmp_path):
     assert joined.status_code == 404
 
 
-def test_health_and_unauthorized_access(tmp_path):
+def test_health_supports_get_and_head(tmp_path):
     client = TestClient(create_app(tmp_path / "test.sqlite3"))
-    assert client.get("/healthz").json()["status"] == "ok"
+
+    get_response = client.get("/healthz")
+    assert get_response.status_code == 200
+    assert get_response.json()["status"] == "ok"
+
+    head_response = client.head("/healthz")
+    assert head_response.status_code == 200
+    assert head_response.content == b""
+
+
+def test_unauthorized_session_access_is_rejected(tmp_path):
+    client = TestClient(create_app(tmp_path / "test.sqlite3"))
     assert client.get("/api/v1/sessions/anything").status_code == 401
