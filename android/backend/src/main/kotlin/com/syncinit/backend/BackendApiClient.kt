@@ -1,12 +1,12 @@
 // SPDX-License-Identifier: Apache-2.0
 package com.syncinit.backend
 
-import com.google.gson.JsonArray
 import com.google.gson.JsonElement
 import com.google.gson.JsonObject
 import com.google.gson.JsonParser
 import com.google.gson.Gson
 import okhttp3.HttpUrl
+import okhttp3.HttpUrl.Companion.toHttpUrlOrNull
 import okhttp3.OkHttpClient
 import okhttp3.Request
 import okhttp3.RequestBody.Companion.toRequestBody
@@ -205,7 +205,7 @@ class BackendApiClient(
                     val event = JsonParser.parseString(text)
                     if (!event.isJsonObject) throw IOException("Backend WebSocket event must be a JSON object")
                     val payload = event.asJsonObject
-                    val type = payload.get("type")?.takeUnless(JsonElement::isJsonNull)?.asString
+                    val type = payload.get("type")?.takeUnless { it.isJsonNull }?.asString
                         ?: throw IOException("Backend WebSocket event is missing type")
                     listener.onEvent(BackendEvent(type, payload))
                 } catch (error: Exception) {
@@ -316,23 +316,23 @@ class BackendApiClient(
         }
     }
 
-    private fun defaultHttpClient(): OkHttpClient = OkHttpClient.Builder()
-        .connectTimeout(5, TimeUnit.SECONDS)
-        .readTimeout(10, TimeUnit.SECONDS)
-        .writeTimeout(10, TimeUnit.SECONDS)
-        .pingInterval(15, TimeUnit.SECONDS)
-        .retryOnConnectionFailure(false)
-        .build()
-
     private companion object {
         val GSON = Gson()
         val JSON = "application/json; charset=utf-8".toMediaType()
         val EMPTY_BODY = ByteArray(0).toRequestBody(JSON)
+
+        fun defaultHttpClient(): OkHttpClient = OkHttpClient.Builder()
+            .connectTimeout(5, TimeUnit.SECONDS)
+            .readTimeout(10, TimeUnit.SECONDS)
+            .writeTimeout(10, TimeUnit.SECONDS)
+            .pingInterval(15, TimeUnit.SECONDS)
+            .retryOnConnectionFailure(false)
+            .build()
     }
 }
 
 private fun String.toHttpUrlOrNullChecked(): HttpUrl {
-    val parsed = okhttp3.HttpUrl.Companion.parse(this)
+    val parsed = toHttpUrlOrNull()
         ?: throw IllegalArgumentException("Backend base URL must be a valid HTTP or HTTPS URL")
     require(parsed.scheme == "http" || parsed.scheme == "https")
     require(parsed.encodedPath == "/" && parsed.query == null && parsed.fragment == null) {
