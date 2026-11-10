@@ -8,9 +8,9 @@ kotlin {
 }
 
 dependencies {
-    implementation("com.squareup.okhttp3:okhttp:5.5.1")
+    implementation("com.squareup.okhttp3:okhttp:4.12.1")
     implementation("com.google.code.gson:gson:2.15.0")
-    testImplementation("com.squareup.okhttp3:mockwebserver3:5.5.1")
+    testImplementation("com.squareup.okhttp3:mockwebserver:4.12.1")
 }
 
 tasks.register<JavaExec>("backendTest") {
