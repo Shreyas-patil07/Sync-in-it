@@ -78,14 +78,14 @@ private fun joinSendsNormalizedCodeAndPlatform() {
         )
         val request = server.takeRequest(3, TimeUnit.SECONDS)
             ?: error("join request was not received")
-        val body = JsonParser.parseString(request.body!!.utf8()).asJsonObject
+        val body = JsonParser.parseString(request.body!!.readUtf8()).asJsonObject
 
         expect(request.path == "/api/v1/sessions/join", "join uses the v1 endpoint")
         expect(body.get("join_code").asString == "ABCD2345", "join code is normalized")
         expect(body.get("platform").asString == "android", "platform is serialized")
         expect(joined.deviceId == "device-456", "device response is decoded")
     } finally {
-        server.close()
+        server.shutdown()
     }
 }
 
@@ -112,7 +112,7 @@ private fun hostAuthorizationAndConflictArePreserved() {
         expect(apiError?.statusCode == 409, "HTTP conflict status is preserved")
         expect(apiError?.errorCode == "protocol_version_mismatch", "backend detail code is preserved")
     } finally {
-        server.close()
+        server.shutdown()
     }
 }
 
@@ -157,7 +157,7 @@ private fun websocketAuthenticatesInFirstFrameAndSendsCommands() {
             ?: error("WebSocket authentication frame was not received")
 
         expect(request.path == "/api/v1/sessions/session-123/ws", "WebSocket uses the session event route")
-        expect(request.path!!.contains(token).not(), "bearer token is not put in the URL")
+        expect(!request.path.orEmpty().contains(token), "bearer token is not put in the URL")
         val auth = JsonParser.parseString(authFrame).asJsonObject
         expect(auth.get("type").asString == "authenticate", "authentication is the first client frame")
         expect(auth.get("token").asString == token, "authentication token is sent in the frame")
@@ -176,7 +176,7 @@ private fun websocketAuthenticatesInFirstFrameAndSendsCommands() {
         failure.poll()?.let { throw it }
         connection.close()
     } finally {
-        server.close()
+        server.shutdown()
     }
 }
 
