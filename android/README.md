@@ -3,7 +3,8 @@
 The Android workspace contains two Gradle modules:
 
 - `app/`: Android launcher, local-network NSD discovery/advertising, and JNI bridge into the shared C++ receiver-session and clock-estimator APIs.
-- `transport/`: pure Kotlin/JVM TCP and UDP socket transport, reusable by the Android app.
+- `transport/`: pure Kotlin/JVM direct-LAN TCP and UDP socket transport.
+- `backend/`: pure Kotlin/JVM client for the optional FastAPI REST and WebSocket coordination service.
 
 ## Current validation status — 9 November 2026
 
@@ -154,3 +155,18 @@ The Host can request Android playback capture from other apps on Android 10 (API
 Captured audio is read as 48 kHz, stereo, PCM16 and enters the same sample-indexed PCM producer as local-file playback. A bounded 20-second rolling buffer allows the Host to select a recent two-second pre-roll only after all admitted Speakers pass the existing clock-stability and buffer-readiness checks. The existing common ANCHOR and TCP fan-out then coordinate playback; the estimator thresholds and wire protocol are unchanged.
 
 **Capture is not guaranteed for every app.** Android playback capture is limited to supported media/game/unknown usages and is subject to the source app's capture policy and manifest opt-in. DRM/protected or capture-blocked playback may be silent. Android 10+ and matching user-profile requirements apply. This is playback capture, not microphone recording or a universal system mixer tap.
+
+
+## Optional backend coordination client
+
+The `backend/` module provides typed REST operations for session creation/join, session/device snapshots, Speaker heartbeat/state, device removal and session closure. It also provides an authenticated WebSocket connection for presence events, coarse device state, operational commands and command acknowledgements.
+
+This client is a sidecar, not a replacement for local networking. The backend is not required to host, discover, join or play a local session. PCM, four-timestamp clock probes, READY, ANCHOR and playout deadlines remain on the direct Host/Speaker LAN channels. The WebSocket client authenticates with the first frame; bearer tokens are not placed in URLs or logged. REST calls are synchronous and must run on an IO thread. Session creation and join are not automatically retried because they are not idempotent.
+
+Contract tests run with:
+
+```bash
+gradle -p android :backend:check
+```
+
+The current PR adds the client library and CI coverage only. The launcher UI and Host/Speaker lifecycle are not yet wired to this service; the existing direct-LAN session path remains unchanged.

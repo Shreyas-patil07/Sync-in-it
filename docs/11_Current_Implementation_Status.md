@@ -1,6 +1,6 @@
 # Current Implementation Status — Sync In It
 
-**Status date:** 9 November 2026  
+**Status date:** 10 November 2026  
 **Main baseline:** PR #78 merged at `79c50372a22a1378d265a2a4f9308a477863540c`  
 **Release packaging commit:** `79c50372a22a1378d265a2a4f9308a477863540c`  
 **Latest published Android preview:** [`v0.6.9`](https://github.com/Shreyas-patil07/Sync-in-it/releases/tag/v0.6.9) — engineering prerelease  
@@ -327,3 +327,10 @@ The standalone FastAPI + SQLite service is deployed at [`https://sync-in-it.onre
 The next increment is [PR #88 — authenticated realtime session events](https://github.com/Shreyas-patil07/Sync-in-it/pull/88). It adds per-session authenticated WebSockets, device join/connect/disconnect/state events, Host operational requests and Speaker acknowledgements. **PR #88 is not yet merged or deployed to Render.** Backend CI ran the HTTP and WebSocket suite on Python 3.11, 3.12 and 3.13: 8 tests passed on each version.
 
 This remains a coordination service, not a media relay. Android/iOS clients do not yet use this API or event channel. Current WebSocket connections and pending commands are process-local; events are not durable or replayed. The service must use one worker until shared pub/sub and durable command/event storage are implemented. The Render deployment is useful for integration tests, but it is not a LAN-local offline backend, and its current free/ephemeral storage is not a reliable persistent session store. These limitations do not change the direct Host/Speaker audio and clock-sync architecture.
+
+
+## Optional backend client — 10 November 2026
+
+The FastAPI coordination service is present on main through PR #88 and the Android app now has a separate `android/backend` Kotlin/JVM client module in the pending Android backend-client change. The module defines typed REST operations for session/device coordination and an authenticated WebSocket event client. MockWebServer contract tests cover HTTP request/response behavior, bearer-token placement, conflict handling and WebSocket first-frame authentication.
+
+**This is client-library integration only.** The launcher UI and Host/Speaker session lifecycle do not yet create or join backend sessions. The existing NSD discovery, direct TCP admission/audio path, UDP clock probes, READY and ANCHOR remain unchanged. Backend availability is optional; the local playback path must continue to operate without internet. WebSocket commands remain advisory and may only trigger existing direct-LAN operations. See ADR-031 and `android/backend/README.md`.

@@ -375,3 +375,21 @@ These records consolidate decisions and open questions from [docs/System Structu
 
 **Consequences:** Host presence and coarse device state can update in real time without putting audio or clock exchanges through the backend. Events may be missed during disconnection or process restart, so clients must reconcile against the session snapshot. This is not a durable command queue or a substitute for direct Host/Speaker control.
 
+
+## ADR-031 — Android backend client remains an optional coordination sidecar
+
+**Status:** Accepted  
+**Date:** 10 November 2026
+
+**Context:** The FastAPI service now provides session/device coordination and an authenticated WebSocket event channel. The Android application already has a direct-LAN Host/Speaker protocol that owns media delivery and precise timing. Integrating a backend client must not create a mandatory cloud dependency or change the timing data path.
+
+**Decision:**
+
+1. Keep backend REST/WebSocket access in a separate Kotlin/JVM `android/backend` module. The module is available to the app but does not automatically start network requests or alter Host/Speaker lifecycle.
+2. Treat backend availability as optional. Local Host discovery, admission, clock acquisition, PCM transport, READY, ANCHOR and playback must continue to work without the backend or internet access.
+3. Restrict backend WebSocket messages to presence, coarse state and non-real-time operational commands. A `request_clock_sync` command only asks a Speaker to initiate the existing direct LAN clock-sync protocol.
+4. Never send PCM, four-timestamp clock measurements, READY, ANCHOR, sample deadlines or presentation timestamps through the backend.
+5. Keep REST operations explicit and do not automatically retry session creation or join. Reconcile state through session/device snapshots after reconnect because server-side WebSocket events and pending commands are process-local and non-durable.
+6. Send bearer tokens only in HTTP Authorization headers or the first WebSocket authentication frame. Do not place them in URL paths, query strings or logs.
+
+**Consequences:** The app has a testable client contract for the optional backend, while the existing LAN audio path remains independent. UI and lifecycle integration are a separate follow-up and must preserve the offline path.
