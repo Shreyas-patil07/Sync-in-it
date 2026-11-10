@@ -41,7 +41,8 @@ import kotlin.math.sin
 
 data class HostInvitation(
     val serviceName: String,
-    val controlPort: Int
+    val controlPort: Int,
+    val lanFingerprint: String
 )
 
 private data class StreamCursor(
@@ -171,15 +172,17 @@ class MasterSessionHost(
             if (rtpListener != null) startRtpAudioServer()
 
             val deviceLabel = Build.MODEL.trim().take(32).ifBlank { "Android" }
-            val serviceName = "Sync In It - $deviceLabel ${token.toHex().take(4)}"
+            val tokenHex = token.toHex()
+            val lanFingerprint = tokenHex.take(8)
+            val serviceName = "Sync In It - $deviceLabel ${tokenHex.take(4)}"
             val serviceAdvertiser = LanSessionAdvertiser(appContext, onStatus)
             advertiser = serviceAdvertiser
-            serviceAdvertiser.start(serviceName, controlListener.localPort, token.toHex())
+            serviceAdvertiser.start(serviceName, controlListener.localPort, tokenHex)
 
             onStatus("DIAG HOST_READY controlPort=${controlListener.localPort} audioPort=${audioListener.localPort} timePort=${PreviewConfig.TIME_PORT} rtpAudioPort=${rtpListener?.localPort ?: "disabled"} controlListening=${controlListener.isListening} audioListening=${audioListener.isListening}")
             onStatus("TCP listener ready on port ${controlListener.localPort}. Advertising a session for up to ${PreviewConfig.MAX_SPEAKERS} speakers.")
             onStatus("Waiting for speakers · 0/${PreviewConfig.MAX_SPEAKERS} connected.")
-            return HostInvitation(serviceName, controlListener.localPort)
+            return HostInvitation(serviceName, controlListener.localPort, lanFingerprint)
         } catch (error: Exception) {
             onStatus("DIAG HOST_START_FAILED ${NetworkDiagnostics.exceptionDetails(error)}")
             onStatus("DIAG HOST_NETWORK_AT_FAILURE\n${NetworkDiagnostics.networkSnapshot(appContext)}")
