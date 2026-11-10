@@ -9,6 +9,8 @@ This JVM module is the Android app's optional client for the FastAPI coordinatio
 - Send Speaker heartbeat and coarse state updates.
 - Remove a Speaker or close a backend session.
 - Open the authenticated session WebSocket.
+- Manage connection lifecycle with bounded exponential reconnect and server-snapshot reconciliation.
+- Keep Speaker presence current through WebSocket heartbeats or REST fallback while reconnecting.
 - Send heartbeat, device-state, Host control-command and Speaker acknowledgement frames.
 - Receive typed event envelopes while retaining the JSON payload for forward-compatible event fields.
 
@@ -30,3 +32,10 @@ gradle -p android :app:assembleDebug :transport:check :backend:check
 ```
 
 MockWebServer contract tests cover session creation, join serialization, bearer-token placement, API conflict propagation, WebSocket first-frame authentication and Host command serialization.
+
+
+## Session lifecycle
+
+`BackendSessionCoordinator` owns one Host or Speaker WebSocket. It retries transient failures with bounded exponential backoff, stops retrying after terminal server close codes (session closed, device removed or invalid credentials), and forwards the `session.snapshot` sent after successful authentication so consumers can reconcile events missed during a disconnect. Speaker coordinators send WebSocket heartbeats while authenticated and use the REST heartbeat endpoint while reconnecting. Host presence is represented by its live WebSocket connection.
+
+The coordinator is still a library component; the launcher lifecycle is not yet connected to it. Consumers must close the coordinator when the local session ends. A backend disconnect must not stop the direct-LAN audio session.
