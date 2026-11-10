@@ -56,6 +56,7 @@ This can prevent Render's 15-minute inactivity spin-down while the monitor is ru
 | POST | `/api/v1/sessions/{id}/devices/me/heartbeat` | Refresh presence | Device bearer token |
 | PATCH | `/api/v1/sessions/{id}/devices/me/state` | Report coarse device state | Device bearer token |
 | DELETE | `/api/v1/sessions/{id}/devices/{device_id}` | Remove a device | Host bearer token |
+| DELETE | `/api/v1/sessions/{id}/devices/me` | Speaker leaves its own session | Speaker bearer token |
 | DELETE | `/api/v1/sessions/{id}` | Close session | Host bearer token |
 
 Tokens are generated with a cryptographically secure random source. Only SHA-256 token hashes are stored in SQLite; the raw Host/device token is returned once at creation/join. Device count is enforced transactionally and protocol-version mismatch is rejected.
