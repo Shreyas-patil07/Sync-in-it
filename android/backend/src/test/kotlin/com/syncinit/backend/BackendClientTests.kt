@@ -185,5 +185,6 @@ fun main() {
     joinSendsNormalizedCodeAndPlatform()
     hostAuthorizationAndConflictArePreserved()
     websocketAuthenticatesInFirstFrameAndSendsCommands()
-    println("Backend client contract tests passed.")
+    runBackendSessionCoordinatorTests()
+    println("Backend client and session coordinator contract tests passed.")
 }
