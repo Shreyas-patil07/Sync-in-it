@@ -393,3 +393,20 @@ These records consolidate decisions and open questions from [docs/System Structu
 6. Send bearer tokens only in HTTP Authorization headers or the first WebSocket authentication frame. Do not place them in URL paths, query strings or logs.
 
 **Consequences:** The app has a testable client contract for the optional backend, while the existing LAN audio path remains independent. UI and lifecycle integration are a separate follow-up and must preserve the offline path.
+
+## ADR-032 — Backend session lifecycle is isolated from the LAN session lifecycle
+
+**Status:** Accepted  
+**Date:** 10 November 2026
+
+**Context:** The optional Android backend client requires WebSocket reconnect and Speaker-presence behavior. Placing retries and scheduled heartbeats in the activity or direct Host/Speaker transport would couple the coordination service to local audio playback and complicate lifecycle handling.
+
+**Decision:**
+
+1. Keep backend WebSocket lifecycle in `BackendSessionCoordinator` inside the standalone `android/backend` module.
+2. Retry transient WebSocket failures with bounded exponential backoff. Treat server close codes for closed sessions, removed devices and invalid credentials as terminal.
+3. Use the server's authenticated `session.snapshot` as the reconciliation point after each successful connection. Do not assume missed presence events are replayed.
+4. Keep Speaker presence fresh through WebSocket heartbeat while connected and REST heartbeat fallback while reconnecting. Host presence remains tied to its WebSocket connection.
+5. Require the app to close the coordinator when its associated backend session ends. Coordinator failures must never close or pause the direct-LAN Host/Speaker session.
+
+**Consequences:** Retry policy and presence semantics are testable without Android UI. Backend availability remains optional and isolated from audio timing.
