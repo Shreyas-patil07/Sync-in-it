@@ -1156,3 +1156,12 @@ Post-merge main workflows passed: Android app/JNI [42487998775](https://github.c
 
 **Deployment status:** The HTTP foundation from merged PR #87 is live on Render and passed live create-session/join checks. PR #88 has not yet been merged, so its WebSocket endpoint is not yet present in the deployed service. Android and iOS integration remain future work.
 
+
+## Android backend coordination client — 10 November 2026
+
+- Added the standalone `android/backend` Kotlin/JVM module with typed REST methods for backend session creation/join, session and device snapshots, Speaker heartbeat/state, device removal and session closure.
+- Added an authenticated OkHttp WebSocket client. It sends the bearer token in the first WebSocket frame, exposes typed event envelopes, and supports heartbeat, device-state, Host command and Speaker acknowledgement messages.
+- Added MockWebServer contract tests for REST serialization, normalized join codes, authorization-header placement, HTTP conflict propagation, WebSocket authentication and Host command serialization.
+- Linked the module into the Android app and added `:backend:check` to the Android CI workflow.
+- Added ADR-031 to preserve the optional coordination-sidecar boundary. The client does not yet change the launcher or existing Host/Speaker lifecycle. PCM, precision clock measurements, READY, ANCHOR and presentation deadlines remain direct-LAN-only.
+
