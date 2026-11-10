@@ -59,6 +59,32 @@ def test_session_lifecycle_and_device_auth(tmp_path):
     ).status_code == 401
 
 
+def test_speaker_can_leave_own_session(tmp_path):
+    client = TestClient(create_app(tmp_path / "test.sqlite3"))
+    host = client.post("/api/v1/sessions", json={"max_speakers": 1}).json()
+    joined = client.post(
+        "/api/v1/sessions/join",
+        json={"join_code": host["join_code"], "device_name": "Speaker A"},
+    )
+    assert joined.status_code == 201
+    device = joined.json()
+    device_headers = {"Authorization": f"Bearer {device['device_token']}"}
+    host_headers = {"Authorization": f"Bearer {host['host_token']}"}
+    devices_url = f"/api/v1/sessions/{host['session_id']}/devices"
+
+    assert len(client.get(devices_url, headers=host_headers).json()["devices"]) == 1
+    left = client.delete(
+        f"/api/v1/sessions/{host['session_id']}/devices/me",
+        headers=device_headers,
+    )
+    assert left.status_code == 204
+    assert client.get(devices_url, headers=host_headers).json()["devices"] == []
+    assert client.delete(
+        f"/api/v1/sessions/{host['session_id']}/devices/me",
+        headers=device_headers,
+    ).status_code == 401
+
+
 def test_protocol_mismatch_and_capacity_are_rejected(tmp_path):
     client = TestClient(create_app(tmp_path / "test.sqlite3"))
     host = client.post(
