@@ -99,19 +99,19 @@ private fun hostAuthorizationAndConflictArePreserved() {
                 .build()
         )
         val token = "h".repeat(43)
-        var error: BackendApiException? = null
+        var apiError: BackendApiException? = null
         try {
             BackendApiClient(server.url("/").toString()).getSession("session-123", token)
         } catch (caught: BackendApiException) {
-            error = caught
+            apiError = caught
         }
         val request = server.takeRequest(3, TimeUnit.SECONDS)
             ?: error("session request was not received")
 
         expect(request.headers["Authorization"] == "Bearer $token", "host bearer token stays in the authorization header")
         expect(request.path == "/api/v1/sessions/session-123", "session path is correctly encoded")
-        expect(error?.statusCode == 409, "HTTP conflict status is preserved")
-        expect(error?.errorCode == "protocol_version_mismatch", "backend detail code is preserved")
+        expect(apiError?.statusCode == 409, "HTTP conflict status is preserved")
+        expect(apiError?.errorCode == "protocol_version_mismatch", "backend detail code is preserved")
     } finally {
         server.close()
     }
