@@ -75,7 +75,7 @@ jobs:
           ORG_GRADLE_PROJECT_previewStorePassword: ${{ secrets.SYNCINIT_PREVIEW_KEYSTORE_PASSWORD }}
           ORG_GRADLE_PROJECT_previewKeyPassword: ${{ secrets.SYNCINIT_PREVIEW_KEYSTORE_PASSWORD }}
           ORG_GRADLE_PROJECT_previewKeyAlias: syncinit-preview
-        run: gradle -p android :app:assembleDebug :transport:check --stacktrace
+        run: gradle -p android :app:assembleDebug :transport:check :backend:check --stacktrace
 
       - name: Verify preview APK signature
         if: success() && steps.preview_signing.outputs.enabled == 'true'
