@@ -2,8 +2,8 @@
 package com.syncinit.backend
 
 import com.google.gson.JsonParser
-import mockwebserver3.MockResponse
-import mockwebserver3.MockWebServer
+import okhttp3.mockwebserver.MockResponse
+import okhttp3.mockwebserver.MockWebServer
 import okhttp3.WebSocket
 import okhttp3.WebSocketListener
 import java.util.concurrent.ArrayBlockingQueue
@@ -19,7 +19,7 @@ private fun createSessionUsesExpectedContract() {
     server.start()
     try {
         server.enqueue(
-            MockResponse.Builder().code(201).body(
+            MockResponse().setResponseCode(201).setBody(
                 """
                 {
                   "session_id":"session-123",
@@ -33,14 +33,14 @@ private fun createSessionUsesExpectedContract() {
                   "expires_at":8200.0
                 }
                 """.trimIndent()
-            ).build()
+            )
         )
 
         val client = BackendApiClient(server.url("/").toString())
         val session = client.createSession(hostName = "Living room", maxSpeakers = 8)
         val request = server.takeRequest(3, TimeUnit.SECONDS)
             ?: error("create-session request was not received")
-        val body = JsonParser.parseString(request.body!!.utf8()).asJsonObject
+        val body = JsonParser.parseString(request.body!!.readUtf8()).asJsonObject
 
         expect(request.method == "POST", "session creation uses POST")
         expect(request.path == "/api/v1/sessions", "session creation uses the v1 endpoint")
@@ -49,7 +49,7 @@ private fun createSessionUsesExpectedContract() {
         expect(body.get("max_speakers").asInt == 8, "speaker limit is serialized")
         expect(session.joinCode == "ABCD2345", "session response is decoded")
     } finally {
-        server.close()
+        server.shutdown()
     }
 }
 
@@ -58,7 +58,7 @@ private fun joinSendsNormalizedCodeAndPlatform() {
     server.start()
     try {
         server.enqueue(
-            MockResponse.Builder().code(201).body(
+            MockResponse().setResponseCode(201).setBody(
                 """
                 {
                   "session_id":"session-123",
@@ -68,7 +68,7 @@ private fun joinSendsNormalizedCodeAndPlatform() {
                   "heartbeat_interval_seconds":5
                 }
                 """.trimIndent()
-            ).build()
+            )
         )
 
         val joined = BackendApiClient(server.url("/").toString()).joinSession(
@@ -94,9 +94,8 @@ private fun hostAuthorizationAndConflictArePreserved() {
     server.start()
     try {
         server.enqueue(
-            MockResponse.Builder().code(409)
-                .body("""{"detail":"protocol_version_mismatch"}""")
-                .build()
+            MockResponse().setResponseCode(409)
+                .setBody("""{"detail":"protocol_version_mismatch"}""")
         )
         val token = "h".repeat(43)
         var apiError: BackendApiException? = null
@@ -133,7 +132,7 @@ private fun websocketAuthenticatesInFirstFrameAndSendsCommands() {
     }
 
     try {
-        server.enqueue(MockResponse.Builder().webSocketUpgrade(serverListener).build())
+        server.enqueue(MockResponse().withWebSocketUpgrade(serverListener))
         val events = ArrayBlockingQueue<BackendEvent>(2)
         val failure = ArrayBlockingQueue<Throwable>(1)
         val token = "s".repeat(43)
