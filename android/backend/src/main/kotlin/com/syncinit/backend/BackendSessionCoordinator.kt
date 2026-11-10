@@ -110,10 +110,7 @@ class BackendSessionCoordinator(
         if (closed.get()) return
         val currentGeneration = generation.incrementAndGet()
         reconnectScheduled.set(false)
-        updateState(
-            if (reconnectAttempt.get() == 0) BackendConnectionState.CONNECTING
-            else BackendConnectionState.RECONNECT_WAIT
-        )
+        updateState(BackendConnectionState.CONNECTING)
 
         try {
             val next = api.openSessionEvents(
@@ -165,7 +162,7 @@ class BackendSessionCoordinator(
         connection.getAndSet(null)?.close()
         updateState(BackendConnectionState.RECONNECT_WAIT)
         val attempt = reconnectAttempt.getAndIncrement().coerceAtMost(MAX_BACKOFF_SHIFT)
-        val delay = (BASE_RECONNECT_DELAY_MS shl attempt).coerceAtMost(MAX_RECONNECT_DELAY_MS)
+        val delay = (BASE_RECONNECT_DELAY_MS * (1 shl attempt)).coerceAtMost(MAX_RECONNECT_DELAY_MS)
         scheduler.schedule({
             reconnectScheduled.set(false)
             if (!closed.get() && isCurrent(failedGeneration)) connect()
@@ -218,6 +215,6 @@ class BackendSessionCoordinator(
         const val BASE_RECONNECT_DELAY_MS = 1_000L
         const val MAX_RECONNECT_DELAY_MS = 30_000L
         const val MAX_BACKOFF_SHIFT = 5
-        val FATAL_CLOSE_CODES = setOf(4000, 4003, 4401)
+        val FATAL_CLOSE_CODES = setOf(4000, 4001, 4003, 4401)
     }
 }
