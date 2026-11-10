@@ -1165,3 +1165,12 @@ Post-merge main workflows passed: Android app/JNI [42487998775](https://github.c
 - Linked the module into the Android app and added `:backend:check` to the Android CI workflow.
 - Added ADR-031 to preserve the optional coordination-sidecar boundary. The client does not yet change the launcher or existing Host/Speaker lifecycle. PCM, precision clock measurements, READY, ANCHOR and presentation deadlines remain direct-LAN-only.
 
+
+## Backend lifecycle coordinator — 10 November 2026
+
+- Added `BackendSessionCoordinator` to own one Host or Speaker WebSocket lifecycle outside the Android activity.
+- Added bounded exponential reconnect for transient failures and terminal handling for session-closed, device-removed and invalid-credential close codes.
+- Added Speaker heartbeat scheduling: use the WebSocket when authenticated and REST heartbeat fallback while reconnecting.
+- Added MockWebServer tests for authenticated host snapshot reconciliation and Speaker REST heartbeat fallback.
+- Documented the lifecycle boundary in ADR-032. The app UI/Host/Speaker lifecycle is not yet wired to the coordinator; backend failures remain isolated from local playback.
+
