@@ -34,11 +34,24 @@ import com.syncinit.app.network.NetworkDiagnostics
 import com.syncinit.app.network.MasterSessionHost
 import com.syncinit.app.network.NearbySession
 import com.syncinit.app.network.ReceiverSessionClient
+import com.syncinit.app.network.HostInvitation
+import com.syncinit.backend.BackendApiClient
+import com.syncinit.backend.BackendConnectionState
+import com.syncinit.backend.BackendDeviceState
+import com.syncinit.backend.BackendEvent
+import com.syncinit.backend.BackendSessionCoordinator
+import com.syncinit.backend.BackendSessionCoordinatorListener
+import com.syncinit.backend.BackendSessionRole
+import com.google.mlkit.vision.barcode.common.Barcode
+import com.google.mlkit.vision.codescanner.GmsBarcodeScannerOptions
+import com.google.mlkit.vision.codescanner.GmsBarcodeScanning
 
 class MainActivity : Activity() {
     private lateinit var status: TextView
     private lateinit var foundationStatus: TextView
     private lateinit var hostDetails: TextView
+    private lateinit var hostJoinCodeDetails: TextView
+    private lateinit var hostQrImage: ImageView
     private lateinit var audioSelectionDetails: TextView
     private lateinit var discoveryStatus: TextView
     private lateinit var nearbySessionsContainer: LinearLayout
@@ -51,12 +64,32 @@ class MainActivity : Activity() {
         private const val REQUEST_PICK_AUDIO = 4103
         private const val REQUEST_CAPTURE_SYSTEM_AUDIO = 4104
         private const val REQUEST_RECORD_AUDIO_PERMISSION = 4105
+        private const val BACKEND_BASE_URL = "https://sync-in-it.onrender.com"
     }
+
+    private data class HostBackendSession(
+        val api: BackendApiClient,
+        val sessionId: String,
+        val joinCode: String,
+        val hostToken: String,
+        val coordinator: BackendSessionCoordinator
+    )
+
+    private data class SpeakerBackendSession(
+        val api: BackendApiClient,
+        val sessionId: String,
+        val deviceToken: String,
+        val coordinator: BackendSessionCoordinator
+    )
 
     @Volatile private var masterHost: MasterSessionHost? = null
     @Volatile private var receiverClient: ReceiverSessionClient? = null
     @Volatile private var hostServiceName: String? = null
     @Volatile private var nearbyBrowser: LanSessionBrowser? = null
+    @Volatile private var hostBackendSession: HostBackendSession? = null
+    @Volatile private var speakerBackendSession: SpeakerBackendSession? = null
+    @Volatile private var pendingQrInvite: BackendInvite? = null
+    @Volatile private var pendingBackendInvite: BackendInvite? = null
     @Volatile private var selectedAudioUri: Uri? = null
     @Volatile private var selectedAudioName: String? = null
     @Volatile private var selectedSystemAudio = false
@@ -217,14 +250,34 @@ class MainActivity : Activity() {
             background = insetBackground()
         }
         hostCard.addView(hostDetails)
+        hostJoinCodeDetails = TextView(this).apply {
+            text = "A QR invitation will appear when the backend session is ready."
+            textSize = 12f
+            setTextColor(Color.rgb(159, 174, 198))
+            setPadding(dp(4), dp(10), dp(4), dp(8))
+        }
+        hostCard.addView(hostJoinCodeDetails)
+        hostQrImage = ImageView(this).apply {
+            contentDescription = "Sync In It speaker invitation QR code"
+            scaleType = ImageView.ScaleType.FIT_CENTER
+            visibility = ImageView.GONE
+            setBackgroundColor(Color.WHITE)
+            setPadding(dp(8), dp(8), dp(8), dp(8))
+        }
+        hostCard.addView(hostQrImage, LinearLayout.LayoutParams(dp(248), dp(248)).apply {
+            gravity = Gravity.CENTER_HORIZONTAL
+            topMargin = dp(4)
+            bottomMargin = dp(6)
+        })
 
         val nearbyCard = sectionCard(
             parent = content,
             eyebrow = "02 / JOIN",
-            title = "Nearby sessions",
-            description = "Hosts on the same local network appear here. Select a session to connect this phone as a Speaker."
+            title = "Scan a Host QR code",
+            description = "Scan the Host's invitation, then connect both phones to the same Wi-Fi or hotspot. QR pairing handles coordination; audio stays on the local network."
         )
-        nearbyCard.addView(actionButton("Refresh nearby sessions") { scanNearbySessions() }, sectionMargins(top = 12, bottom = 8))
+        nearbyCard.addView(actionButton("Scan Host QR code") { scanHostQrCode() }, sectionMargins(top = 12, bottom = 7))
+        nearbyCard.addView(actionButton("Refresh nearby sessions") { scanNearbySessions() }, sectionMargins(bottom = 8))
         discoveryStatus = TextView(this).apply {
             text = "Searching when this screen is open…"
             textSize = 12f
@@ -477,21 +530,68 @@ class MainActivity : Activity() {
         Thread({
             try {
                 val invitation = service.start()
+                var backendState: HostBackendSession? = null
+                var qrBitmap: android.graphics.Bitmap? = null
+                var backendFailure: Exception? = null
+                try {
+                    val api = BackendApiClient(BACKEND_BASE_URL)
+                    val created = api.createSession(
+                        hostName = Build.MODEL.trim().take(48).ifBlank { "Android Host" },
+                        maxSpeakers = PreviewConfig.MAX_SPEAKERS
+                    )
+                    val coordinator = createBackendCoordinator(
+                        api = api,
+                        sessionId = created.sessionId,
+                        token = created.hostToken,
+                        role = BackendSessionRole.HOST,
+                        label = "Host"
+                    )
+                    backendState = HostBackendSession(
+                        api = api,
+                        sessionId = created.sessionId,
+                        joinCode = created.joinCode,
+                        hostToken = created.hostToken,
+                        coordinator = coordinator
+                    )
+                    coordinator.start()
+                    val payload = BackendInviteCodec.encode(
+                        BackendInvite(created.joinCode, invitation.lanFingerprint)
+                    )
+                    qrBitmap = BackendInviteQr.createBitmap(payload)
+                } catch (error: Exception) {
+                    backendFailure = error
+                    backendState?.let(::closeBackendHostState)
+                }
+
                 runOnUiThread {
                     if (isFinishing || isDestroyed || masterHost !== service) {
+                        backendState?.let(::closeBackendHostState)
                         service.close()
-                    } else {
-                        hostServiceName = invitation.serviceName
-                        val sourceDescription = when {
-                            useSystemAudio -> "Capturing eligible Android app playback"
-                            audioUri != null -> "Sharing local file: ${audioName ?: "selected audio"} (loops at end-of-file)"
-                            else -> "Diagnostic 1 kHz test signal"
-                        }
-                        hostDetails.text =
-                            "Visible as ${invitation.serviceName}\n$sourceDescription\nWaiting for up to ${PreviewConfig.MAX_SPEAKERS} Speakers."
-                        postStatus("Session created. Nearby phones can see this device and tap to join.")
-                        renderNearbySessions()
+                        return@runOnUiThread
                     }
+                    hostServiceName = invitation.serviceName
+                    hostBackendSession = backendState
+                    val sourceDescription = when {
+                        useSystemAudio -> "Capturing eligible Android app playback"
+                        audioUri != null -> "Sharing local file: ${audioName ?: "selected audio"} (loops at end-of-file)"
+                        else -> "Diagnostic 1 kHz test signal"
+                    }
+                    hostDetails.text =
+                        "Visible as ${invitation.serviceName}\n$sourceDescription\nWaiting for up to ${PreviewConfig.MAX_SPEAKERS} Speakers."
+                    if (backendState != null && qrBitmap != null) {
+                        hostJoinCodeDetails.text =
+                            "Backend join code: ${backendState.joinCode}\nScan this QR on each Speaker. Both devices must stay on the same local Wi-Fi."
+                        hostQrImage.setImageBitmap(qrBitmap)
+                        hostQrImage.visibility = ImageView.VISIBLE
+                        postStatus("Local Host started. Backend session connected; QR invitation is ready.")
+                    } else {
+                        hostJoinCodeDetails.text =
+                            "QR pairing unavailable: ${backendFailure?.message ?: "backend did not return an invitation"}. Nearby LAN join remains available."
+                        hostQrImage.setImageDrawable(null)
+                        hostQrImage.visibility = ImageView.GONE
+                        postStatus("Local Host started. Backend unavailable; use nearby discovery for this session.")
+                    }
+                    renderNearbySessions()
                 }
             } catch (error: Exception) {
                 if (masterHost === service) {
@@ -503,10 +603,16 @@ class MainActivity : Activity() {
         }, "syncinit-master-startup").apply { isDaemon = true }.start()
     }
 
-    private fun joinNearby(session: NearbySession) {
+    private fun joinNearby(session: NearbySession) = joinNearby(session, null)
+
+    private fun joinNearby(session: NearbySession, invite: BackendInvite?) {
         stopConnections()
         stopDiscovery()
-        appendDiagnostic("JOIN_TARGET", "service=${session.serviceName} host=${session.hostAddress} controlPort=${session.controlPort}")
+        pendingBackendInvite = invite
+        appendDiagnostic(
+            "JOIN_TARGET",
+            "service=${session.serviceName} host=${session.hostAddress} controlPort=${session.controlPort} qrInvite=${invite != null}"
+        )
         val client = ReceiverSessionClient(applicationContext, ::postStatus)
         receiverClient = client
         postStatus("Joining ${session.serviceName}…")
@@ -517,10 +623,189 @@ class MainActivity : Activity() {
                 controlPort = session.controlPort
             )
         } catch (error: Exception) {
+            pendingBackendInvite = null
             postStatus("Could not join: ${error.message ?: error.javaClass.simpleName}")
             client.close()
             receiverClient = null
         }
+    }
+
+    private fun scanHostQrCode() {
+        val options = GmsBarcodeScannerOptions.Builder()
+            .setBarcodeFormats(Barcode.FORMAT_QR_CODE)
+            .enableAutoZoom()
+            .build()
+        try {
+            GmsBarcodeScanning.getClient(this, options).startScan()
+                .addOnSuccessListener { barcode ->
+                    val invite = try {
+                        BackendInviteCodec.decode(barcode.rawValue.orEmpty())
+                    } catch (error: Exception) {
+                        postStatus("Invalid invitation QR: ${error.message ?: "unsupported code"}")
+                        return@addOnSuccessListener
+                    }
+                    pendingQrInvite = invite
+                    discoveryStatus.text = "QR accepted · finding the matching Host on this local network…"
+                    postStatus("QR invitation accepted. Looking for its Host over local Wi-Fi…")
+                    scanNearbySessions()
+                    nearbySessions.values.firstOrNull { matchesInvite(it, invite) }?.let {
+                        consumeQrInvite(it)
+                    }
+                }
+                .addOnCanceledListener {
+                    postStatus("QR scanning cancelled.")
+                }
+                .addOnFailureListener { error ->
+                    postStatus(
+                        "QR scanner unavailable: ${error.message ?: error.javaClass.simpleName}. " +
+                            "Check Google Play services and try again."
+                    )
+                    appendDiagnostic("QR_SCAN_FAILED", error.message ?: error.javaClass.simpleName)
+                }
+        } catch (error: Exception) {
+            postStatus("Could not start QR scanner: ${error.message ?: error.javaClass.simpleName}")
+        }
+    }
+
+    private fun matchesInvite(session: NearbySession, invite: BackendInvite): Boolean =
+        session.sessionToken.startsWith(invite.lanFingerprint, ignoreCase = true)
+
+    private fun consumeQrInvite(session: NearbySession) {
+        val invite = pendingQrInvite ?: return
+        if (!matchesInvite(session, invite)) return
+        pendingQrInvite = null
+        postStatus("QR matched ${session.serviceName}. Opening the direct LAN audio connection…")
+        joinNearby(session, invite)
+    }
+
+    private fun beginBackendSpeakerJoin(localClient: ReceiverSessionClient) {
+        val invite = pendingBackendInvite ?: return
+        pendingBackendInvite = null
+        Thread({
+            var api: BackendApiClient? = null
+            var joinedSessionId: String? = null
+            var joinedDeviceToken: String? = null
+            var coordinator: BackendSessionCoordinator? = null
+            try {
+                api = BackendApiClient(BACKEND_BASE_URL)
+                val joined = api.joinSession(
+                    joinCode = invite.joinCode,
+                    deviceName = Build.MODEL.trim().take(48).ifBlank { "Android Speaker" }
+                )
+                joinedSessionId = joined.sessionId
+                joinedDeviceToken = joined.deviceToken
+                runCatching {
+                    api.updateDeviceState(
+                        joined.sessionId,
+                        joined.deviceToken,
+                        BackendDeviceState.SYNCING,
+                        "Direct LAN media connection established"
+                    )
+                }
+                coordinator = createBackendCoordinator(
+                    api = api,
+                    sessionId = joined.sessionId,
+                    token = joined.deviceToken,
+                    role = BackendSessionRole.SPEAKER,
+                    label = "Speaker"
+                )
+                if (receiverClient !== localClient || isFinishing || isDestroyed) {
+                    coordinator.close()
+                    api.leaveSession(joined.sessionId, joined.deviceToken)
+                    return@Thread
+                }
+                val speakerState = SpeakerBackendSession(
+                    api = api,
+                    sessionId = joined.sessionId,
+                    deviceToken = joined.deviceToken,
+                    coordinator = coordinator
+                )
+                speakerBackendSession = speakerState
+                coordinator.start()
+                appendDiagnostic("BACKEND_SPEAKER_JOINED", "sessionId=${joined.sessionId} deviceId=${joined.deviceId}")
+                postStatus("Speaker joined backend coordination; WebSocket connection starting.")
+            } catch (error: Exception) {
+                coordinator?.close()
+                if (api != null && joinedSessionId != null && joinedDeviceToken != null) {
+                    runCatching { api.leaveSession(joinedSessionId, joinedDeviceToken) }
+                }
+                if (receiverClient === localClient) {
+                    postStatus(
+                        "Local audio connection is active, but backend QR coordination failed: " +
+                            "${error.message ?: error.javaClass.simpleName}"
+                    )
+                }
+                appendDiagnostic("BACKEND_SPEAKER_JOIN_FAILED", error.message ?: error.javaClass.simpleName)
+            }
+        }, "syncinit-backend-speaker-join").apply { isDaemon = true }.start()
+    }
+
+    private fun createBackendCoordinator(
+        api: BackendApiClient,
+        sessionId: String,
+        token: String,
+        role: BackendSessionRole,
+        label: String
+    ): BackendSessionCoordinator = BackendSessionCoordinator(
+        api = api,
+        sessionId = sessionId,
+        bearerToken = token,
+        role = role,
+        listener = object : BackendSessionCoordinatorListener {
+            override fun onConnectionStateChanged(state: BackendConnectionState) {
+                if (state == BackendConnectionState.CONNECTED) {
+                    postStatus("$label backend connected.")
+                } else if (state == BackendConnectionState.RECONNECT_WAIT ||
+                    state == BackendConnectionState.FAILED
+                ) {
+                    postStatus("$label backend connection: ${state.name.lowercase()}.")
+                }
+                appendDiagnostic("BACKEND_STATE", "$label ${state.name}")
+            }
+
+            override fun onEvent(event: BackendEvent) {
+                appendDiagnostic("BACKEND_EVENT", "$label ${event.type}")
+                if (event.type == "session.snapshot") {
+                    postStatus("$label backend session snapshot received.")
+                }
+            }
+
+            override fun onFailure(error: Throwable) {
+                appendDiagnostic(
+                    "BACKEND_FAILURE",
+                    "$label ${error.message ?: error.javaClass.simpleName}"
+                )
+            }
+        }
+    )
+
+    private fun closeBackendHostState(session: HostBackendSession) {
+        session.coordinator.close()
+        runCatching { session.api.closeSession(session.sessionId, session.hostToken) }
+    }
+
+    private fun stopBackendHostSession() {
+        val session = hostBackendSession ?: return
+        hostBackendSession = null
+        Thread({
+            closeBackendHostState(session)
+        }, "syncinit-backend-host-close").apply { isDaemon = true }.start()
+        if (::hostQrImage.isInitialized) {
+            hostQrImage.setImageDrawable(null)
+            hostQrImage.visibility = ImageView.GONE
+        }
+        if (::hostJoinCodeDetails.isInitialized) {
+            hostJoinCodeDetails.text = "A QR invitation will appear when the backend session is ready."
+        }
+    }
+
+    private fun stopBackendSpeakerSession() {
+        val session = speakerBackendSession ?: return
+        speakerBackendSession = null
+        Thread({
+            runCatching { session.api.leaveSession(session.sessionId, session.deviceToken) }
+            session.coordinator.close()
+        }, "syncinit-backend-speaker-leave").apply { isDaemon = true }.start()
     }
 
     private fun scanNearbySessions() {
@@ -538,6 +823,9 @@ class MainActivity : Activity() {
                         nearbySessions[session.serviceName] = session
                         appendDiagnostic("NSD_SESSION", "resolved service=${session.serviceName} endpoint=${session.hostAddress}:${session.controlPort}")
                         renderNearbySessions()
+                        pendingQrInvite?.let { invite ->
+                            if (matchesInvite(session, invite)) consumeQrInvite(session)
+                        }
                     }
                 },
                 onSessionLost = { serviceName ->
@@ -608,6 +896,10 @@ class MainActivity : Activity() {
         masterHost = null
         receiverClient?.close()
         receiverClient = null
+        pendingQrInvite = null
+        pendingBackendInvite = null
+        stopBackendHostSession()
+        stopBackendSpeakerSession()
         if (stopCapture && selectedSystemAudio) {
             stopSystemAudioCapture("session-stopped")
             if (::audioSelectionDetails.isInitialized && selectedAudioUri == null) {
@@ -616,6 +908,13 @@ class MainActivity : Activity() {
         }
         hostServiceName = null
         if (::hostDetails.isInitialized) hostDetails.text = "You are not hosting a session."
+        if (::hostQrImage.isInitialized) {
+            hostQrImage.setImageDrawable(null)
+            hostQrImage.visibility = ImageView.GONE
+        }
+        if (::hostJoinCodeDetails.isInitialized) {
+            hostJoinCodeDetails.text = "A QR invitation will appear when the backend session is ready."
+        }
         if (::status.isInitialized) status.text = "Disconnected."
         if (::nearbySessionsContainer.isInitialized) renderNearbySessions()
     }
@@ -625,6 +924,22 @@ class MainActivity : Activity() {
             if (isFinishing || isDestroyed || !::status.isInitialized) return@runOnUiThread
             status.text = message
             appendDiagnostic("STATUS", message)
+
+            if (message.startsWith("TCP control and ") && receiverClient != null) {
+                beginBackendSpeakerJoin(requireNotNull(receiverClient))
+            }
+            if (message.startsWith("Join failed:")) {
+                pendingBackendInvite = null
+                receiverClient = null
+                stopBackendSpeakerSession()
+            }
+            if (message.startsWith("Control channel failed:") ||
+                message.startsWith("Audio receiver failed:")
+            ) {
+                receiverClient = null
+                pendingBackendInvite = null
+                stopBackendSpeakerSession()
+            }
 
             if (::hostDetails.isInitialized && masterHost != null &&
                 (message.startsWith("Speaker connected") ||
@@ -639,6 +954,7 @@ class MainActivity : Activity() {
                 message.startsWith("Admitted receiver disconnected:")
             if (hostEnded && masterHost != null) {
                 masterHost = null
+                stopBackendHostSession()
                 if (selectedSystemAudio) stopSystemAudioCapture("host-session-ended")
                 if (::hostDetails.isInitialized) {
                     hostDetails.text = "Host session ended. Tap Start hosting to advertise again."
