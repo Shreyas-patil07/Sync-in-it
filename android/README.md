@@ -115,18 +115,23 @@ This is software-level scheduling on Android monotonic clocks. A call to `AudioT
 
 The native handle registry protects lifetime across JNI calls, and each session is serialized by its own mutex. Do not expose raw native handles to UI code. Keep JNI calls and socket I/O off the audio callback.
 
-## Nearby host discovery and join
+## QR Host invitation and nearby LAN connection
 
-The launcher uses Android `NsdManager` (DNS-SD/mDNS) with service type `_syncinit._tcp.`:
+The launcher uses Android's Google Play services code scanner for QR input, ZXing for QR generation, and Android `NsdManager` (DNS-SD/mDNS) with service type `_syncinit._tcp.` to locate the actual local Host:
 
-1. Connect both phones to the same private Wi-Fi network. The access point must allow client-to-client traffic and mDNS/multicast; guest networks with client isolation commonly block this.
-2. On the master phone, tap **Start hosting**. The app binds TCP control port 47800, opens the separate audio listener, creates a random session token, and advertises a named Sync In It service on the LAN.
-3. On the receiver phone, open the app and use **Nearby sessions**. Discovered hosts appear as rows. Tap a host to join; the app resolves its address/port and performs the existing HELLO → WELCOME → AUDIO_HELLO handshake automatically.
-4. The receiver then starts the existing UDP clock-acquisition loop. No IP address or token needs to be typed or copied manually.
+1. Connect both phones to the same private Wi-Fi network or phone hotspot. The access point must allow client-to-client traffic and mDNS/multicast; guest networks with client isolation commonly block this.
+2. On the Host phone, tap **Start hosting**. The app starts the existing local TCP/UDP session, creates an optional backend coordination session, and displays a QR invitation when the backend is reachable.
+3. On each Speaker, tap **Scan Host QR code** and scan the Host's QR. The app validates the invitation and searches the local network for the matching Host fingerprint.
+4. After the matching Host is resolved, the Speaker performs the existing HELLO → WELCOME → AUDIO_HELLO TCP admission and starts the existing UDP clock-acquisition loop. The Speaker then joins the backend coordination session using the QR's eight-character join code.
+5. The backend coordinator maintains Host/Speaker WebSocket presence, snapshot reconciliation and Speaker heartbeats. Disconnecting a Speaker removes its backend membership.
 
-The Android NSD browser holds a Wi-Fi multicast lock only while scanning, for compatibility with older Android Wi-Fi stacks. The app declares `CHANGE_WIFI_MULTICAST_STATE` for this purpose. Discovery is local-network-only; it is not internet-wide discovery and does not use a cloud rendezvous service.
+The QR payload contains the backend join code and an eight-character non-secret fingerprint of the Host's local session. It does **not** contain Host or Speaker bearer tokens. The full local admission token continues to be delivered only through the existing DNS-SD TXT record on the local network. The join code is an admission code; do not post the QR publicly. Backend sessions currently expire after two hours.
 
-**Prototype security limitation:** the 16-byte session token is currently included in the DNS-SD TXT record so a receiver can join with one tap. Any device on the same LAN that browses the service can read that token. The token is only an admission credential, not encryption or peer authentication. Use a trusted private Wi-Fi network; replace this with host approval or a short-lived pairing exchange before a production/public release.
+**Important architecture boundary:** QR pairing does not make audio work across the internet. Both phones must still be on the same reachable LAN because PCM/audio, clock probes, READY and ANCHOR remain on the direct Host/Speaker channels. The backend is an optional coordination sidecar, not a media relay. If backend creation fails, local nearby discovery remains available; if mDNS/client-to-client traffic is blocked, QR matching cannot complete.
+
+The Android NSD browser holds a Wi-Fi multicast lock only while scanning, for compatibility with older Android Wi-Fi stacks. The app declares `CHANGE_WIFI_MULTICAST_STATE` for this purpose. Google Play services Code Scanner does not require the app to request camera permission; its scanner UI is provided by Play services. Devices without a working Google Play services scanner cannot use the in-app QR scan flow.
+
+**Prototype security limitation:** the 16-byte local session token remains included in the DNS-SD TXT record so a receiver can join with one tap. Any device on the same LAN that browses the service can read that token. The token is an admission credential, not encryption or peer authentication. Use a trusted private Wi-Fi network.
 
 ## Current scope and limitations
 

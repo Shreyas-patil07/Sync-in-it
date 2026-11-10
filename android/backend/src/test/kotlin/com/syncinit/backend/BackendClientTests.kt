@@ -89,6 +89,30 @@ private fun joinSendsNormalizedCodeAndPlatform() {
     }
 }
 
+private fun speakerCanLeaveItsOwnBackendSession() {
+    val server = MockWebServer()
+    server.start()
+    try {
+        server.enqueue(MockResponse().setResponseCode(204))
+        val token = "d".repeat(43)
+        BackendApiClient(server.url("/").toString()).leaveSession("session-123", token)
+        val request = server.takeRequest(3, TimeUnit.SECONDS)
+            ?: error("speaker leave request was not received")
+
+        expect(request.method == "DELETE", "speaker leave uses DELETE")
+        expect(
+            request.path == "/api/v1/sessions/session-123/devices/me",
+            "speaker leave targets only the authenticated device"
+        )
+        expect(
+            request.headers["Authorization"] == "Bearer $token",
+            "speaker token stays in the authorization header"
+        )
+    } finally {
+        server.shutdown()
+    }
+}
+
 private fun hostAuthorizationAndConflictArePreserved() {
     val server = MockWebServer()
     server.start()
@@ -184,6 +208,7 @@ fun main() {
     createSessionUsesExpectedContract()
     joinSendsNormalizedCodeAndPlatform()
     hostAuthorizationAndConflictArePreserved()
+    speakerCanLeaveItsOwnBackendSession()
     websocketAuthenticatesInFirstFrameAndSendsCommands()
     runBackendSessionCoordinatorTests()
     println("Backend client and session coordinator contract tests passed.")

@@ -125,4 +125,6 @@ tasks.configureEach {
 dependencies {
     implementation(project(":transport"))
     implementation(project(":backend"))
+    implementation("com.google.zxing:core:3.5.4")
+    implementation("com.google.android.gms:play-services-code-scanner:16.1.0")
 }

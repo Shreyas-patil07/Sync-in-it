@@ -166,6 +166,12 @@ class BackendApiClient(
         )
     }
 
+    fun leaveSession(sessionId: String, deviceToken: String) {
+        executeNoContent(
+            authorizedRequest("DELETE", sessionPath(sessionId, "devices", "me"), deviceToken)
+        )
+    }
+
     fun closeSession(sessionId: String, hostToken: String) {
         executeNoContent(
             authorizedRequest("DELETE", sessionPath(sessionId), hostToken)
