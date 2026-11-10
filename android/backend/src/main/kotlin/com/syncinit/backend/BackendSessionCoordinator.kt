@@ -86,12 +86,12 @@ class BackendSessionCoordinator(
         targetDeviceIds: List<String>? = null,
         commandId: String? = null
     ): Boolean {
-        if (role != BackendSessionRole.HOST) return false
+        if (role != BackendSessionRole.HOST || state.get() != BackendConnectionState.CONNECTED) return false
         return connection.get()?.sendControlCommand(command, targetDeviceIds, commandId) == true
     }
 
     fun updateSpeakerState(state: BackendDeviceState, detail: String? = null): Boolean {
-        if (role != BackendSessionRole.SPEAKER) return false
+        if (role != BackendSessionRole.SPEAKER || this.state.get() != BackendConnectionState.CONNECTED) return false
         return connection.get()?.updateState(state, detail) == true
     }
 
@@ -100,7 +100,7 @@ class BackendSessionCoordinator(
         accepted: Boolean,
         detail: String? = null
     ): Boolean {
-        if (role != BackendSessionRole.SPEAKER) return false
+        if (role != BackendSessionRole.SPEAKER || state.get() != BackendConnectionState.CONNECTED) return false
         return connection.get()?.acknowledgeCommand(commandId, accepted, detail) == true
     }
 
@@ -143,7 +143,10 @@ class BackendSessionCoordinator(
                     }
                 }
             )
-            if (isCurrent(currentGeneration)) {
+            if (isCurrent(currentGeneration) &&
+                !reconnectScheduled.get() &&
+                state.get() != BackendConnectionState.FAILED
+            ) {
                 connection.getAndSet(next)?.close()
             } else {
                 next.close()
@@ -170,7 +173,9 @@ class BackendSessionCoordinator(
     }
 
     private fun sendHeartbeat() {
-        if (closed.get() || role != BackendSessionRole.SPEAKER) return
+        if (closed.get() || role != BackendSessionRole.SPEAKER ||
+            state.get() == BackendConnectionState.FAILED
+        ) return
         val activeConnection = connection.get()
         if (state.get() == BackendConnectionState.CONNECTED &&
             activeConnection?.heartbeat() == true
