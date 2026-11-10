@@ -34,7 +34,6 @@ import com.syncinit.app.network.NetworkDiagnostics
 import com.syncinit.app.network.MasterSessionHost
 import com.syncinit.app.network.NearbySession
 import com.syncinit.app.network.ReceiverSessionClient
-import com.syncinit.app.network.HostInvitation
 import com.syncinit.backend.BackendApiClient
 import com.syncinit.backend.BackendConnectionState
 import com.syncinit.backend.BackendDeviceState
@@ -565,7 +564,11 @@ class MainActivity : Activity() {
 
                 runOnUiThread {
                     if (isFinishing || isDestroyed || masterHost !== service) {
-                        backendState?.let(::closeBackendHostState)
+                        backendState?.let { staleState ->
+                            Thread({
+                                closeBackendHostState(staleState)
+                            }, "syncinit-backend-stale-host-cleanup").apply { isDaemon = true }.start()
+                        }
                         service.close()
                         return@runOnUiThread
                     }
