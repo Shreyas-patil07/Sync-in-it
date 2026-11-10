@@ -124,4 +124,5 @@ tasks.configureEach {
 
 dependencies {
     implementation(project(":transport"))
+    implementation(project(":backend"))
 }
