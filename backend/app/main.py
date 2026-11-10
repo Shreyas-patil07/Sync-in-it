@@ -624,6 +624,29 @@ def create_app(database_path: str | Path | None = None) -> FastAPI:
         )
         return None
 
+    @app.delete("/api/v1/sessions/{session_id}/devices/me", status_code=204)
+    async def leave_session(session_id: str, device=Depends(require_device)):
+        device_id = device["id"]
+        with database.connect() as db:
+            cursor = db.execute(
+                "DELETE FROM devices WHERE session_id = ? AND id = ?",
+                (session_id, device_id),
+            )
+        if cursor.rowcount == 0:
+            raise HTTPException(status_code=404, detail="device_not_found")
+        await manager.close_device(
+            session_id, device_id, {"type": "device.left", "device_id": device_id}
+        )
+        await manager.send_host(
+            session_id,
+            {
+                "type": "device.disconnected",
+                "device_id": device_id,
+                "occurred_at": time.time(),
+            },
+        )
+        return None
+
     @app.delete("/api/v1/sessions/{session_id}/devices/{device_id}", status_code=204)
     async def remove_device(session_id: str, device_id: str, host=Depends(require_host)):
         with database.connect() as db:
