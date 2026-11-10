@@ -20,4 +20,4 @@ dependencyResolutionManagement {
 }
 
 rootProject.name = "sync-in-it-android"
-include(":app", ":transport")
+include(":app", ":transport", ":backend")
