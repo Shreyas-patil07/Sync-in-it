@@ -126,6 +126,6 @@ class BackendHostMediaConnection internal constructor(
 
     private companion object {
         const val PCM_CHUNK_BYTES = 3_840
-        const val MAX_QUEUED_BYTES = 4L * 1024L * 1024L
+        const val MAX_QUEUED_BYTES = 38_400L
     }
 }
