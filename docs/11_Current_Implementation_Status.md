@@ -1,62 +1,63 @@
 # Current Implementation Status — Sync In It
 
-**Status date:** 11 November 2026  
-**Main branch:** aa703533d833f5038f7b57cf8e73de639dfa314d  
-**Latest published release:** v0.8.0 — still uses direct LAN media and optional backend coordination  
-**Active cloud migration branch:** feature/livekit-cloud-audio-transport  
-**Cloud branch head at review:** ade01a852c3193c16311c1761905d949d72d9f97  
-**Merge/release state:** not merged; no v0.9.0 APK has been published.
+**Status date:** 12 November 2026  
+**Main branch commit:** `9f46f905ada3fe654aeec1053c1e620034e63d67`  
+**Latest published APK:** v0.8.0 — previous direct-LAN implementation  
+**Current main architecture:** Render FastAPI session/authentication API + LiveKit Cloud SFU + LiveKit Android SDK  
+**Cloud migration:** merged through [PR #94](https://github.com/Shreyas-patil07/Sync-in-it/pull/94)  
+**v0.9.0 release state:** not published; stable release is blocked by missing synchronization and live integration/device evidence. A separate production signing/publishing lane is being prepared off-main and still requires review, merge and production secrets.
 
-This document distinguishes the released main branch from the cloud migration branch. The cloud migration is a replacement architecture, not a patch to the v0.8.0 release. The published v0.8.0 app still uses local NSD/mDNS discovery and direct TCP/UDP media. The feature branch removes those paths and uses a Render backend plus LiveKit Cloud.
+## Current implementation summary
 
-## Executive summary — cloud migration branch
+The cloud transport implementation is now on `main`. Host Android creates a backend session, opens an authenticated WebSocket to the Render media ingress and sends 48 kHz stereo PCM16 frames in 20 ms packets. The FastAPI backend publishes those frames through its Python LiveKit RTC publisher into a LiveKit Cloud room. Speaker Android devices join through QR-issued, role-scoped credentials and subscribe over WebRTC.
 
-The branch implements this cloud transport path:
+Phones no longer need to share a Wi-Fi network. The Host QR contains the session ID and join code only; backend bearer tokens and the LiveKit API secret are not embedded in the QR payload.
 
-1. Host creates a FastAPI session and receives an eight-character join code.
-2. Host starts an authenticated WebSocket to Render and waits for the LiveKit publisher to become ready.
-3. Host displays a QR invitation containing only session_id and join_code.
-4. Speaker scans the QR, joins the backend session and receives a role-scoped LiveKit token.
-5. Host sends 48 kHz stereo PCM16 frames (960 frames / 20 ms) to the Render media ingress.
-6. The Python LiveKit RTC publisher sends those frames into the session's LiveKit room.
-7. Speakers subscribe to the room through the LiveKit Android SDK.
+## Critical product limitation — synchronization is absent
 
-No same-Wi-Fi requirement, NSD/mDNS discovery, LAN fingerprint or direct Host-to-Speaker TCP/UDP connection is used on this branch. Backend bearer tokens and the LiveKit API secret are not part of the QR payload.
+**The current cloud implementation must not be described as synchronized multi-phone playback.** It removes the former native sample-indexed PCM jitter buffer, four-timestamp clock estimator, strict clock-readiness gate, READY/common ANCHOR protocol and custom AudioTrack playout scheduler. Speakers use standard LiveKit/WebRTC remote-audio playout.
 
-## Critical synchronization gap
+Shared clock mapping, timestamped playout scheduling, drift correction, output-latency compensation and acoustic calibration are not implemented or measured in this architecture. A QR join, room connection or PCM frame count does not prove synchronized audible output.
 
-**Cloud audio transport must not be described as synchronized multi-phone playback.** This branch removes the previous Android native timing pipeline, including the sample-indexed PCM jitter buffer, four-timestamp clock estimator, strict clock-readiness gate, READY/ANCHOR group-start protocol and custom AudioTrack playout scheduler. Speakers currently use standard LiveKit/WebRTC remote-audio playout.
-
-The cloud branch therefore provides a media-delivery architecture, not the original sample-accurate synchronized speaker behavior. It has no implemented shared clock mapping, timestamped playout scheduling, drift correction, per-device output-latency compensation or acoustic calibration. A WebRTC room connection or received PCM frame count does not establish synchronized audible output.
-
-Do not merge as a completed product replacement or publish a release claiming synchronization until that gap is resolved and measured. Treat this branch as an engineering transport prototype.
-
-## Validation and workflow state at review
+## Current deployment and validation evidence
 
 | Area | Observed state |
 |---|---|
-| Latest main release | v0.8.0; legacy direct-LAN media |
-| Cloud branch integration | QR v2, backend session, LiveKit token issuance, Host PCM WSS ingress and Speaker LiveKit room code present |
-| M0 simulator/native core | A run on an earlier cloud-branch commit passed all three Python versions and C++17; latest-head run was queued at review |
-| Backend API matrix | Earlier run failed because livekit-api was missing; the dependency was added on a later commit, but the latest-head matrix had not yet completed |
-| Android build | Latest-head job was queued at review |
-| Live Render + LiveKit integration | Not verified in this repository review |
-| Physical two-network audio | Not tested / not evidenced |
-| Synchronized acoustic output | Not implemented or validated on the cloud branch |
+| Main integration | Cloud transport merged at `9f46f905` through PR #94 |
+| Render deployment | Build and deploy for the main commit succeeded; service status was `live` |
+| Render process health | Observed `HEAD /healthz` requests returned HTTP 200; this proves process liveness only |
+| Android app/JNI CI | Queued at latest audit; no passing result available |
+| Backend API CI | Queued at latest audit; no passing result available |
+| Kotlin transport CI | Queued at latest audit; no passing result available |
+| M0 simulator/native CI | Queued at latest audit; no passing result available |
+| Live Render + LiveKit media | Not verified end-to-end |
+| Physical cross-network Speaker playback | Not evidenced |
+| Acoustic synchronization | Not implemented in the cloud architecture |
+| Stable Android APK | Not available on main; release-prep branch adds a separate production-signed lane, pending review, merge and production secrets |
 
-CI on this branch previously generated a large queue because the M0 workflow ran on every push and the feature was committed repeatedly. The workflow changes in this PR scope M0 push runs to main, add PR path filters and use per-branch concurrency cancellation so future pushes do not enqueue an unbounded matrix.
+## Backend and deployment limitations
 
-## Cloud service configuration
+The Render backend requires `LIVEKIT_URL`, `LIVEKIT_API_KEY` and `LIVEKIT_API_SECRET`. The API secret must remain backend-only. Successful FastAPI health checks do not prove that credentials are valid or that token issuance, Host PCM publishing and Speaker subscription work.
 
-The Render backend requires LIVEKIT_URL, LIVEKIT_API_KEY and LIVEKIT_API_SECRET. Keep the API secret on the backend. The Android app calls the Render service and receives only a role-scoped short-lived LiveKit participant token. A masked screenshot confirms only the variable names, not the correctness of their values.
+Render Free SQLite storage is ephemeral. Active WebSocket connections and LiveKit publisher objects are process-local. A Render instance restart interrupts active sessions; durable persistence and multi-instance coordination are not implemented.
 
-Render Free SQLite storage is ephemeral, and active WebSocket/publisher state is in process memory. Restarts terminate active sessions; persistence and multi-instance coordination are not implemented.
+## v0.9.0 release gate
 
-## Historical implementation records
+The detailed checklist is [v0.9.0 Stable Release Readiness](Release_Readiness_v0.9.0.md). Stable publication is currently a **NO-GO** because:
 
-The remaining sections in this file are retained as engineering history for the pre-cloud LAN implementation. They document the earlier TCP/UDP timing engine, physical test evidence, design decisions and diagnostics. They are not descriptions of the active cloud-migration branch.
+- Latest-head GitHub Actions were queued at the time of audit.
+- Real LiveKit credentials/token/publish/subscribe behavior has not been demonstrated.
+- Physical two-phone playback across separate networks has not been evidenced.
+- The cloud architecture no longer implements the original synchronized-speaker behavior.
+- The publisher on `main` still builds `:app:assembleDebug`, signs with the preview key and always creates a prerelease. This release-preparation branch adds a gated production-signed `:app:assembleRelease` lane; it remains pending review, merge, production secrets and CI validation.
 
-## Media sources — local files and Android system playback capture
+Do not publish a stable release or claim synchronized output until the relevant gates are completed and evidence is recorded.
+
+## Archived LAN implementation record
+
+The remainder of this document is retained as historical engineering context for the pre-cloud LAN implementation. Its TCP/UDP transport, clock estimation, READY/ANCHOR protocol, PCM ring buffer, playback capture and synchronization details do not describe the current cloud implementation on `main`.
+
+## Archived LAN implementation record — media sources
 
 The main branch includes two user-media sources behind the existing PCM16/TCP transport:
 

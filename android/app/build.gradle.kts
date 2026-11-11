@@ -1,4 +1,5 @@
 // SPDX-License-Identifier: Apache-2.0
+import org.gradle.api.GradleException
 import org.gradle.api.tasks.Copy
 
 plugins {
@@ -23,6 +24,17 @@ val previewSigningEnabled = listOf(
     previewKeyPassword
 ).all { !it.isNullOrBlank() } && file(previewKeystorePath!!).isFile
 
+val releaseKeystorePath = providers.gradleProperty("releaseKeystorePath").orNull
+val releaseStorePassword = providers.gradleProperty("releaseStorePassword").orNull
+val releaseKeyAlias = providers.gradleProperty("releaseKeyAlias").orNull
+val releaseKeyPassword = providers.gradleProperty("releaseKeyPassword").orNull
+val releaseSigningEnabled = listOf(
+    releaseKeystorePath,
+    releaseStorePassword,
+    releaseKeyAlias,
+    releaseKeyPassword
+).all { !it.isNullOrBlank() } && file(releaseKeystorePath!!).isFile
+
 val requestedVersionCode = providers.gradleProperty("syncinitVersionCode")
     .orNull
     ?.toIntOrNull()
@@ -35,6 +47,17 @@ val requestedVersionName = providers.gradleProperty("syncinitVersionName")
 
 require(requestedVersionCode in 1..2_100_000_000) {
     "syncinitVersionCode must be between 1 and 2100000000"
+}
+
+val verifyStableReleaseSigning = tasks.register("verifyStableReleaseSigning") {
+    doLast {
+        if (!releaseSigningEnabled) {
+            throw GradleException(
+                "Stable release builds require a dedicated production keystore. " +
+                    "Set releaseKeystorePath, releaseStorePassword, releaseKeyAlias and releaseKeyPassword."
+            )
+        }
+    }
 }
 
 android {
@@ -64,6 +87,15 @@ android {
                 storeType = "JKS"
             }
         }
+        if (releaseSigningEnabled) {
+            create("production") {
+                storeFile = file(releaseKeystorePath!!)
+                storePassword = releaseStorePassword
+                keyAlias = releaseKeyAlias
+                keyPassword = releaseKeyPassword
+                storeType = "JKS"
+            }
+        }
     }
 
     buildTypes {
@@ -77,8 +109,9 @@ android {
         }
         release {
             isMinifyEnabled = false
-            if (previewSigningEnabled) {
-                signingConfig = signingConfigs.getByName("preview")
+            // A stable build must never fall back to the preview signing certificate.
+            if (releaseSigningEnabled) {
+                signingConfig = signingConfigs.getByName("production")
             }
         }
     }
@@ -91,11 +124,11 @@ android {
     kotlinOptions {
         jvmTarget = "17"
     }
-
 }
 
 tasks.configureEach {
     if (name == "preBuild") dependsOn(generateBrandResources)
+    if (name == "preReleaseBuild") dependsOn(verifyStableReleaseSigning)
 }
 
 dependencies {
