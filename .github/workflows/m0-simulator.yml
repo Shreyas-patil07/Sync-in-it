@@ -25,6 +25,7 @@ jobs:
   simulator-and-core:
     name: Python ${{ matrix.python-version }} + C++17
     runs-on: ubuntu-latest
+    timeout-minutes: 25
     strategy:
       fail-fast: false
       matrix:

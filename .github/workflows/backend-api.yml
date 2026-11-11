@@ -3,6 +3,7 @@ name: Backend API
 
 on:
   push:
+    branches: [main]
     paths:
       - "backend/**"
       - "android/app/build.gradle.kts"
@@ -26,6 +27,7 @@ concurrency:
 jobs:
   test:
     runs-on: ubuntu-latest
+    timeout-minutes: 15
     strategy:
       fail-fast: false
       matrix:
