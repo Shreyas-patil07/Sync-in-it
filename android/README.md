@@ -79,7 +79,7 @@ Updateable preview APKs use application ID `com.syncinit.app.debug`. To install 
 - `SYNCINIT_PREVIEW_KEYSTORE_BASE64`
 - `SYNCINIT_PREVIEW_KEYSTORE_PASSWORD`
 
-The current release publisher builds `:app:assembleDebug`, signs with the preview key and always marks the GitHub release as a prerelease. This is **not** a production stable-release pipeline. A stable Android release needs a separately configured production signing key, a signed `release` build (application ID `com.syncinit.app`), signature verification and a stable-release publishing path.
+The main-branch publisher currently builds `:app:assembleDebug`, signs with the preview key and always marks releases as prereleases. This is **not** a production stable-release pipeline. The release-preparation branch adds a separate stable lane that builds `:app:assembleRelease` (application ID `com.syncinit.app`), requires a dedicated production keystore, verifies the APK signature, and publishes without the prerelease flag only after explicit manual sign-off and stable release notes. The lane is not available on `main` until this branch is merged; it also requires the production signing secrets listed below.
 
 Never commit keystores or passwords.
 
