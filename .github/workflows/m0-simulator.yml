@@ -3,8 +3,23 @@ name: M0 simulator and native core
 
 on:
   push:
+    branches: [main]
+    paths:
+      - "core/**"
+      - "sim/**"
+      - "tools/**"
+      - ".github/workflows/m0-simulator.yml"
   pull_request:
+    paths:
+      - "core/**"
+      - "sim/**"
+      - "tools/**"
+      - ".github/workflows/m0-simulator.yml"
   workflow_dispatch:
+
+concurrency:
+  group: m0-ci-${{ github.event.pull_request.number || github.ref }}
+  cancel-in-progress: true
 
 jobs:
   simulator-and-core:
