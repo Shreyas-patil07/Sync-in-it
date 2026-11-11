@@ -9,6 +9,7 @@
 
 - Replaces local NSD/mDNS Host discovery and direct Host-to-Speaker LAN TCP/UDP media with backend session invitations and cloud media transport.
 - Host creates a backend session and displays a QR invitation containing the session ID and join code only.
+- Host QR invitation is displayed immediately after backend session creation while LiveKit media connects.
 - Speaker scans the QR, joins the backend session and receives a role-scoped LiveKit participant token.
 - Host uploads fixed 20 ms, 48 kHz stereo PCM16 frames to the authenticated Render WebSocket media ingress.
 - The backend's Python LiveKit RTC publisher publishes PCM to the session LiveKit room.
