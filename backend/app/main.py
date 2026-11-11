@@ -9,12 +9,15 @@ import secrets
 import sqlite3
 import time
 import uuid
+from datetime import timedelta
+from urllib.parse import urlparse
 from contextlib import contextmanager
 from pathlib import Path
 from typing import Annotated, Literal
 
 from fastapi import Depends, FastAPI, Header, HTTPException, Request, Response, WebSocket, WebSocketDisconnect, status
 from pydantic import BaseModel, Field, ValidationError
+from livekit import api, rtc
 
 ROOM_ALPHABET = "ABCDEFGHJKLMNPQRSTUVWXYZ23456789"
 SESSION_TTL_SECONDS = 2 * 60 * 60
@@ -22,6 +25,11 @@ JOIN_LIMIT = 20
 JOIN_WINDOW_SECONDS = 60
 MAX_SPEAKERS_HARD_LIMIT = 8
 MAX_WS_MESSAGE_BYTES = 16 * 1024
+AUDIO_SAMPLE_RATE_HZ = 48_000
+AUDIO_CHANNELS = 2
+AUDIO_FRAME_MS = 20
+AUDIO_FRAME_SAMPLES = AUDIO_SAMPLE_RATE_HZ * AUDIO_FRAME_MS // 1_000
+AUDIO_FRAME_BYTES = AUDIO_FRAME_SAMPLES * AUDIO_CHANNELS * 2
 DEVICE_STATES = {
     "joining",
     "syncing",
@@ -320,14 +328,16 @@ def create_app(database_path: str | Path | None = None) -> FastAPI:
     )
     database = SessionDatabase(db_path)
     manager = ConnectionManager()
+    active_host_media: dict[str, WebSocket] = {}
+    active_host_media_lock = asyncio.Lock()
     join_attempts: dict[str, list[float]] = {}
 
     app = FastAPI(
-        title="Sync In It LAN API",
-        version="0.2.0",
+        title="Sync In It Session API",
+        version="0.3.0",
         description=(
-            "LAN-local session and device coordination. Audio and clock-sync "
-            "packets remain on the direct Host/Speaker data paths."
+            "Session coordination and LiveKit SFU audio ingress. Host-to-Speaker "
+            "media is relayed through LiveKit; Android peers do not connect directly."
         ),
     )
     app.state.database = database
@@ -400,6 +410,70 @@ def create_app(database_path: str | Path | None = None) -> FastAPI:
         ):
             return {"role": "speaker", "client_id": device["id"], "device": device}
         return None
+
+    def livekit_server_url() -> str:
+        configured = os.getenv("LIVEKIT_URL", "").strip().rstrip("/")
+        if configured.startswith("https://"):
+            configured = "wss://" + configured[len("https://"):]
+        elif configured.startswith("http://"):
+            configured = "ws://" + configured[len("http://"):]
+        parsed = urlparse(configured)
+        if parsed.scheme not in {"ws", "wss"} or not parsed.netloc:
+            raise HTTPException(status_code=503, detail="livekit_not_configured")
+        return configured
+
+    def livekit_credentials_configured() -> bool:
+        return all(os.getenv(key, "").strip() for key in (
+            "LIVEKIT_URL", "LIVEKIT_API_KEY", "LIVEKIT_API_SECRET"
+        ))
+
+    @app.post("/api/v1/sessions/{session_id}/livekit-token")
+    def create_livekit_token(session_id: str, token: str = Depends(bearer_token)):
+        identity = websocket_identity(session_id, token)
+        if not identity:
+            raise HTTPException(status_code=401, detail="invalid_session_credentials")
+        if not livekit_credentials_configured():
+            raise HTTPException(status_code=503, detail="livekit_not_configured")
+
+        role = identity["role"]
+        if role == "host":
+            participant_identity = "host"
+            with database.connect() as db:
+                row = db.execute(
+                    "SELECT host_name FROM sessions WHERE id = ?", (session_id,)
+                ).fetchone()
+            participant_name = row["host_name"] if row else "Host"
+        else:
+            participant_identity = f"speaker-{identity['client_id']}"
+            participant_name = identity["device"]["name"]
+
+        room_name = f"syncinit-{session_id}"
+        access_token = (
+            api.AccessToken(
+                api_key=os.environ["LIVEKIT_API_KEY"],
+                api_secret=os.environ["LIVEKIT_API_SECRET"],
+            )
+            .with_identity(participant_identity)
+            .with_name(participant_name[:48])
+            .with_ttl(timedelta(minutes=30))
+            .with_grants(
+                api.VideoGrants(
+                    room_join=True,
+                    room=room_name,
+                    can_publish=role == "host",
+                    can_subscribe=role == "speaker",
+                    can_publish_data=False,
+                )
+            )
+            .to_jwt()
+        )
+        return {
+            "server_url": livekit_server_url(),
+            "room_name": room_name,
+            "participant_identity": participant_identity,
+            "role": role,
+            "participant_token": access_token,
+        }
 
     @app.get("/healthz")
     def health():
@@ -660,6 +734,125 @@ def create_app(database_path: str | Path | None = None) -> FastAPI:
             session_id, device_id, {"type": "device.removed", "device_id": device_id}
         )
         return None
+
+    @app.websocket("/api/v1/sessions/{session_id}/media/host")
+    async def host_media_ingress(websocket: WebSocket, session_id: str):
+        await websocket.accept()
+        room = None
+        audio_source = None
+        owns_slot = False
+        try:
+            try:
+                raw_auth = await asyncio.wait_for(websocket.receive_text(), timeout=10)
+                auth_message = WsAuthenticate.model_validate(json.loads(raw_auth))
+            except asyncio.TimeoutError:
+                await websocket.close(code=4408, reason="authentication-timeout")
+                return
+            except (json.JSONDecodeError, ValidationError, ValueError):
+                await websocket.close(code=4400, reason="invalid-authentication-message")
+                return
+
+            identity = websocket_identity(session_id, auth_message.token)
+            if not identity or identity["role"] != "host":
+                await websocket.close(code=4401, reason="host-credentials-required")
+                return
+            if not livekit_credentials_configured():
+                await websocket.close(code=1013, reason="livekit-not-configured")
+                return
+
+            async with active_host_media_lock:
+                if session_id in active_host_media:
+                    await websocket.close(code=4001, reason="host-media-already-connected")
+                    return
+                active_host_media[session_id] = websocket
+                owns_slot = True
+
+            publisher_token = (
+                api.AccessToken(
+                    api_key=os.environ["LIVEKIT_API_KEY"],
+                    api_secret=os.environ["LIVEKIT_API_SECRET"],
+                )
+                .with_identity("syncinit-host-publisher")
+                .with_name("Sync In It Host Audio")
+                .with_ttl(timedelta(minutes=10))
+                .with_grants(
+                    api.VideoGrants(
+                        room_join=True,
+                        room=f"syncinit-{session_id}",
+                        can_publish=True,
+                        can_subscribe=False,
+                        can_publish_data=False,
+                    )
+                )
+                .to_jwt()
+            )
+            room = rtc.Room()
+            await asyncio.wait_for(
+                room.connect(livekit_server_url(), publisher_token), timeout=20
+            )
+            audio_source = rtc.AudioSource(
+                sample_rate=AUDIO_SAMPLE_RATE_HZ,
+                num_channels=AUDIO_CHANNELS,
+                queue_size_ms=200,
+            )
+            audio_track = rtc.LocalAudioTrack.create_audio_track(
+                "syncinit-audio", audio_source
+            )
+            await room.local_participant.publish_track(audio_track)
+            await websocket.send_json({
+                "type": "media.ready",
+                "sample_rate_hz": AUDIO_SAMPLE_RATE_HZ,
+                "channels": AUDIO_CHANNELS,
+                "frame_ms": AUDIO_FRAME_MS,
+            })
+
+            received_frames = 0
+            while True:
+                message = await websocket.receive()
+                if message["type"] == "websocket.disconnect":
+                    break
+                pcm = message.get("bytes")
+                if pcm is None:
+                    await websocket.close(code=4400, reason="binary-pcm-frames-required")
+                    break
+                if len(pcm) != AUDIO_FRAME_BYTES:
+                    await websocket.close(code=4400, reason="invalid-pcm-frame-size")
+                    break
+                frame = rtc.AudioFrame(
+                    data=bytearray(pcm),
+                    sample_rate=AUDIO_SAMPLE_RATE_HZ,
+                    num_channels=AUDIO_CHANNELS,
+                    samples_per_channel=AUDIO_FRAME_SAMPLES,
+                )
+                await audio_source.capture_frame(frame)
+                received_frames += 1
+                if received_frames % 250 == 0:
+                    await websocket.send_json({
+                        "type": "media.stats",
+                        "frames_received": received_frames,
+                    })
+        except WebSocketDisconnect:
+            pass
+        except Exception:
+            try:
+                await websocket.close(code=1011, reason="livekit-media-ingress-failed")
+            except RuntimeError:
+                pass
+        finally:
+            if audio_source is not None:
+                try:
+                    await audio_source.aclose()
+                except Exception:
+                    pass
+            if room is not None:
+                try:
+                    await room.disconnect()
+                except Exception:
+                    pass
+            if owns_slot:
+                async with active_host_media_lock:
+                    if active_host_media.get(session_id) is websocket:
+                        active_host_media.pop(session_id, None)
 
     @app.websocket("/api/v1/sessions/{session_id}/ws")
     async def session_events(websocket: WebSocket, session_id: str):
