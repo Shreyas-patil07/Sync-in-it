@@ -9,26 +9,28 @@ import com.google.zxing.qrcode.QRCodeWriter
 import com.google.zxing.qrcode.decoder.ErrorCorrectionLevel
 
 data class BackendInvite(
-    val joinCode: String,
-    val lanFingerprint: String
+    val sessionId: String,
+    val joinCode: String
 )
 
 object BackendInviteCodec {
     private const val TYPE = "sync-in-it-invite"
-    private const val VERSION = 1
+    private const val VERSION = 2
     private val joinCodePattern = Regex("[A-HJ-NP-Z2-9]{8}")
-    private val fingerprintPattern = Regex("[0-9A-F]{8}")
+    private val sessionIdPattern = Regex(
+        "(?i)[0-9a-f]{8}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{12}"
+    )
 
     fun encode(invite: BackendInvite): String {
+        val sessionId = invite.sessionId.trim().lowercase()
         val code = invite.joinCode.trim().uppercase()
-        val fingerprint = invite.lanFingerprint.trim().uppercase()
+        require(sessionIdPattern.matches(sessionId)) { "invalid backend session ID" }
         require(joinCodePattern.matches(code)) { "invalid backend join code" }
-        require(fingerprintPattern.matches(fingerprint)) { "invalid LAN fingerprint" }
         return JSONObject()
             .put("type", TYPE)
             .put("version", VERSION)
+            .put("session_id", sessionId)
             .put("join_code", code)
-            .put("lan_fingerprint", fingerprint)
             .toString()
     }
 
@@ -37,11 +39,11 @@ object BackendInviteCodec {
         val json = JSONObject(raw)
         require(json.optString("type") == TYPE) { "This QR code is not a Sync In It invitation" }
         require(json.optInt("version", -1) == VERSION) { "Unsupported Sync In It invitation version" }
+        val sessionId = json.getString("session_id").trim().lowercase()
         val code = json.getString("join_code").trim().uppercase()
-        val fingerprint = json.getString("lan_fingerprint").trim().uppercase()
+        require(sessionIdPattern.matches(sessionId)) { "Invalid backend session ID" }
         require(joinCodePattern.matches(code)) { "Invalid Sync In It join code" }
-        require(fingerprintPattern.matches(fingerprint)) { "Invalid local Host fingerprint" }
-        return BackendInvite(code, fingerprint)
+        return BackendInvite(sessionId, code)
     }
 }
 
