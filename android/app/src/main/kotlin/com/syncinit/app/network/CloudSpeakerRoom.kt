@@ -2,7 +2,10 @@
 package com.syncinit.app.network
 
 import android.content.Context
+import io.livekit.android.AudioOptions
+import io.livekit.android.AudioType
 import io.livekit.android.LiveKit
+import io.livekit.android.LiveKitOverrides
 import io.livekit.android.room.Room
 import java.io.Closeable
 import java.util.concurrent.atomic.AtomicBoolean
@@ -15,7 +18,12 @@ class CloudSpeakerRoom(
     private val participantToken: String,
     private val onStatus: (String) -> Unit
 ) : Closeable {
-    private val room: Room = LiveKit.create(context.applicationContext)
+    private val room: Room = LiveKit.create(
+        context.applicationContext,
+        overrides = LiveKitOverrides(
+            audioOptions = AudioOptions(audioOutputType = AudioType.MediaAudioType())
+        )
+    )
     private val closed = AtomicBoolean(false)
     @Volatile private var connectionThread: Thread? = null
 
