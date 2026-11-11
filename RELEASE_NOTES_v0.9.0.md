@@ -38,7 +38,7 @@ This cloud transport migration removes the previous Android native sample-indexe
 
 ## Installation and signing
 
-The current publisher workflow builds a debug APK with application ID `com.syncinit.app.debug`, signs it with the persistent preview key and always creates a GitHub prerelease. It does not create a production-signed stable APK.
+The publisher currently on `main` builds a debug APK with application ID `com.syncinit.app.debug`, signs it with the persistent preview key and always creates a GitHub prerelease. The release-preparation branch adds a separate production-signed stable lane, but it is not on `main` yet and has not been exercised with production signing secrets.
 
 Install only after the matching CI build and signed APK are available. To update an existing preview, preserve the same preview signing key and package ID. Do not uninstall first unless a package/signature change is intended.
 
