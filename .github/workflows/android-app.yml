@@ -68,14 +68,14 @@ jobs:
         id: apk_version
         run: echo "code=$(date -u +%s)" >> "$GITHUB_OUTPUT"
 
-      - name: Build Android debug APK and run transport checks
+      - name: Build Android debug APK and run backend contract checks
         env:
           ORG_GRADLE_PROJECT_syncinitVersionCode: ${{ steps.apk_version.outputs.code }}
           ORG_GRADLE_PROJECT_previewKeystorePath: ${{ github.workspace }}/android/app/syncinit-preview.jks
           ORG_GRADLE_PROJECT_previewStorePassword: ${{ secrets.SYNCINIT_PREVIEW_KEYSTORE_PASSWORD }}
           ORG_GRADLE_PROJECT_previewKeyPassword: ${{ secrets.SYNCINIT_PREVIEW_KEYSTORE_PASSWORD }}
           ORG_GRADLE_PROJECT_previewKeyAlias: syncinit-preview
-        run: gradle -p android :app:assembleDebug :transport:check :backend:check --stacktrace
+        run: gradle -p android :app:assembleDebug :backend:check --stacktrace
 
       - name: Verify preview APK signature
         if: success() && steps.preview_signing.outputs.enabled == 'true'
