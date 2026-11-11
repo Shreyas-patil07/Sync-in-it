@@ -16,8 +16,9 @@ dependencyResolutionManagement {
     repositories {
         google()
         mavenCentral()
+        maven(url = "https://jitpack.io")
     }
 }
 
 rootProject.name = "sync-in-it-android"
-include(":app", ":transport", ":backend")
+include(":app", ":backend")

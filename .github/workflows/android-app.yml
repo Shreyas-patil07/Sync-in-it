@@ -20,6 +20,10 @@ on:
 permissions:
   contents: read
 
+concurrency:
+  group: android-ci-${{ github.event.pull_request.number || github.ref }}
+  cancel-in-progress: true
+
 jobs:
   android-debug:
     runs-on: ubuntu-latest
@@ -41,13 +45,10 @@ jobs:
       - name: Set up Android SDK
         uses: android-actions/setup-android@v4
 
-      - name: Install Android SDK, NDK and CMake
+      - name: Install Android SDK
         run: |
           yes | sdkmanager --licenses
-          sdkmanager --install \
-            "platforms;android-36" \
-            "cmake;3.22.1" \
-            "ndk;30.0.16248370"
+          sdkmanager --install "platforms;android-36"
 
       - name: Prepare persistent preview signing key
         id: preview_signing
@@ -68,14 +69,15 @@ jobs:
         id: apk_version
         run: echo "code=$(date -u +%s)" >> "$GITHUB_OUTPUT"
 
-      - name: Build Android debug APK and run transport checks
+      - name: Build cloud-media Android debug APK and backend checks
         env:
           ORG_GRADLE_PROJECT_syncinitVersionCode: ${{ steps.apk_version.outputs.code }}
+          ORG_GRADLE_PROJECT_syncinitVersionName: "0.9.0"
           ORG_GRADLE_PROJECT_previewKeystorePath: ${{ github.workspace }}/android/app/syncinit-preview.jks
           ORG_GRADLE_PROJECT_previewStorePassword: ${{ secrets.SYNCINIT_PREVIEW_KEYSTORE_PASSWORD }}
           ORG_GRADLE_PROJECT_previewKeyPassword: ${{ secrets.SYNCINIT_PREVIEW_KEYSTORE_PASSWORD }}
           ORG_GRADLE_PROJECT_previewKeyAlias: syncinit-preview
-        run: gradle -p android :app:assembleDebug :transport:check :backend:check --stacktrace
+        run: gradle -p android :app:assembleDebug :backend:check --stacktrace
 
       - name: Verify preview APK signature
         if: success() && steps.preview_signing.outputs.enabled == 'true'

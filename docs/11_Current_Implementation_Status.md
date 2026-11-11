@@ -1,39 +1,60 @@
 # Current Implementation Status — Sync In It
 
-**Status date:** 10 November 2026  
-**Main baseline:** PR #78 merged at `79c50372a22a1378d265a2a4f9308a477863540c`  
-**Release packaging commit:** `79c50372a22a1378d265a2a4f9308a477863540c`  
-**Latest published Android preview:** [`v0.6.9`](https://github.com/Shreyas-patil07/Sync-in-it/releases/tag/v0.6.9) — engineering prerelease  
-**Audience:** contributors, testers and anyone assessing what is implemented versus what is still a design target.
+**Status date:** 11 November 2026  
+**Main branch:** aa703533d833f5038f7b57cf8e73de639dfa314d  
+**Latest published release:** v0.8.0 — still uses direct LAN media and optional backend coordination  
+**Active cloud migration branch:** feature/livekit-cloud-audio-transport  
+**Cloud branch head at review:** ade01a852c3193c16311c1761905d949d72d9f97  
+**Merge/release state:** not merged; no v0.9.0 APK has been published.
 
-This file is the source of truth for present-tense implementation claims. Product targets, architecture proposals and future behavior in the other design documents remain useful, but they must not be read as evidence that those features are already implemented or validated.
+This document distinguishes the released main branch from the cloud migration branch. The cloud migration is a replacement architecture, not a patch to the v0.8.0 release. The published v0.8.0 app still uses local NSD/mDNS discovery and direct TCP/UDP media. The feature branch removes those paths and uses a Render backend plus LiveKit Cloud.
 
-## Executive summary
+## Executive summary — cloud migration branch
 
-Sync In It has progressed beyond the original discovery/clock-acquisition shell. The Android main branch contains local Host discovery, multi-Speaker TCP admission, UDP clock synchronization, local-file decoding, consented Android app-playback capture, sample-indexed PCM16 fan-out, bounded receiver/capture buffering, group readiness, a shared future playback ANCHOR, Android AudioTrack rendering and DAC output-timestamp diagnostics. System capture uses a MediaProjection foreground service and respects source-app capture policies. PR #55's PCM snapshot caching and ingress/slow-write diagnostics remain in place.
+The branch implements this cloud transport path:
 
-**The end-to-end multi-phone playback path remains physically unvalidated.** The post-PR #55 Speaker-side test on 6 November showed materially better receive-path evidence: ingress was generally close to the 50 frames/sec producer cadence, the contiguous buffer grew to approximately 19.94 seconds, and no missing frames were reported in the supplied interval. However, clock residual RMS stayed around 0.412–0.557 ms, above the unchanged strict 0.25 ms threshold. The stability streak remained zero, READY was not demonstrated, and no ANCHOR or acoustic synchronization result was supplied. The matching Host log was not provided, so Host writer/queue health in this run is unknown. PR #76 added local-file and system-audio capture. PR #78 then added Host source-switch safeguards and aggregate capture-level diagnostics. Neither merge nor successful CI demonstrates physical capture, READY/ANCHOR or audible synchronization.
+1. Host creates a FastAPI session and receives an eight-character join code.
+2. Host starts an authenticated WebSocket to Render and waits for the LiveKit publisher to become ready.
+3. Host displays a QR invitation containing only session_id and join_code.
+4. Speaker scans the QR, joins the backend session and receives a role-scoped LiveKit token.
+5. Host sends 48 kHz stereo PCM16 frames (960 frames / 20 ms) to the Render media ingress.
+6. The Python LiveKit RTC publisher sends those frames into the session's LiveKit room.
+7. Speakers subscribe to the room through the LiveKit Android SDK.
 
-The latest paired one-Host/one-Speaker tests from 8 November (v0.6.9-debug, Android 12 Host and Android 14 Speaker) completed TCP admission and UDP time-sync while maintaining approximately 50 PCM chunks/sec, a 20-second Speaker buffer, zero missing frames and an empty Host write queue. The two production application-timestamp fits ended at 0.368338 ms and 0.449305 ms residual RMS, with stable streak zero; neither reached READY or ANCHOR. An offline kernel-receive-timestamp comparison reduced those residuals to 0.304824 ms and 0.307115 ms, still above the strict 0.25 ms gate. System-playback capture was intermittently near-silent, so source validation remains separate from the clock failure. The canonical test record is [Test Results §2.6](Test_Results.md#26-test-record--2026-11-08--v069-debug-paired-applicationkernel-timestamp-replay).
+No same-Wi-Fi requirement, NSD/mDNS discovery, LAN fingerprint or direct Host-to-Speaker TCP/UDP connection is used on this branch. Backend bearer tokens and the LiveKit API secret are not part of the QR payload.
 
-The earlier pre-PR #55 run remains relevant historical evidence: its Host-side 500 ms queue overflowed after the Speaker failed to reach READY. PR #55 added 250 ms cached PCM snapshots and Speaker ingress/Host slow-write diagnostics. The post-fix Speaker log suggests PCM receive continuity improved in that capture, but it does not prove the Host writer is healthy or establish the root cause of clock residual noise. The current focus is **clock-measurement diagnosis with per-probe evidence, matching Host/Speaker log correlation, then successful READY/ANCHOR and acoustic measurement**. The 0.25 ms threshold, three-update stability gate and queue bound remain unchanged. See [Test Results](Test_Results.md) for the dated record and future-run template.
+## Critical synchronization gap
 
-## Release, branch and build state
+**Cloud audio transport must not be described as synchronized multi-phone playback.** This branch removes the previous Android native timing pipeline, including the sample-indexed PCM jitter buffer, four-timestamp clock estimator, strict clock-readiness gate, READY/ANCHOR group-start protocol and custom AudioTrack playout scheduler. Speakers currently use standard LiveKit/WebRTC remote-audio playout.
 
-| Item | Current state | Evidence / interpretation |
-|---|---|---|
-| Published preview | `v0.6.9` | Public GitHub engineering prerelease with updateable signed APK and SHA-256 checksum |
-| APK asset | `SyncInIt-Android-preview-v0.6.9.apk` | 6,038,222 bytes; persistent preview signing key used; SHA-256 `349a6503b47f40b460f3b86f88ccd6535bbab9151854bed52b359478a71df5da` |
-| Release scope | v0.6.8 media sources plus v0.6.9 safe source switching, one-second PCM signal metrics, and offline application/kernel timestamp comparison; production estimator unchanged | See the [v0.6.9 release notes](../RELEASE_NOTES_v0.6.9.md) |
-| Current main | PR #78 merged at `79c50372a22a` | Adds safe Host source changes and aggregate system-capture signal diagnostics; no live clock-estimator or readiness-threshold change |
-| M0 simulator/native CI on release source | Passed | [Workflow run 42493479638](https://github.com/Shreyas-patil07/Sync-in-it/actions/runs/42493479638) passed Python 3.11/3.12/3.13 + C++17 tests |
-| Android/JNI CI on PR #78 source | Passed | [Workflow run 42493479658](https://github.com/Shreyas-patil07/Sync-in-it/actions/runs/42493479658) passed Android build, transport checks, signature verification and artifact upload |
-| Release publisher | Passed | [Workflow run 42499713865](https://github.com/Shreyas-patil07/Sync-in-it/actions/runs/42499713865) built the updateable APK, passed transport checks, verified its signature and published the v0.6.9 GitHub prerelease |
-| Physical validation | Not yet validated end-to-end | The 8 Nov v0.6.9-debug paired runs ended at 0.368338 ms and 0.449305 ms app-timestamp residual RMS; kernel timestamp comparison reached 0.304824 ms and 0.307115 ms. All remain above the strict 0.25 ms gate; no READY, ANCHOR or acoustic skew was demonstrated |
-| RTP/UDP experiment branch | Code-integrated, opt-in; not merged or physically tested | PR #85 adds the 48 kHz stereo diagnostic PCM RTP path, TCP admission/control fallback, token-bound UDP endpoint registration and sample-indexed receiver insertion. Build with `-PsyncinitRtpAudioEnabled=true` on Host and Speakers. Android build/physical test for the latest branch head are pending; Opus and complete RTCP feedback are not included |
+The cloud branch therefore provides a media-delivery architecture, not the original sample-accurate synchronized speaker behavior. It has no implemented shared clock mapping, timestamped playout scheduling, drift correction, per-device output-latency compensation or acoustic calibration. A WebRTC room connection or received PCM frame count does not establish synchronized audible output.
 
-The published `v0.6.9` APK is built from release commit `79c50372a22a1378d265a2a4f9308a477863540c` with the persistent preview signing key. [Release workflow run 42499713865](https://github.com/Shreyas-patil07/Sync-in-it/actions/runs/42499713865) passed the Android build, transport checks, APK signature verification and GitHub prerelease publication. Asset SHA-256: `349a6503b47f40b460f3b86f88ccd6535bbab9151854bed52b359478a71df5da`. v0.6.9 adds safe source switching, aggregate capture-level diagnostics and offline clock-probe comparison. The production estimator remains unchanged. No successful physical non-silent capture, READY/ANCHOR or acoustic-skew validation has been supplied; CI remains distinct from physical synchronization evidence.
+Do not merge as a completed product replacement or publish a release claiming synchronization until that gap is resolved and measured. Treat this branch as an engineering transport prototype.
 
+## Validation and workflow state at review
+
+| Area | Observed state |
+|---|---|
+| Latest main release | v0.8.0; legacy direct-LAN media |
+| Cloud branch integration | QR v2, backend session, LiveKit token issuance, Host PCM WSS ingress and Speaker LiveKit room code present |
+| M0 simulator/native core | A run on an earlier cloud-branch commit passed all three Python versions and C++17; latest-head run was queued at review |
+| Backend API matrix | Earlier run failed because livekit-api was missing; the dependency was added on a later commit, but the latest-head matrix had not yet completed |
+| Android build | Latest-head job was queued at review |
+| Live Render + LiveKit integration | Not verified in this repository review |
+| Physical two-network audio | Not tested / not evidenced |
+| Synchronized acoustic output | Not implemented or validated on the cloud branch |
+
+CI on this branch previously generated a large queue because the M0 workflow ran on every push and the feature was committed repeatedly. The workflow changes in this PR scope M0 push runs to main, add PR path filters and use per-branch concurrency cancellation so future pushes do not enqueue an unbounded matrix.
+
+## Cloud service configuration
+
+The Render backend requires LIVEKIT_URL, LIVEKIT_API_KEY and LIVEKIT_API_SECRET. Keep the API secret on the backend. The Android app calls the Render service and receives only a role-scoped short-lived LiveKit participant token. A masked screenshot confirms only the variable names, not the correctness of their values.
+
+Render Free SQLite storage is ephemeral, and active WebSocket/publisher state is in process memory. Restarts terminate active sessions; persistence and multi-instance coordination are not implemented.
+
+## Historical implementation records
+
+The remaining sections in this file are retained as engineering history for the pre-cloud LAN implementation. They document the earlier TCP/UDP timing engine, physical test evidence, design decisions and diagnostics. They are not descriptions of the active cloud-migration branch.
 
 ## Media sources — local files and Android system playback capture
 

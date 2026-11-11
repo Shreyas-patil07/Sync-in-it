@@ -9,12 +9,24 @@ import secrets
 import sqlite3
 import time
 import uuid
+from datetime import timedelta
 from contextlib import contextmanager
 from pathlib import Path
 from typing import Annotated, Literal
 
 from fastapi import Depends, FastAPI, Header, HTTPException, Request, Response, WebSocket, WebSocketDisconnect, status
 from pydantic import BaseModel, Field, ValidationError
+
+from .livekit_media import (
+    CHUNK_FRAMES as LIVEKIT_CHUNK_FRAMES,
+    CHANNELS as LIVEKIT_CHANNELS,
+    PCM_CHUNK_BYTES,
+    SAMPLE_RATE_HZ as LIVEKIT_SAMPLE_RATE_HZ,
+    LiveKitNotConfigured,
+    LiveKitPcmPublisher,
+    create_participant_token,
+    livekit_settings,
+)
 
 ROOM_ALPHABET = "ABCDEFGHJKLMNPQRSTUVWXYZ23456789"
 SESSION_TTL_SECONDS = 2 * 60 * 60
@@ -321,13 +333,15 @@ def create_app(database_path: str | Path | None = None) -> FastAPI:
     database = SessionDatabase(db_path)
     manager = ConnectionManager()
     join_attempts: dict[str, list[float]] = {}
+    active_media_sockets: dict[str, WebSocket] = {}
+    active_media_lock = asyncio.Lock()
 
     app = FastAPI(
-        title="Sync In It LAN API",
-        version="0.2.0",
+        title="Sync In It Session API",
+        version="0.3.0",
         description=(
-            "LAN-local session and device coordination. Audio and clock-sync "
-            "packets remain on the direct Host/Speaker data paths."
+            "Cloud session coordination and LiveKit media ingress. Host PCM is "
+            "published to LiveKit; Speakers subscribe over WebRTC."
         ),
     )
     app.state.database = database
@@ -611,6 +625,54 @@ def create_app(database_path: str | Path | None = None) -> FastAPI:
         )
         return {"ok": True, "device_id": device["id"], "state": payload.state}
 
+    @app.post("/api/v1/sessions/{session_id}/livekit-token")
+    def livekit_token(session_id: str, token: str = Depends(bearer_token)):
+        identity = websocket_identity(session_id, token)
+        if not identity:
+            raise HTTPException(status_code=401, detail="invalid_session_credentials")
+
+        with database.connect() as db:
+            session = db.execute(
+                "SELECT state, expires_at FROM sessions WHERE id = ?",
+                (session_id,),
+            ).fetchone()
+        if not session or session["state"] != "active" or session["expires_at"] <= time.time():
+            raise HTTPException(status_code=401, detail="invalid_session")
+
+        try:
+            server_url, _, _ = livekit_settings()
+        except LiveKitNotConfigured:
+            raise HTTPException(status_code=503, detail="livekit_not_configured")
+
+        remaining_seconds = int(session["expires_at"] - time.time())
+        role = identity["role"]
+        participant_id = (
+            f"host-{session_id}" if role == "host"
+            else f"speaker-{identity['client_id']}"
+        )
+        room_name = f"syncinit-{session_id}"
+        try:
+            participant_token = create_participant_token(
+                room_name=room_name,
+                identity=participant_id,
+                role=role,
+                ttl_seconds=remaining_seconds,
+            )
+        except LiveKitNotConfigured:
+            raise HTTPException(status_code=503, detail="livekit_not_configured")
+        except ValueError as error:
+            raise HTTPException(status_code=400, detail=str(error))
+
+        return {
+            "server_url": server_url,
+            "participant_token": participant_token,
+            "room_name": room_name,
+            "role": role,
+            "sample_rate_hz": LIVEKIT_SAMPLE_RATE_HZ,
+            "channels": LIVEKIT_CHANNELS,
+            "chunk_frames": LIVEKIT_CHUNK_FRAMES,
+        }
+
     @app.delete("/api/v1/sessions/{session_id}", status_code=204)
     async def close_session(session_id: str, host=Depends(require_host)):
         now = time.time()
@@ -622,6 +684,13 @@ def create_app(database_path: str | Path | None = None) -> FastAPI:
         await manager.close_session(
             session_id, {"type": "session.closed", "occurred_at": now}
         )
+        async with active_media_lock:
+            media_socket = active_media_sockets.get(session_id)
+        if media_socket:
+            try:
+                await media_socket.close(code=4000, reason="session-closed")
+            except RuntimeError:
+                pass
         return None
 
     @app.delete("/api/v1/sessions/{session_id}/devices/me", status_code=204)
@@ -660,6 +729,104 @@ def create_app(database_path: str | Path | None = None) -> FastAPI:
             session_id, device_id, {"type": "device.removed", "device_id": device_id}
         )
         return None
+
+    @app.websocket("/api/v1/sessions/{session_id}/media/host")
+    async def host_media(websocket: WebSocket, session_id: str):
+        await websocket.accept()
+        publisher: LiveKitPcmPublisher | None = None
+        registered = False
+        try:
+            try:
+                raw_auth = await asyncio.wait_for(websocket.receive_text(), timeout=10)
+                if len(raw_auth.encode("utf-8")) > MAX_WS_MESSAGE_BYTES:
+                    await websocket.close(code=4400, reason="message-too-large")
+                    return
+                auth_message = WsAuthenticate.model_validate(json.loads(raw_auth))
+            except asyncio.TimeoutError:
+                await websocket.close(code=4408, reason="authentication-timeout")
+                return
+            except (json.JSONDecodeError, ValidationError, ValueError):
+                await websocket.close(code=4400, reason="invalid-authentication-message")
+                return
+
+            identity = websocket_identity(session_id, auth_message.token)
+            if not identity or identity["role"] != "host":
+                await websocket.close(code=4401, reason="invalid-host-credentials")
+                return
+
+            with database.connect() as db:
+                session = db.execute(
+                    "SELECT state, expires_at FROM sessions WHERE id = ?",
+                    (session_id,),
+                ).fetchone()
+            if not session or session["state"] != "active" or session["expires_at"] <= time.time():
+                await websocket.close(code=4401, reason="invalid-host-session")
+                return
+
+            try:
+                room_name = f"syncinit-{session_id}"
+                publisher = LiveKitPcmPublisher(
+                    room_name=room_name,
+                    identity=f"media-{session_id}",
+                )
+            except LiveKitNotConfigured:
+                await websocket.close(code=1011, reason="livekit-not-configured")
+                return
+
+            async with active_media_lock:
+                if session_id in active_media_sockets:
+                    await websocket.close(code=4409, reason="host-media-already-connected")
+                    return
+                active_media_sockets[session_id] = websocket
+                registered = True
+
+            await publisher.start()
+            await websocket.send_json({
+                "type": "media.ready",
+                "sample_rate_hz": LIVEKIT_SAMPLE_RATE_HZ,
+                "channels": LIVEKIT_CHANNELS,
+                "chunk_frames": LIVEKIT_CHUNK_FRAMES,
+                "chunk_bytes": PCM_CHUNK_BYTES,
+            })
+
+            frame_count = 0
+            while True:
+                message = await websocket.receive()
+                if message.get("type") == "websocket.disconnect":
+                    break
+                pcm = message.get("bytes")
+                if pcm is None:
+                    await websocket.send_json({
+                        "type": "protocol.error",
+                        "code": "binary_pcm_frames_required",
+                    })
+                    continue
+                if len(pcm) != PCM_CHUNK_BYTES:
+                    await websocket.close(code=4400, reason="invalid-pcm-frame-size")
+                    break
+                await publisher.publish(pcm)
+                frame_count += 1
+                if frame_count % 250 == 0:
+                    await websocket.send_json({
+                        "type": "media.stats",
+                        "frames_received": frame_count,
+                    })
+        except WebSocketDisconnect:
+            pass
+        except (RuntimeError, ValueError):
+            pass
+        except Exception:
+            try:
+                await websocket.close(code=1011, reason="media-publisher-failed")
+            except RuntimeError:
+                pass
+        finally:
+            if publisher is not None:
+                await publisher.close()
+            if registered:
+                async with active_media_lock:
+                    if active_media_sockets.get(session_id) is websocket:
+                        active_media_sockets.pop(session_id, None)
 
     @app.websocket("/api/v1/sessions/{session_id}/ws")
     async def session_events(websocket: WebSocket, session_id: str):

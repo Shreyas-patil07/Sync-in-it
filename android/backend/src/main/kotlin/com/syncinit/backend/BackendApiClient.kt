@@ -92,6 +92,38 @@ class BackendApiClient(
         )
     }
 
+    fun createLiveKitToken(sessionId: String, bearerToken: String): BackendLiveKitCredentials {
+        val body = executeJson(
+            authorizedRequest("POST", sessionPath(sessionId, "livekit-token"), bearerToken),
+            expectedCode = 200
+        )
+        return BackendLiveKitCredentials(
+            serverUrl = body.requiredString("server_url"),
+            participantToken = body.requiredString("participant_token"),
+            roomName = body.requiredString("room_name"),
+            role = body.requiredString("role"),
+            sampleRateHz = body.requiredInt("sample_rate_hz"),
+            channels = body.requiredInt("channels"),
+            chunkFrames = body.requiredInt("chunk_frames")
+        )
+    }
+
+    fun openHostMedia(
+        sessionId: String,
+        hostToken: String,
+        listener: BackendHostMediaListener
+    ): BackendHostMediaConnection {
+        validateToken(hostToken)
+        require(sessionId.isNotBlank() && sessionId.length <= 128)
+        val connection = BackendHostMediaConnection(hostToken, listener)
+        val request = Request.Builder()
+            .url(endpoint("api", "v1", "sessions", sessionId, "media", "host"))
+            .build()
+        val webSocket = httpClient.newWebSocket(request, connection.webSocketListener())
+        connection.attach(webSocket)
+        return connection
+    }
+
     fun getSession(sessionId: String, hostToken: String): BackendSessionSnapshot {
         val body = executeJson(
             authorizedRequest("GET", sessionPath(sessionId), hostToken),

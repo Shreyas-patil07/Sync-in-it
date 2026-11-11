@@ -1,93 +1,77 @@
-# Sync In It LAN Backend API
+# Sync In It Cloud Backend
 
-**Status:** Foundation / API v1.1  
-**Runtime:** Python 3.11+ / FastAPI / SQLite / WebSocket  
-**Purpose:** Session metadata, admission, device presence and health state for the local-network system.
+**Runtime:** Python 3.11+ · FastAPI · SQLite · WebSockets · LiveKit Python RTC SDK  
+**Deployment:** Render web service  
+**Role:** Session/authentication control plane plus authenticated Host PCM ingress to LiveKit Cloud.
 
-## Architecture boundary
+## Cloud media architecture
 
-This is a **LAN-local control-plane service**, not an audio server.
+The backend creates a room identity for each Sync In It session and issues role-scoped LiveKit participant credentials. The Android Host sends binary PCM frames to the authenticated WebSocket ingress. The backend publishes them to LiveKit through the Python RTC SDK. Android Speakers connect to the LiveKit room and subscribe through WebRTC.
 
-- Audio remains direct Host → Speaker over the existing TCP or experimental RTP/UDP data plane.
-- Clock probes and time-critical playback control remain on the existing direct device protocol. Do not route clock samples through HTTP.
-- The API manages session identity, join admission, device credentials, presence and coarse device state.
-- It can run on a laptop or small LAN host for development and integration. The Android Host must remain capable of operating without this service; embedding the API into Android is a separate platform-integration task.
-- No cloud account, remote database or internet connection is required by the service itself.
+The backend is not a transparent byte relay between phone clients: it terminates the Host WebSocket and publishes frames into the LiveKit room. Phones do not need to share a Wi-Fi network.
 
-This is deliberately additive. It does not replace the Android Host's current TCP HELLO/WELCOME admission, UDP clock exchange, READY/ANCHOR or audio transport yet.
+## Required environment variables
 
-## Start locally
+Set these on the Render backend service:
 
-```bash
-cd backend
-python -m venv .venv
-# Windows PowerShell: .venv\Scripts\Activate.ps1
-# Linux/macOS: source .venv/bin/activate
-python -m pip install -e ".[test]"
-uvicorn app.main:app --host 0.0.0.0 --port 8788
-```
+| Variable | Value |
+|---|---|
+| LIVEKIT_URL | LiveKit project URL, normally wss://... |
+| LIVEKIT_API_KEY | LiveKit server API key |
+| LIVEKIT_API_SECRET | LiveKit server API secret |
 
-- Health: `GET` or `HEAD` `http://127.0.0.1:8788/healthz`
-- OpenAPI: `http://127.0.0.1:8788/docs`
-- SQLite defaults to `backend/data/sync-in-it.sqlite3`; set `SYNCINIT_BACKEND_DB` to change it.
-- Bind to a trusted private LAN only. Do not expose this preview service directly to the public internet.
+All three are required for LiveKit token issuance and Host media publishing. The API secret must remain server-side. Do not log it, return it to the Android app, put it in a QR invitation or commit it to Git.
 
-## Uptime monitoring on Render Free
+## Run locally
 
-The public health endpoint supports both GET and HEAD. UptimeRobot's standard HTTP monitor uses HEAD by default, so configure an HTTP(S) monitor with this URL:
+    cd backend
+    python -m venv .venv
+    python -m pip install -e ".[test]"
+    uvicorn app.main:app --host 0.0.0.0 --port 8788
 
-```text
-https://sync-in-it.onrender.com/healthz
-```
+Health and OpenAPI:
 
-Use UptimeRobot's 5-minute Free monitoring interval. HEAD returns HTTP 200 without a response body and does not touch session data.
+- GET or HEAD /healthz
+- /docs
 
-This can prevent Render's 15-minute inactivity spin-down while the monitor is running. It is not an uptime guarantee: Render can restart free instances, its 750 free instance-hours are shared across the workspace, and the SQLite filesystem is ephemeral. Do not treat the Render Free deployment as durable production storage.
+## API and WebSocket routes
 
-## API v1
-
-| Method | Endpoint | Purpose | Authentication |
+| Method | Route | Purpose | Authentication |
 |---|---|---|---|
-| GET, HEAD | `/healthz` | Liveness (HEAD returns an empty 200 response) | None |
-| POST | `/api/v1/sessions` | Create session and issue Host token | None |
-| POST | `/api/v1/sessions/join` | Join by 8-character code and issue device token | Join code + rate limit |
-| GET | `/api/v1/sessions/{id}` | Session snapshot | Host bearer token |
-| GET | `/api/v1/sessions/{id}/devices` | Device/presence list | Host bearer token |
-| POST | `/api/v1/sessions/{id}/devices/me/heartbeat` | Refresh presence | Device bearer token |
-| PATCH | `/api/v1/sessions/{id}/devices/me/state` | Report coarse device state | Device bearer token |
-| DELETE | `/api/v1/sessions/{id}/devices/{device_id}` | Remove a device | Host bearer token |
-| DELETE | `/api/v1/sessions/{id}/devices/me` | Speaker leaves its own session | Speaker bearer token |
-| DELETE | `/api/v1/sessions/{id}` | Close session | Host bearer token |
+| GET, HEAD | /healthz | Health check | None |
+| POST | /api/v1/sessions | Create session, Host bearer token and join code | None |
+| POST | /api/v1/sessions/join | Join with 8-character code, issue Speaker token | Join code + rate limit |
+| POST | /api/v1/sessions/{id}/livekit-token | Issue role-scoped LiveKit room credentials | Host or Speaker bearer token |
+| WS | /api/v1/sessions/{id}/media/host | Receive Host 48 kHz stereo PCM16 frames and publish to LiveKit | Host bearer token in first auth frame |
+| WS | /api/v1/sessions/{id}/ws | Presence, state and operational events | Host/Speaker bearer token in first auth frame |
+| GET | /api/v1/sessions/{id} | Session snapshot | Host bearer token |
+| GET | /api/v1/sessions/{id}/devices | Device list | Host bearer token |
+| POST | /api/v1/sessions/{id}/devices/me/heartbeat | Speaker presence heartbeat | Speaker bearer token |
+| PATCH | /api/v1/sessions/{id}/devices/me/state | Coarse Speaker state | Speaker bearer token |
+| DELETE | /api/v1/sessions/{id}/devices/me | Speaker leaves session | Speaker bearer token |
+| DELETE | /api/v1/sessions/{id} | Close session | Host bearer token |
 
-Tokens are generated with a cryptographically secure random source. Only SHA-256 token hashes are stored in SQLite; the raw Host/device token is returned once at creation/join. Device count is enforced transactionally and protocol-version mismatch is rejected.
+The Host media WebSocket accepts binary frames of exactly 3,840 bytes (960 samples/channel × 2 channels × 2 bytes/sample). The backend publishes each 20 ms frame as 48 kHz stereo PCM using livekit.rtc.AudioSource. The backend limits a session to one active Host media socket.
 
-## Example
+The WebSocket authentication token is sent in the first text frame, never in the URL. LiveKit participant JWTs are minted server-side with role-specific grants: Host can publish; Speakers can subscribe but cannot publish.
 
-Create:
-```http
-POST /api/v1/sessions
-Content-Type: application/json
+## Tests
 
-{"host_name":"Living-room Host","protocol_version":1,"max_speakers":8}
-```
+    python -m pip install -e ".[test]"
+    python -m pytest
 
-Join:
-```http
-POST /api/v1/sessions/join
-Content-Type: application/json
+The LiveKit tests validate token grants and the Host media-ingress contract using a fake publisher. They do not contact your real LiveKit project, Render deployment or Android devices.
 
-{"join_code":"ABCD2345","device_name":"Speaker 1","platform":"android","protocol_version":1}
-```
+## Render operational limits
 
-## Not implemented yet
+The backend keeps active WebSocket registrations and LiveKit publisher objects in process memory. A Render instance restart disconnects active media ingress and requires clients to reconnect. SQLite session storage on a Render Free instance is ephemeral; it must not be treated as durable history or production persistence. The session implementation currently uses a fixed expiry window (two hours). Multi-instance WebSocket fan-out and durable session persistence are not implemented.
 
-- Android/iOS client integration.
-- Durable event history, offline command queue and replay.
-- Multi-instance event fan-out (Redis/pub-sub or equivalent).
-- Session invitation QR payload generation.
-- Durable audit/event history and schema migrations.
-- TLS / authenticated encryption for untrusted networks.
-- Deployment automation and operational monitoring.
-- A server-side media relay (intentionally out of scope).
+A successful /healthz check proves only that FastAPI is responding. It does not prove LiveKit credentials, token signing, Host PCM publishing, Speaker subscription or audio playback. Verify these separately.
 
-**Security:** session codes are for discovery, not transport encryption. Use only on a trusted private LAN until the authentication and encryption design is hardened. Do not put bearer tokens in logs, URLs or QR codes that can be shared publicly.
+## Security and deployment
+
+- Keep LIVEKIT_API_SECRET only in Render environment variables.
+- Do not include raw backend bearer tokens or LiveKit JWTs in QR codes, URLs, logs or repository files.
+- Review and rotate credentials if they are ever exposed.
+- Use HTTPS/WSS for all public service endpoints.
+- Confirm the actual LiveKit project URL and credentials from LiveKit Cloud; masked environment values cannot be validated from a screenshot.

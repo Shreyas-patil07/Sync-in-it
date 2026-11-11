@@ -11,7 +11,8 @@ import java.util.concurrent.atomic.AtomicBoolean
  * Authenticated session event channel.
  *
  * This channel is for presence, coarse state and operational commands only.
- * Audio samples, clock timestamps, READY and ANCHOR stay on the direct LAN protocol.
+ * Host PCM uses the dedicated authenticated media WebSocket and LiveKit; media is never
+ * sent through this event channel.
  */
 class BackendEventConnection internal constructor() : Closeable {
     private val closed = AtomicBoolean(false)
