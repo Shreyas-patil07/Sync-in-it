@@ -104,7 +104,7 @@ A stable release is eligible only when every required item is evidenced on the e
 2. Validate real LiveKit credentials, role-scoped tokens and Host-to-Speaker audio.
 3. Run physical cross-network and reconnect tests; capture evidence.
 4. Decide whether v0.9.0 is a cloud-audio transport preview or a stable release of the synchronized-speaker product. The latter requires the synchronization architecture and acoustic measurements to be restored.
-5. Implement and test the separate production signing/publishing lane.
-6. Create the release tag and publish only after every applicable gate is green.
+5. Merge the release-preparation changes after review, configure the four production signing secrets, and exercise the stable lane with a non-production test tag before the final version tag.
+6. Update the v0.9.0 release notes to remove preview/no-go wording only after the evidence is complete, then publish the unsuffixed stable tag only after every applicable gate is green.
 
 **Current recommendation:** keep v0.9.0 unpublished as stable. A preview build may be issued only with explicit cloud-audio-transport scope and prominent synchronization limitations.
