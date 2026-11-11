@@ -155,7 +155,7 @@ class MainActivity : Activity() {
             letterSpacing = -0.025f
         })
         brandCopy.addView(TextView(this).apply {
-            text = "OFFLINE AUDIO · ONE SHARED CLOCK"
+            text = "CLOUD AUDIO · LIVEKIT WEBRTC"
             textSize = 9f
             setTextColor(Color.rgb(126, 148, 183))
             typeface = Typeface.create("sans-serif-medium", Typeface.NORMAL)
@@ -175,7 +175,7 @@ class MainActivity : Activity() {
         content.addView(brandCard, sectionMargins())
 
         TextView(this).apply {
-            text = "One timeline.\nEvery phone in sync."
+            text = "One source.\nEvery phone connected."
             textSize = 27f
             setTextColor(Color.rgb(241, 245, 255))
             typeface = Typeface.create("sans-serif", Typeface.BOLD)
@@ -311,7 +311,7 @@ class MainActivity : Activity() {
         diagnosticsCard.addView(debugLog)
 
         TextView(this).apply {
-            text = "PLAYBACK NOTE\nThe Host can stream a selected local file, capture eligible Android app playback with explicit system consent, or use the diagnostic signal. Audio is uploaded to the backend and published to LiveKit. Speakers receive the cloud audio track through WebRTC. Android may block capture for protected or capture-restricted apps."
+            text = "CLOUD PLAYBACK NOTE\nThe Host can stream a selected local file, capture eligible Android app playback with explicit system consent, or use the diagnostic signal. Audio is uploaded to the backend and published to LiveKit. Speakers receive the cloud audio track through WebRTC. This preview does not yet align playback clocks across phones or compensate for device output latency, so synchronized acoustic playback is not guaranteed. Android may block capture for protected or capture-restricted apps."
             textSize = 11f
             setTextColor(Color.rgb(119, 137, 168))
             setLineSpacing(dp(2).toFloat(), 1f)
@@ -700,12 +700,15 @@ class MainActivity : Activity() {
                 runOnUiThread {
                     if (!isFinishing && !isDestroyed && speakerBackendSession === state) {
                         inviteStatus.text = "Authenticated · connecting to LiveKit media."
-                        postStatus("Backend session joined. LiveKit WebRTC connection is starting.")
+                        postStatus("Backend session joined. LiveKit audio track is subscribed.")
                     }
                 }
             } catch (error: Exception) {
                 room?.close()
                 coordinator?.close()
+                if (speakerBackendSession?.sessionId == joinedSessionId) {
+                    speakerBackendSession = null
+                }
                 val cleanupApi = api
                 val cleanupSessionId = joinedSessionId
                 val cleanupDeviceToken = joinedDeviceToken
