@@ -13,7 +13,7 @@
 - **Current main commit:** `9f46f905ada3fe654aeec1053c1e620034e63d67` — cloud transport migration merged through [PR #94](https://github.com/Shreyas-patil07/Sync-in-it/pull/94).
 - **Latest published APK:** [v0.8.0](https://github.com/Shreyas-patil07/Sync-in-it/releases/tag/v0.8.0). It is the previous direct-LAN implementation and is not the cloud migration.
 - **Current main architecture:** Render-hosted FastAPI session/authentication service + LiveKit Cloud SFU + LiveKit Android SDK.
-- **v0.9.0:** release notes and cloud implementation are on main, but no v0.9.0 tag or APK has been published. The current release workflow only publishes preview APKs; a production-signed stable release lane is not yet configured.
+- **v0.9.0:** release notes and cloud implementation are on main, but no v0.9.0 tag or APK has been published. The current main-branch publisher is preview-only. This release-preparation branch adds a separate production-signed stable lane; it requires production signing secrets, an explicit manual sign-off and cleared release notes before it can publish.
 
 ## Important product limitation
 
