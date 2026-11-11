@@ -10,4 +10,10 @@ internal object PreviewConfig {
     const val CHUNK_PERIOD_NS = 20_000_000L
     const val PCM_BUFFER_SECONDS = 20
     const val MAX_PCM_BUFFER_FRAMES = SAMPLE_RATE_HZ * PCM_BUFFER_SECONDS
+
+    const val ACOUSTIC_MARKER_DURATION_MS = 20
+    const val ACOUSTIC_MARKER_FRAMES = 960
+    const val ACOUSTIC_MARKER_BASE_HZ = 1_500
+    const val ACOUSTIC_MARKER_STEP_HZ = 750
+    const val ACOUSTIC_MARKER_AMPLITUDE = 2_500
 }
