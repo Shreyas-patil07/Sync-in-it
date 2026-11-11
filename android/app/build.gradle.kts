@@ -33,11 +33,6 @@ val requestedVersionName = providers.gradleProperty("syncinitVersionName")
     ?.takeIf { it.isNotBlank() }
     ?: "0.6.6"
 
-val rtpAudioEnabled = providers.gradleProperty("syncinitRtpAudioEnabled")
-    .orNull
-    ?.toBooleanStrictOrNull()
-    ?: false
-
 require(requestedVersionCode in 1..2_100_000_000) {
     "syncinitVersionCode must be between 1 and 2100000000"
 }
@@ -50,7 +45,6 @@ android {
     sourceSets.getByName("main").res.srcDir(generatedBrandResources)
     namespace = "com.syncinit.app"
     compileSdk = 36
-    ndkVersion = "30.0.16248370"
 
     defaultConfig {
         applicationId = "com.syncinit.app"
@@ -58,18 +52,6 @@ android {
         targetSdk = 36
         versionCode = requestedVersionCode
         versionName = requestedVersionName
-        buildConfigField("boolean", "RTP_AUDIO_ENABLED", rtpAudioEnabled.toString())
-
-        ndk {
-            abiFilters += listOf("arm64-v8a", "x86_64")
-        }
-
-        externalNativeBuild {
-            cmake {
-                cppFlags += listOf("-std=c++17", "-fexceptions", "-frtti")
-                arguments += listOf("-DANDROID_STL=c++_shared")
-            }
-        }
     }
 
     signingConfigs {
@@ -110,12 +92,6 @@ android {
         jvmTarget = "17"
     }
 
-    externalNativeBuild {
-        cmake {
-            path = file("src/main/cpp/CMakeLists.txt")
-            version = "3.22.1"
-        }
-    }
 }
 
 tasks.configureEach {
@@ -123,7 +99,6 @@ tasks.configureEach {
 }
 
 dependencies {
-    implementation(project(":transport"))
     implementation(project(":backend"))
     implementation("com.google.zxing:core:3.5.4")
     implementation("com.google.android.gms:play-services-code-scanner:16.1.0")
