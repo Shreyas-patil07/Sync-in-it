@@ -85,6 +85,8 @@ class LiveKitPcmPublisher:
         self._source: rtc.AudioSource | None = None
         self._track: rtc.LocalAudioTrack | None = None
         self._started = False
+        self._connected = False
+        self._published = False
 
     async def start(self) -> None:
         if self._started:
@@ -94,6 +96,7 @@ class LiveKitPcmPublisher:
             self._token,
             options=rtc.RoomOptions(auto_subscribe=False),
         )
+        self._connected = True
         self._source = rtc.AudioSource(
             sample_rate=SAMPLE_RATE_HZ,
             num_channels=CHANNELS,
@@ -107,6 +110,7 @@ class LiveKitPcmPublisher:
             self._track,
             rtc.TrackPublishOptions(source=rtc.TrackSource.SOURCE_MICROPHONE),
         )
+        self._published = True
         self._started = True
 
     async def publish(self, pcm16le: bytes) -> None:
@@ -125,18 +129,20 @@ class LiveKitPcmPublisher:
     async def close(self) -> None:
         source, self._source = self._source, None
         track, self._track = self._track, None
-        if track is not None:
+        if track is not None and self._published:
             try:
                 await self._room.local_participant.unpublish_track(track.sid)
             except Exception:
                 pass
+        self._published = False
         if source is not None:
             try:
                 await source.aclose()
             except Exception:
                 pass
-        if self._started:
+        if self._connected:
             try:
                 await self._room.disconnect()
             finally:
+                self._connected = False
                 self._started = False
