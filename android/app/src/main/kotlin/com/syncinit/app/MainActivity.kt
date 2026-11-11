@@ -694,12 +694,12 @@ class MainActivity : Activity() {
                 }
                 activeRoom.connectAndAwait()
                 appendDiagnostic(
-                    "LIVEKIT_SPEAKER_JOIN_STARTED",
+                    "LIVEKIT_AUDIO_TRACK_SUBSCRIBED",
                     "sessionId=${joined.sessionId} deviceId=${joined.deviceId} room=${credentials.roomName}"
                 )
                 runOnUiThread {
                     if (!isFinishing && !isDestroyed && speakerBackendSession === state) {
-                        inviteStatus.text = "Authenticated · connecting to LiveKit media."
+                        inviteStatus.text = "Authenticated · audio track subscribed."
                         postStatus("Backend session joined. LiveKit audio track is subscribed.")
                     }
                 }
