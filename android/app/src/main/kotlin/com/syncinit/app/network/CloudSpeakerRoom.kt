@@ -25,36 +25,23 @@ class CloudSpeakerRoom(
         )
     )
     private val closed = AtomicBoolean(false)
-    @Volatile private var connectionThread: Thread? = null
 
-    fun connect() {
+    fun connectAndAwait() {
         check(!closed.get()) { "cloud Speaker room is closed" }
-        check(connectionThread == null) { "cloud Speaker room has already started" }
-        val thread = Thread({
-            try {
-                onStatus("Connecting Speaker to LiveKit over the internet…")
-                runBlocking {
-                    room.connect(serverUrl, participantToken)
-                }
-                if (!closed.get()) {
-                    onStatus("Speaker connected to LiveKit. Waiting for the Host audio track.")
-                }
-            } catch (error: Exception) {
-                if (!closed.get()) {
-                    onStatus("LiveKit Speaker connection failed: ${error.message ?: error.javaClass.simpleName}")
-                }
+        try {
+            onStatus("Connecting Speaker to LiveKit over the internet…")
+            runBlocking { room.connect(serverUrl, participantToken) }
+            check(!closed.get()) { "cloud Speaker room closed during connection" }
+            onStatus("Speaker connected to LiveKit. Waiting for the Host audio track.")
+        } catch (error: Exception) {
+            if (!closed.get()) {
+                onStatus("LiveKit Speaker connection failed: ${error.message ?: error.javaClass.simpleName}")
             }
-        }, "syncinit-livekit-speaker").apply {
-            isDaemon = true
+            throw error
         }
-        connectionThread = thread
-        thread.start()
     }
-
     override fun close() {
         if (!closed.compareAndSet(false, true)) return
         runCatching { room.disconnect() }
-        connectionThread?.interrupt()
-        connectionThread = null
     }
 }
