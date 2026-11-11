@@ -24,16 +24,10 @@ import android.widget.TextView
 import com.syncinit.app.core.NativeCore
 import com.syncinit.app.diagnostics.DiagnosticLogStore
 import com.syncinit.app.core.NativeSessionSmokeTest
-import com.syncinit.app.core.NetworkHandshakeSmokeTest
 import com.syncinit.app.audio.PcmAudioSmokeTest
 import com.syncinit.app.audio.SystemAudioCaptureBuffer
 import com.syncinit.app.audio.SystemAudioCaptureService
 import com.syncinit.app.audio.DacClockSmokeTest
-import com.syncinit.app.network.LanSessionBrowser
-import com.syncinit.app.network.NetworkDiagnostics
-import com.syncinit.app.network.MasterSessionHost
-import com.syncinit.app.network.NearbySession
-import com.syncinit.app.network.ReceiverSessionClient
 import com.syncinit.backend.BackendApiClient
 import com.syncinit.backend.BackendConnectionState
 import com.syncinit.backend.BackendDeviceState
@@ -41,6 +35,8 @@ import com.syncinit.backend.BackendEvent
 import com.syncinit.backend.BackendSessionCoordinator
 import com.syncinit.backend.BackendSessionCoordinatorListener
 import com.syncinit.backend.BackendSessionRole
+import com.syncinit.app.network.CloudHostSession
+import com.syncinit.app.network.CloudSpeakerRoom
 import com.google.mlkit.vision.barcode.common.Barcode
 import com.google.mlkit.vision.codescanner.GmsBarcodeScannerOptions
 import com.google.mlkit.vision.codescanner.GmsBarcodeScanning
@@ -52,8 +48,7 @@ class MainActivity : Activity() {
     private lateinit var hostJoinCodeDetails: TextView
     private lateinit var hostQrImage: ImageView
     private lateinit var audioSelectionDetails: TextView
-    private lateinit var discoveryStatus: TextView
-    private lateinit var nearbySessionsContainer: LinearLayout
+    private lateinit var inviteStatus: TextView
     private lateinit var debugLog: TextView
     private lateinit var diagnosticLogStore: DiagnosticLogStore
     private val diagnosticEvents = ArrayDeque<String>()
@@ -71,29 +66,24 @@ class MainActivity : Activity() {
         val sessionId: String,
         val joinCode: String,
         val hostToken: String,
-        val coordinator: BackendSessionCoordinator
+        val coordinator: BackendSessionCoordinator,
+        val media: CloudHostSession
     )
 
     private data class SpeakerBackendSession(
         val api: BackendApiClient,
         val sessionId: String,
         val deviceToken: String,
-        val coordinator: BackendSessionCoordinator
+        val coordinator: BackendSessionCoordinator,
+        val room: CloudSpeakerRoom
     )
 
-    @Volatile private var masterHost: MasterSessionHost? = null
-    @Volatile private var receiverClient: ReceiverSessionClient? = null
-    @Volatile private var hostServiceName: String? = null
-    @Volatile private var nearbyBrowser: LanSessionBrowser? = null
     @Volatile private var hostBackendSession: HostBackendSession? = null
     @Volatile private var speakerBackendSession: SpeakerBackendSession? = null
-    @Volatile private var pendingQrInvite: BackendInvite? = null
-    @Volatile private var pendingBackendInvite: BackendInvite? = null
     @Volatile private var selectedAudioUri: Uri? = null
     @Volatile private var selectedAudioName: String? = null
     @Volatile private var selectedSystemAudio = false
-    private val nearbySessions = LinkedHashMap<String, NearbySession>()
-
+    private val sessionGeneration = java.util.concurrent.atomic.AtomicLong(0L)
     override fun onCreate(savedInstanceState: Bundle?) {
         super.onCreate(savedInstanceState)
         diagnosticLogStore = DiagnosticLogStore(applicationContext)
