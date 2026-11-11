@@ -498,120 +498,99 @@ class MainActivity : Activity() {
             return
         }
         stopConnections(stopCapture = false)
+        val attempt = sessionGeneration.get()
         val audioUri = selectedAudioUri
         val audioName = selectedAudioName
         val useSystemAudio = selectedSystemAudio
-        val service = MasterSessionHost(applicationContext, ::postStatus, audioUri, audioName, useSystemAudio)
-        masterHost = service
-        postStatus("Starting a discoverable session…")
+        hostDetails.text = "Creating a cloud session…"
+        hostJoinCodeDetails.text = "Connecting Host media to LiveKit before showing the invitation."
+        hostQrImage.visibility = ImageView.GONE
+        postStatus("Creating a backend session and connecting the cloud media publisher…")
+
         Thread({
+            var api: BackendApiClient? = null
+            var createdSession: com.syncinit.backend.BackendSessionCreated? = null
+            var state: HostBackendSession? = null
             try {
-                val invitation = service.start()
-                var backendState: HostBackendSession? = null
-                var qrBitmap: android.graphics.Bitmap? = null
-                var backendFailure: Exception? = null
-                try {
-                    val api = BackendApiClient(BACKEND_BASE_URL)
-                    val created = api.createSession(
-                        hostName = Build.MODEL.trim().take(48).ifBlank { "Android Host" },
-                        maxSpeakers = PreviewConfig.MAX_SPEAKERS
-                    )
-                    val coordinator = createBackendCoordinator(
-                        api = api,
-                        sessionId = created.sessionId,
-                        token = created.hostToken,
-                        role = BackendSessionRole.HOST,
-                        label = "Host"
-                    )
-                    backendState = HostBackendSession(
-                        api = api,
-                        sessionId = created.sessionId,
-                        joinCode = created.joinCode,
-                        hostToken = created.hostToken,
-                        coordinator = coordinator
-                    )
-                    coordinator.start()
-                    val payload = BackendInviteCodec.encode(
-                        BackendInvite(created.joinCode, invitation.lanFingerprint)
-                    )
-                    qrBitmap = BackendInviteQr.createBitmap(payload)
-                } catch (error: Exception) {
-                    backendFailure = error
-                    backendState?.let(::closeBackendHostState)
+                val backendApi = BackendApiClient(BACKEND_BASE_URL)
+                api = backendApi
+                val created = backendApi.createSession(
+                    hostName = Build.MODEL.trim().take(48).ifBlank { "Android Host" },
+                    maxSpeakers = PreviewConfig.MAX_SPEAKERS
+                )
+                createdSession = created
+                check(sessionGeneration.get() == attempt) { "Host start was cancelled" }
+
+                val coordinator = createBackendCoordinator(
+                    api = backendApi,
+                    sessionId = created.sessionId,
+                    token = created.hostToken,
+                    role = BackendSessionRole.HOST,
+                    label = "Host"
+                )
+                val media = CloudHostSession(
+                    context = applicationContext,
+                    api = backendApi,
+                    sessionId = created.sessionId,
+                    hostToken = created.hostToken,
+                    onStatus = ::postStatus,
+                    audioFileUri = audioUri,
+                    audioFileLabel = audioName,
+                    systemAudioCaptureEnabled = useSystemAudio
+                )
+                state = HostBackendSession(
+                    api = backendApi,
+                    sessionId = created.sessionId,
+                    joinCode = created.joinCode,
+                    hostToken = created.hostToken,
+                    coordinator = coordinator,
+                    media = media
+                )
+                hostBackendSession = state
+                coordinator.start()
+                media.startAndAwaitReady()
+                check(sessionGeneration.get() == attempt && hostBackendSession === state) {
+                    "Host start was cancelled"
                 }
 
-                val readyBackendState = backendState
-                val readyQrBitmap = qrBitmap
-                val readyBackendFailure = backendFailure
+                val qrPayload = BackendInviteCodec.encode(
+                    BackendInvite(created.sessionId, created.joinCode)
+                )
+                val qrBitmap = BackendInviteQr.createBitmap(qrPayload)
+                val sourceDescription = when {
+                    useSystemAudio -> "Android app playback capture"
+                    audioUri != null -> "Local file: ${audioName ?: "selected audio"}"
+                    else -> "Diagnostic 1 kHz test signal"
+                }
+
                 runOnUiThread {
-                    if (isFinishing || isDestroyed || masterHost !== service) {
-                        readyBackendState?.let { staleState ->
-                            Thread({
-                                closeBackendHostState(staleState)
-                            }, "syncinit-backend-stale-host-cleanup").apply { isDaemon = true }.start()
-                        }
-                        service.close()
-                        return@runOnUiThread
-                    }
-                    hostServiceName = invitation.serviceName
-                    hostBackendSession = readyBackendState
-                    val sourceDescription = when {
-                        useSystemAudio -> "Capturing eligible Android app playback"
-                        audioUri != null -> "Sharing local file: ${audioName ?: "selected audio"} (loops at end-of-file)"
-                        else -> "Diagnostic 1 kHz test signal"
-                    }
+                    if (isFinishing || isDestroyed || hostBackendSession !== state) return@runOnUiThread
                     hostDetails.text =
-                        "Visible as ${invitation.serviceName}\n$sourceDescription\nWaiting for up to ${PreviewConfig.MAX_SPEAKERS} Speakers."
-                    if (readyBackendState != null && readyQrBitmap != null) {
-                        hostJoinCodeDetails.text =
-                            "Backend join code: ${readyBackendState.joinCode}\nScan this QR on each Speaker. Both devices must stay on the same local Wi-Fi."
-                        hostQrImage.setImageBitmap(readyQrBitmap)
-                        hostQrImage.visibility = ImageView.VISIBLE
-                        postStatus("Local Host started. Backend session connected; QR invitation is ready.")
-                    } else {
-                        hostJoinCodeDetails.text =
-                            "QR pairing unavailable: ${readyBackendFailure?.message ?: "backend did not return an invitation"}. Nearby LAN join remains available."
-                        hostQrImage.setImageDrawable(null)
-                        hostQrImage.visibility = ImageView.GONE
-                        postStatus("Local Host started. Backend unavailable; use nearby discovery for this session.")
-                    }
-                    renderNearbySessions()
+                        "Cloud Host active · $sourceDescription\nWaiting for up to ${PreviewConfig.MAX_SPEAKERS} Speakers."
+                    hostJoinCodeDetails.text =
+                        "Backend session: ${created.sessionId}\nJoin code: ${created.joinCode}\nScan this QR on each Speaker. Same Wi-Fi is not required."
+                    hostQrImage.setImageBitmap(qrBitmap)
+                    hostQrImage.visibility = ImageView.VISIBLE
+                    inviteStatus.text = "Host is online in LiveKit. Share the QR invitation."
+                    postStatus("Host cloud media is connected. QR invitation is ready.")
                 }
             } catch (error: Exception) {
-                if (masterHost === service) {
-                    masterHost = null
-                    postStatus("Could not host: ${error.message ?: error.javaClass.simpleName}")
+                state?.let(::closeBackendHostState)
+                if (state != null && hostBackendSession === state) hostBackendSession = null
+                if (state == null && createdSession != null && api != null) {
+                    runCatching { api.closeSession(createdSession.sessionId, createdSession.hostToken) }
                 }
-                service.close()
+                runOnUiThread {
+                    if (isFinishing || isDestroyed || sessionGeneration.get() != attempt) return@runOnUiThread
+                    hostDetails.text = "Cloud Host did not start."
+                    hostJoinCodeDetails.text =
+                        "Cloud setup failed: ${error.message ?: error.javaClass.simpleName}"
+                    hostQrImage.setImageDrawable(null)
+                    hostQrImage.visibility = ImageView.GONE
+                    postStatus("Could not start cloud Host: ${error.message ?: error.javaClass.simpleName}")
+                }
             }
-        }, "syncinit-master-startup").apply { isDaemon = true }.start()
-    }
-
-    private fun joinNearby(session: NearbySession) = joinNearby(session, null)
-
-    private fun joinNearby(session: NearbySession, invite: BackendInvite?) {
-        stopConnections()
-        stopDiscovery()
-        pendingBackendInvite = invite
-        appendDiagnostic(
-            "JOIN_TARGET",
-            "service=${session.serviceName} host=${session.hostAddress} controlPort=${session.controlPort} qrInvite=${invite != null}"
-        )
-        val client = ReceiverSessionClient(applicationContext, ::postStatus)
-        receiverClient = client
-        postStatus("Joining ${session.serviceName}…")
-        try {
-            client.connect(
-                host = session.hostAddress,
-                tokenHex = session.sessionToken,
-                controlPort = session.controlPort
-            )
-        } catch (error: Exception) {
-            pendingBackendInvite = null
-            postStatus("Could not join: ${error.message ?: error.javaClass.simpleName}")
-            client.close()
-            receiverClient = null
-        }
+        }, "syncinit-cloud-host-startup").apply { isDaemon = true }.start()
     }
 
     private fun scanHostQrCode() {
@@ -628,13 +607,9 @@ class MainActivity : Activity() {
                         postStatus("Invalid invitation QR: ${error.message ?: "unsupported code"}")
                         return@addOnSuccessListener
                     }
-                    pendingQrInvite = invite
-                    discoveryStatus.text = "QR accepted · finding the matching Host on this local network…"
-                    postStatus("QR invitation accepted. Looking for its Host over local Wi-Fi…")
-                    scanNearbySessions()
-                    nearbySessions.values.firstOrNull { matchesInvite(it, invite) }?.let {
-                        consumeQrInvite(it)
-                    }
+                    inviteStatus.text = "Invitation scanned · authenticating with the backend…"
+                    postStatus("QR accepted. Joining the backend session and connecting to LiveKit…")
+                    joinCloudSession(invite)
                 }
                 .addOnCanceledListener {
                     postStatus("QR scanning cancelled.")
@@ -651,25 +626,16 @@ class MainActivity : Activity() {
         }
     }
 
-    private fun matchesInvite(session: NearbySession, invite: BackendInvite): Boolean =
-        session.sessionToken.startsWith(invite.lanFingerprint, ignoreCase = true)
-
-    private fun consumeQrInvite(session: NearbySession) {
-        val invite = pendingQrInvite ?: return
-        if (!matchesInvite(session, invite)) return
-        pendingQrInvite = null
-        postStatus("QR matched ${session.serviceName}. Opening the direct LAN audio connection…")
-        joinNearby(session, invite)
-    }
-
-    private fun beginBackendSpeakerJoin(localClient: ReceiverSessionClient) {
-        val invite = pendingBackendInvite ?: return
-        pendingBackendInvite = null
+    private fun joinCloudSession(invite: BackendInvite) {
+        stopConnections()
+        val attempt = sessionGeneration.get()
+        inviteStatus.text = "Joining cloud session…"
         Thread({
             var api: BackendApiClient? = null
             var joinedSessionId: String? = null
             var joinedDeviceToken: String? = null
             var coordinator: BackendSessionCoordinator? = null
+            var room: CloudSpeakerRoom? = null
             try {
                 val backendApi = BackendApiClient(BACKEND_BASE_URL)
                 api = backendApi
@@ -679,14 +645,22 @@ class MainActivity : Activity() {
                 )
                 joinedSessionId = joined.sessionId
                 joinedDeviceToken = joined.deviceToken
-                runCatching {
-                    backendApi.updateDeviceState(
-                        joined.sessionId,
-                        joined.deviceToken,
-                        BackendDeviceState.SYNCING,
-                        "Direct LAN media connection established"
-                    )
+                check(joined.sessionId == invite.sessionId) {
+                    "The scanned invitation does not match the backend session"
                 }
+                check(sessionGeneration.get() == attempt) { "Speaker join was cancelled" }
+
+                val credentials = backendApi.createLiveKitToken(
+                    sessionId = joined.sessionId,
+                    bearerToken = joined.deviceToken
+                )
+                check(credentials.role == "speaker") { "Backend returned a non-Speaker LiveKit token" }
+                check(
+                    credentials.sampleRateHz == PreviewConfig.SAMPLE_RATE_HZ &&
+                        credentials.channels == PreviewConfig.CHANNELS &&
+                        credentials.chunkFrames == PreviewConfig.CHUNK_FRAMES
+                ) { "Cloud audio format does not match this Android build" }
+
                 val activeCoordinator = createBackendCoordinator(
                     api = backendApi,
                     sessionId = joined.sessionId,
@@ -695,42 +669,64 @@ class MainActivity : Activity() {
                     label = "Speaker"
                 )
                 coordinator = activeCoordinator
-                if (receiverClient !== localClient || isFinishing || isDestroyed) {
-                    activeCoordinator.close()
-                    backendApi.leaveSession(joined.sessionId, joined.deviceToken)
-                    return@Thread
+                val activeRoom = CloudSpeakerRoom(
+                    context = applicationContext,
+                    serverUrl = credentials.serverUrl,
+                    participantToken = credentials.participantToken,
+                    onStatus = ::postStatus
+                )
+                room = activeRoom
+                check(sessionGeneration.get() == attempt && !isFinishing && !isDestroyed) {
+                    "Speaker join was cancelled"
                 }
-                val speakerState = SpeakerBackendSession(
+
+                val state = SpeakerBackendSession(
                     api = backendApi,
                     sessionId = joined.sessionId,
                     deviceToken = joined.deviceToken,
-                    coordinator = activeCoordinator
+                    coordinator = activeCoordinator,
+                    room = activeRoom
                 )
-                speakerBackendSession = speakerState
+                speakerBackendSession = state
                 activeCoordinator.start()
-                appendDiagnostic("BACKEND_SPEAKER_JOINED", "sessionId=${joined.sessionId} deviceId=${joined.deviceId}")
-                postStatus("Speaker joined backend coordination; WebSocket connection starting.")
+                runCatching {
+                    backendApi.updateDeviceState(
+                        joined.sessionId,
+                        joined.deviceToken,
+                        BackendDeviceState.SYNCING,
+                        "Connecting to LiveKit cloud media"
+                    )
+                }
+                activeRoom.connect()
+                appendDiagnostic(
+                    "LIVEKIT_SPEAKER_JOIN_STARTED",
+                    "sessionId=${joined.sessionId} deviceId=${joined.deviceId} room=${credentials.roomName}"
+                )
+                runOnUiThread {
+                    if (!isFinishing && !isDestroyed && speakerBackendSession === state) {
+                        inviteStatus.text = "Authenticated · connecting to LiveKit media."
+                        postStatus("Backend session joined. LiveKit WebRTC connection is starting.")
+                    }
+                }
             } catch (error: Exception) {
+                room?.close()
                 coordinator?.close()
                 val cleanupApi = api
                 val cleanupSessionId = joinedSessionId
                 val cleanupDeviceToken = joinedDeviceToken
                 if (cleanupApi != null && cleanupSessionId != null && cleanupDeviceToken != null) {
-                    runCatching {
-                        cleanupApi.leaveSession(cleanupSessionId, cleanupDeviceToken)
+                    runCatching { cleanupApi.leaveSession(cleanupSessionId, cleanupDeviceToken) }
+                }
+                runOnUiThread {
+                    if (!isFinishing && !isDestroyed && sessionGeneration.get() == attempt) {
+                        inviteStatus.text = "Could not join the cloud session."
+                        postStatus("Cloud Speaker join failed: ${error.message ?: error.javaClass.simpleName}")
                     }
                 }
-                if (receiverClient === localClient) {
-                    postStatus(
-                        "Local audio connection is active, but backend QR coordination failed: " +
-                            "${error.message ?: error.javaClass.simpleName}"
-                    )
-                }
-                appendDiagnostic("BACKEND_SPEAKER_JOIN_FAILED", error.message ?: error.javaClass.simpleName)
+                appendDiagnostic("CLOUD_SPEAKER_JOIN_FAILED", error.message ?: error.javaClass.simpleName)
             }
-        }, "syncinit-backend-speaker-join").apply { isDaemon = true }.start()
+        }, "syncinit-cloud-speaker-join").apply { isDaemon = true }.start()
     }
-
     private fun createBackendCoordinator(
         api: BackendApiClient,
         sessionId: String,
