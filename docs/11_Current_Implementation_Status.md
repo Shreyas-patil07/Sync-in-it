@@ -49,7 +49,7 @@ The detailed checklist is [v0.9.0 Stable Release Readiness](Release_Readiness_v0
 - Real LiveKit credentials/token/publish/subscribe behavior has not been demonstrated.
 - Physical two-phone playback across separate networks has not been evidenced.
 - The cloud architecture no longer implements the original synchronized-speaker behavior.
-- The release workflow builds `:app:assembleDebug`, signs with the preview key and always creates a prerelease. A production-signed `:app:assembleRelease` lane is not configured.
+- The publisher on `main` still builds `:app:assembleDebug`, signs with the preview key and always creates a prerelease. This release-preparation branch adds a gated production-signed `:app:assembleRelease` lane; it remains pending review, merge, production secrets and CI validation.
 
 Do not publish a stable release or claim synchronized output until the relevant gates are completed and evidence is recorded.
 
