@@ -49,7 +49,6 @@ class CloudHostSession(
             hostToken = hostToken,
             listener = object : BackendHostMediaListener {
                 override fun onReady() {
-                    startupReady.countDown()
                     onStatus("Cloud media publisher connected to LiveKit.")
                 }
 
@@ -95,6 +94,7 @@ class CloudHostSession(
                     }
                 }
 
+                startupReady.countDown()
                 var sampleIndex = 0L
                 var chunkNumber = 0L
                 var nextDeadlineNs = System.nanoTime()
