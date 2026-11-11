@@ -23,7 +23,6 @@ import android.widget.ScrollView
 import android.widget.TextView
 import com.syncinit.app.core.NativeCore
 import com.syncinit.app.diagnostics.DiagnosticLogStore
-import com.syncinit.app.core.NativeSessionSmokeTest
 import com.syncinit.app.audio.PcmAudioSmokeTest
 import com.syncinit.app.audio.SystemAudioCaptureBuffer
 import com.syncinit.app.audio.SystemAudioCaptureService
@@ -985,7 +984,7 @@ class MainActivity : Activity() {
     }
 
     private fun nativeStatus(): String = try {
-        "Native C++ core API ${NativeCore.nativeCoreVersion()} · ${NativeSessionSmokeTest.run()} · ${PcmAudioSmokeTest.run()} · ${DacClockSmokeTest.run()}"
+        "Native PCM engine ${NativeCore.nativeCoreVersion()} · ${PcmAudioSmokeTest.run()} · ${DacClockSmokeTest.run()}"
     } catch (error: LinkageError) {
         "Native C++ core failed to load: ${error.message ?: "unknown linker error"}"
     } catch (error: Exception) {
