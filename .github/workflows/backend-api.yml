@@ -5,10 +5,14 @@ on:
   push:
     paths:
       - "backend/**"
+      - "android/app/build.gradle.kts"
+      - ".github/workflows/publish-android-release.yml"
       - ".github/workflows/backend-api.yml"
   pull_request:
     paths:
       - "backend/**"
+      - "android/app/build.gradle.kts"
+      - ".github/workflows/publish-android-release.yml"
       - ".github/workflows/backend-api.yml"
   workflow_dispatch:
 
