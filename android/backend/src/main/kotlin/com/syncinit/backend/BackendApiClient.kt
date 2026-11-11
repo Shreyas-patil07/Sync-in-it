@@ -14,8 +14,14 @@ import okhttp3.MediaType.Companion.toMediaType
 import okhttp3.WebSocket
 import okhttp3.WebSocketListener
 import okhttp3.Response
+import okio.ByteString
+import java.io.Closeable
 import java.io.IOException
+import java.net.SocketTimeoutException
+import java.util.concurrent.CountDownLatch
 import java.util.concurrent.TimeUnit
+import java.util.concurrent.atomic.AtomicBoolean
+import java.util.concurrent.atomic.AtomicReference
 
 /**
  * Synchronous REST client plus an asynchronous WebSocket event channel.
@@ -90,6 +96,79 @@ class BackendApiClient(
             state = body.requiredString("state"),
             heartbeatIntervalSeconds = body.requiredInt("heartbeat_interval_seconds")
         )
+    }
+
+    fun getLiveKitCredentials(sessionId: String, bearerToken: String): BackendLiveKitCredentials {
+        val body = executeJson(
+            authorizedRequest("POST", sessionPath(sessionId, "livekit-token"), bearerToken),
+            expectedCode = 200
+        )
+        return BackendLiveKitCredentials(
+            serverUrl = body.requiredString("server_url"),
+            roomName = body.requiredString("room_name"),
+            participantIdentity = body.requiredString("participant_identity"),
+            role = body.requiredString("role"),
+            participantToken = body.requiredString("participant_token")
+        )
+    }
+
+    fun openHostMediaStream(
+        sessionId: String,
+        hostToken: String,
+        onStatus: (String) -> Unit
+    ): BackendMediaStreamConnection {
+        validateToken(hostToken)
+        val connection = BackendMediaStreamConnection(onStatus)
+        val request = Request.Builder()
+            .url(endpoint("api", "v1", "sessions", sessionId, "media", "host"))
+            .build()
+        val webSocket = httpClient.newWebSocket(request, object : WebSocketListener() {
+            override fun onOpen(webSocket: WebSocket, response: Response) {
+                val auth = JsonObject().apply {
+                    addProperty("type", "authenticate")
+                    addProperty("token", hostToken)
+                }
+                if (!webSocket.send(GSON.toJson(auth))) {
+                    connection.fail(IOException("Backend rejected the Host media authentication frame"))
+                    webSocket.cancel()
+                }
+            }
+
+            override fun onMessage(webSocket: WebSocket, text: String) {
+                try {
+                    val event = JsonParser.parseString(text)
+                    if (!event.isJsonObject) throw IOException("Backend media event must be a JSON object")
+                    val payload = event.asJsonObject
+                    when (payload.get("type")?.asString) {
+                        "media.ready" -> connection.markReady()
+                        "media.stats" -> {
+                            val frames = payload.get("frames_received")?.asLong ?: 0L
+                            onStatus("Cloud media ingress accepted $frames PCM frames.")
+                        }
+                        else -> throw IOException(
+                            payload.get("detail")?.asString
+                                ?: payload.get("code")?.asString
+                                ?: "Backend returned an unexpected media event"
+                        )
+                    }
+                } catch (error: Exception) {
+                    connection.fail(IOException("Invalid backend media response", error))
+                }
+            }
+
+            override fun onFailure(webSocket: WebSocket, t: Throwable, response: Response?) {
+                val status = response?.code?.let { " (HTTP $it)" }.orEmpty()
+                connection.fail(IOException("Backend media WebSocket failed$status", t))
+            }
+
+            override fun onClosed(webSocket: WebSocket, code: Int, reason: String) {
+                if (!connection.isClosed()) {
+                    connection.fail(IOException("Backend media WebSocket closed ($code): $reason"))
+                }
+            }
+        })
+        connection.attach(webSocket)
+        return connection
     }
 
     fun getSession(sessionId: String, hostToken: String): BackendSessionSnapshot {
@@ -328,12 +407,76 @@ class BackendApiClient(
         val EMPTY_BODY = ByteArray(0).toRequestBody(JSON)
 
         fun defaultHttpClient(): OkHttpClient = OkHttpClient.Builder()
-            .connectTimeout(5, TimeUnit.SECONDS)
-            .readTimeout(10, TimeUnit.SECONDS)
-            .writeTimeout(10, TimeUnit.SECONDS)
+            .connectTimeout(20, TimeUnit.SECONDS)
+            .readTimeout(30, TimeUnit.SECONDS)
+            .writeTimeout(20, TimeUnit.SECONDS)
             .pingInterval(15, TimeUnit.SECONDS)
             .retryOnConnectionFailure(false)
             .build()
+    }
+}
+
+data class BackendLiveKitCredentials(
+    val serverUrl: String,
+    val roomName: String,
+    val participantIdentity: String,
+    val role: String,
+    val participantToken: String
+)
+
+/** Authenticated binary PCM uplink to the backend's LiveKit SFU publisher. */
+class BackendMediaStreamConnection internal constructor(
+    private val onStatus: (String) -> Unit
+) : Closeable {
+    private val ready = CountDownLatch(1)
+    private val failure = AtomicReference<IOException?>(null)
+    private val closed = AtomicBoolean(false)
+    @Volatile private var webSocket: WebSocket? = null
+
+    internal fun attach(socket: WebSocket) {
+        webSocket = socket
+    }
+
+    internal fun markReady() {
+        ready.countDown()
+        onStatus("Cloud audio relay is ready.")
+    }
+
+    internal fun fail(error: IOException) {
+        failure.compareAndSet(null, error)
+        ready.countDown()
+        onStatus(error.message ?: "Cloud audio relay failed.")
+    }
+
+    fun awaitReady(timeoutMs: Long) {
+        if (!ready.await(timeoutMs, TimeUnit.MILLISECONDS)) {
+            throw SocketTimeoutException("Timed out waiting for the cloud audio relay")
+        }
+        failure.get()?.let { throw it }
+        check(!closed.get()) { "Cloud media connection is closed" }
+    }
+
+    fun sendPcmFrame(pcm16Stereo: ByteArray) {
+        check(!closed.get()) { "Cloud media connection is closed" }
+        failure.get()?.let { throw it }
+        require(pcm16Stereo.size == 3_840) {
+            "Cloud media frames must contain exactly 20 ms of 48 kHz stereo PCM16"
+        }
+        val socket = webSocket ?: throw IOException("Cloud media WebSocket is not open")
+        if (socket.queueSize() > 192L * 1024L) {
+            throw IOException("Cloud media uplink is over 1 second behind")
+        }
+        if (!socket.send(ByteString.of(*pcm16Stereo))) {
+            throw IOException("Cloud media WebSocket rejected a PCM frame")
+        }
+    }
+
+    internal fun isClosed(): Boolean = closed.get()
+
+    override fun close() {
+        if (!closed.compareAndSet(false, true)) return
+        webSocket?.close(1000, "host-stopped")
+        ready.countDown()
     }
 }
 
