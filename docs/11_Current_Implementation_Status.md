@@ -5,7 +5,7 @@
 **Latest published APK:** v0.8.0 — previous direct-LAN implementation  
 **Current main architecture:** Render FastAPI session/authentication API + LiveKit Cloud SFU + LiveKit Android SDK  
 **Cloud migration:** merged through [PR #94](https://github.com/Shreyas-patil07/Sync-in-it/pull/94)  
-**v0.9.0 release state:** not published; stable release is blocked by missing synchronization, live integration/device evidence, and production signing/publishing support.
+**v0.9.0 release state:** not published; stable release is blocked by missing synchronization and live integration/device evidence. A separate production signing/publishing lane is being prepared off-main and still requires review, merge and production secrets.
 
 ## Current implementation summary
 
@@ -33,7 +33,7 @@ Shared clock mapping, timestamped playout scheduling, drift correction, output-l
 | Live Render + LiveKit media | Not verified end-to-end |
 | Physical cross-network Speaker playback | Not evidenced |
 | Acoustic synchronization | Not implemented in the cloud architecture |
-| Stable Android APK | Not available; publisher currently builds a debug preview APK and always marks releases as prereleases |
+| Stable Android APK | Not available on main; release-prep branch adds a separate production-signed lane, pending review, merge and production secrets |
 
 ## Backend and deployment limitations
 
