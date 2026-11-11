@@ -65,11 +65,22 @@ jobs:
           test -s android/app/syncinit-preview.jks
           echo "enabled=true" >> "$GITHUB_OUTPUT"
 
+      - name: Generate ephemeral signing key for release-variant CI
+        run: |
+          keytool -genkeypair -noprompt \
+            -keystore "$RUNNER_TEMP/syncinit-ci-release.jks" \
+            -storetype JKS \
+            -storepass ci-only-changeit \
+            -keypass ci-only-changeit \
+            -alias syncinit-ci-release \
+            -keyalg RSA -keysize 2048 -validity 2 \
+            -dname "CN=Sync In It CI Verification"
+
       - name: Generate monotonic Android version code
         id: apk_version
         run: echo "code=$(date -u +%s)" >> "$GITHUB_OUTPUT"
 
-      - name: Build cloud-media Android debug APK and backend checks
+      - name: Build Android debug and release variants with backend checks
         env:
           ORG_GRADLE_PROJECT_syncinitVersionCode: ${{ steps.apk_version.outputs.code }}
           ORG_GRADLE_PROJECT_syncinitVersionName: "0.9.0"
@@ -77,13 +88,18 @@ jobs:
           ORG_GRADLE_PROJECT_previewStorePassword: ${{ secrets.SYNCINIT_PREVIEW_KEYSTORE_PASSWORD }}
           ORG_GRADLE_PROJECT_previewKeyPassword: ${{ secrets.SYNCINIT_PREVIEW_KEYSTORE_PASSWORD }}
           ORG_GRADLE_PROJECT_previewKeyAlias: syncinit-preview
-        run: gradle -p android :app:assembleDebug :backend:check --stacktrace
+          ORG_GRADLE_PROJECT_releaseKeystorePath: ${{ runner.temp }}/syncinit-ci-release.jks
+          ORG_GRADLE_PROJECT_releaseStorePassword: ci-only-changeit
+          ORG_GRADLE_PROJECT_releaseKeyPassword: ci-only-changeit
+          ORG_GRADLE_PROJECT_releaseKeyAlias: syncinit-ci-release
+        run: gradle -p android :app:assembleDebug :app:assembleRelease :backend:check --stacktrace
 
-      - name: Verify preview APK signature
-        if: success() && steps.preview_signing.outputs.enabled == 'true'
+      - name: Verify release APK signature and package ID
         run: |
-          "$ANDROID_HOME/build-tools/36.0.0/apksigner" verify --verbose android/app/build/outputs/apk/debug/app-debug.apk
-          "$ANDROID_HOME/build-tools/36.0.0/apksigner" verify --print-certs android/app/build/outputs/apk/debug/app-debug.apk
+          APK="android/app/build/outputs/apk/release/app-release.apk"
+          test -s "$APK"
+          "$ANDROID_HOME/build-tools/36.0.0/apksigner" verify --verbose "$APK"
+          "$ANDROID_HOME/build-tools/36.0.0/aapt" dump badging "$APK" | grep -q "package: name='com.syncinit.app'"
 
       - name: Upload updateable debug APK
         if: success() && steps.preview_signing.outputs.enabled == 'true'
