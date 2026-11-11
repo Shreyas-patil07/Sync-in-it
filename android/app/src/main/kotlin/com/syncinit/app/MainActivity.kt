@@ -21,13 +21,9 @@ import android.widget.ImageView
 import android.widget.LinearLayout
 import android.widget.ScrollView
 import android.widget.TextView
-import com.syncinit.app.core.NativeCore
 import com.syncinit.app.diagnostics.DiagnosticLogStore
-import com.syncinit.app.core.NativeSessionSmokeTest
-import com.syncinit.app.audio.PcmAudioSmokeTest
 import com.syncinit.app.audio.SystemAudioCaptureBuffer
 import com.syncinit.app.audio.SystemAudioCaptureService
-import com.syncinit.app.audio.DacClockSmokeTest
 import com.syncinit.backend.BackendApiClient
 import com.syncinit.backend.BackendConnectionState
 import com.syncinit.backend.BackendDeviceState
@@ -205,7 +201,7 @@ class MainActivity : Activity() {
         content.addView(featureRow, sectionMargins(bottom = 18))
 
         foundationStatus = TextView(this).apply {
-            text = "Running native audio and scheduling checks…"
+            text = "Cloud transport stack initialized · backend connectivity is verified when a session starts."
             textSize = 12f
             setTextColor(Color.rgb(169, 185, 211))
             setPadding(dp(13), dp(12), dp(13), dp(12))
@@ -323,7 +319,6 @@ class MainActivity : Activity() {
         }.also { content.addView(it) }
 
         setContentView(scroll)
-        runStartupSmokeTests()
     }
 
     override fun onStart() {
@@ -973,23 +968,6 @@ class MainActivity : Activity() {
 
     private fun dp(value: Int): Int =
         (value * resources.displayMetrics.density + 0.5f).toInt()
-
-    private fun runStartupSmokeTests() {
-        Thread({
-            val result = nativeStatus()
-            runOnUiThread {
-                if (!isFinishing && !isDestroyed) foundationStatus.text = result
-            }
-        }, "syncinit-startup-smoke-tests").apply { isDaemon = true }.start()
-    }
-
-    private fun nativeStatus(): String = try {
-        "Native C++ core API ${NativeCore.nativeCoreVersion()} · ${NativeSessionSmokeTest.run()} · ${PcmAudioSmokeTest.run()} · ${DacClockSmokeTest.run()}"
-    } catch (error: LinkageError) {
-        "Native C++ core failed to load: ${error.message ?: "unknown linker error"}"
-    } catch (error: Exception) {
-        "Native protocol/session smoke test failed: ${error.message ?: "unknown native error"}"
-    }
 
     override fun onDestroy() {
         stopConnections()
