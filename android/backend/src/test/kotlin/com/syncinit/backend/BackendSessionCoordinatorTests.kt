@@ -87,7 +87,19 @@ private fun coordinatorReconnectsAfterTransientServerClose() {
             webSocket.send("""{"type":"authenticated","role":"host"}""")
             authenticatedTwice.countDown()
             if (count == 1) {
-                webSocket.close(1012, "simulated-server-restart")
+                // Let the authenticated event reach the client before simulating a transient
+                // server restart; this keeps the test focused on reconnect behavior.
+                Thread({
+                    try {
+                        Thread.sleep(150)
+                        webSocket.close(1012, "simulated-server-restart")
+                    } catch (_: InterruptedException) {
+                        Thread.currentThread().interrupt()
+                    }
+                }, "syncinit-test-server-restart").apply {
+                    isDaemon = true
+                    start()
+                }
             } else {
                 webSocket.send(
                     """{"type":"session.snapshot","session_id":"session-1","state":"active","devices":[]}"""
