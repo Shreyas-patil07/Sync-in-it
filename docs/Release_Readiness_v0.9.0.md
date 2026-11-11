@@ -21,8 +21,8 @@ This checklist separates a deployable cloud-transport preview from a stable rele
 | Host PCM publishing and Speaker subscription | Unit tests use a fake publisher; no live end-to-end evidence captured | Not verified |
 | Physical cross-network playback | No two-phone test evidence captured | Not verified |
 | Acoustic synchronization | Current cloud path uses standard WebRTC playout and removed the prior clock/ANCHOR pipeline | Not implemented |
-| Stable Android signing | Current publisher uses the preview signing key and debug variant | Blocked |
-| Stable release publishing | Current workflow always uses `--prerelease` | Blocked |
+| Stable Android signing | Release-prep branch adds a production signing config; not merged or exercised with production secrets | Pending |
+| Stable release publishing | Release-prep branch adds an explicit stable channel and manual sign-off; not merged or exercised | Pending |
 
 ## Release blockers
 
@@ -65,20 +65,22 @@ For a stable service, resolve or explicitly accept the current persistence risks
 
 ### 5. Production APK and release workflow
 
-The current `.github/workflows/publish-android-release.yml`:
+The publisher on `main` currently:
 
 - Builds `:app:assembleDebug`, not `:app:assembleRelease`.
 - Uses the preview signing key.
 - Produces the debug application ID `com.syncinit.app.debug`.
 - Always invokes `gh release create --prerelease`.
 
-Therefore, the current workflow cannot publish a true stable Android release. Add a separate stable lane that:
+The release-preparation branch adds a separate stable lane that:
 
 - Builds the `release` variant with application ID `com.syncinit.app`.
 - Uses a dedicated production keystore and protected GitHub Actions secrets, separate from preview signing.
 - Verifies the APK signature and certificate fingerprint.
 - Confirms the app version name and monotonically increasing versionCode.
 - Creates a non-prerelease GitHub release only after the required validation gates are signed off.
+
+The new lane fails closed unless the four dedicated secrets are present, the operator enters the explicit `ALL_RELEASE_GATES_PASSED` acknowledgement, and the release notes no longer identify the release as a preview or no-go. The lane remains unmerged and untested with the user's production keystore; it does not remove the product, integration or physical-test blockers.
 
 Do not reuse or expose signing keys in workflow logs, repository files or this checklist.
 
