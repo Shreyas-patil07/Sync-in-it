@@ -24,7 +24,6 @@ import android.widget.TextView
 import com.syncinit.app.core.NativeCore
 import com.syncinit.app.diagnostics.DiagnosticLogStore
 import com.syncinit.app.core.NativeSessionSmokeTest
-import com.syncinit.app.core.NetworkHandshakeSmokeTest
 import com.syncinit.app.audio.PcmAudioSmokeTest
 import com.syncinit.app.audio.SystemAudioCaptureBuffer
 import com.syncinit.app.audio.SystemAudioCaptureService
@@ -54,7 +53,7 @@ class MainActivity : Activity() {
     private lateinit var hostJoinCodeDetails: TextView
     private lateinit var hostQrImage: ImageView
     private lateinit var audioSelectionDetails: TextView
-    private lateinit var discoveryStatus: TextView
+    private lateinit var inviteStatus: TextView
     private lateinit var debugLog: TextView
     private lateinit var diagnosticLogStore: DiagnosticLogStore
     private val diagnosticEvents = ArrayDeque<String>()
@@ -212,7 +211,7 @@ class MainActivity : Activity() {
         content.addView(featureRow, sectionMargins(bottom = 18))
 
         foundationStatus = TextView(this).apply {
-            text = "Running native protocol and TCP/UDP loopback checks…"
+            text = "Running native session, PCM and audio-output checks…"
             textSize = 12f
             setTextColor(Color.rgb(169, 185, 211))
             setPadding(dp(13), dp(12), dp(13), dp(12))
@@ -273,13 +272,13 @@ class MainActivity : Activity() {
             description = "Scan the Host invitation from anywhere with an internet connection. Audio is delivered through LiveKit; the phones do not need to share a Wi-Fi network."
         )
         nearbyCard.addView(actionButton("Scan Host QR code") { scanHostQrCode() }, sectionMargins(top = 12, bottom = 7))
-        discoveryStatus = TextView(this).apply {
+        inviteStatus = TextView(this).apply {
             text = "Ready to scan a cloud invitation."
             textSize = 12f
             setTextColor(Color.rgb(142, 160, 190))
             setPadding(dp(2), dp(7), dp(2), dp(10))
         }
-        nearbyCard.addView(discoveryStatus)
+        nearbyCard.addView(inviteStatus)
 
         val connectionCard = sectionCard(
             parent = content,
@@ -309,7 +308,6 @@ class MainActivity : Activity() {
         }
         diagnosticActions.addView(actionButton("Save diagnostic report (.txt)") { exportDiagnosticLog() }, sectionMargins(top = 7))
         diagnosticActions.addView(actionButton("Clear diagnostic log") { clearDiagnosticLog() }, sectionMargins(top = 7))
-        diagnosticActions.removeViewAt(0)
         diagnosticsCard.addView(diagnosticActions, sectionMargins(top = 12, bottom = 10))
         debugLog = TextView(this).apply {
             text = "No diagnostic events yet."
@@ -585,7 +583,7 @@ class MainActivity : Activity() {
                         "Cloud join code: ${created.joinCode}\nScan this QR on each Speaker. No shared Wi-Fi is required."
                     hostQrImage.setImageBitmap(qrBitmap)
                     hostQrImage.visibility = ImageView.VISIBLE
-                    discoveryStatus.text = "Host cloud media is published. Speakers can scan the invitation."
+                    inviteStatus.text = "Host cloud media is published. Speakers can scan the invitation."
                     postStatus("Host connected to the LiveKit cloud audio relay. QR invitation is ready.")
                 }
             } catch (error: Exception) {
@@ -987,7 +985,7 @@ class MainActivity : Activity() {
     }
 
     private fun nativeStatus(): String = try {
-        "Native C++ core API ${NativeCore.nativeCoreVersion()} · ${NativeSessionSmokeTest.run()} · ${NetworkHandshakeSmokeTest.run()} · ${PcmAudioSmokeTest.run()} · ${DacClockSmokeTest.run()}"
+        "Native C++ core API ${NativeCore.nativeCoreVersion()} · ${NativeSessionSmokeTest.run()} · ${PcmAudioSmokeTest.run()} · ${DacClockSmokeTest.run()}"
     } catch (error: LinkageError) {
         "Native C++ core failed to load: ${error.message ?: "unknown linker error"}"
     } catch (error: Exception) {
