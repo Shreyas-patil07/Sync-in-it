@@ -1,4 +1,8 @@
 # SPDX-License-Identifier: Apache-2.0
+import base64
+import json
+
+import pytest
 from fastapi.testclient import TestClient
 
 from app.main import create_app
@@ -158,3 +162,91 @@ def test_health_supports_get_and_head(tmp_path):
 def test_unauthorized_session_access_is_rejected(tmp_path):
     client = TestClient(create_app(tmp_path / "test.sqlite3"))
     assert client.get("/api/v1/sessions/anything").status_code == 401
+
+
+
+def _jwt_claims(token: str) -> dict:
+    payload = token.split(".")[1]
+    payload += "=" * (-len(payload) % 4)
+    return json.loads(base64.urlsafe_b64decode(payload))
+
+
+def test_livekit_tokens_are_role_scoped_and_secret_stays_server_side(tmp_path, monkeypatch):
+    monkeypatch.setenv("LIVEKIT_URL", "https://sync-in-it.example.livekit.cloud")
+    monkeypatch.setenv("LIVEKIT_API_KEY", "test-api-key")
+    monkeypatch.setenv("LIVEKIT_API_SECRET", "test-api-secret-never-return-this")
+    client = TestClient(create_app(tmp_path / "livekit.sqlite3"))
+
+    host = client.post(
+        "/api/v1/sessions",
+        json={"host_name": "Host A", "max_speakers": 2},
+    ).json()
+    joined = client.post(
+        "/api/v1/sessions/join",
+        json={"join_code": host["join_code"], "device_name": "Speaker A"},
+    ).json()
+    session_id = host["session_id"]
+
+    host_response = client.post(
+        f"/api/v1/sessions/{session_id}/livekit-token",
+        headers={"Authorization": f"Bearer {host['host_token']}"},
+    )
+    speaker_response = client.post(
+        f"/api/v1/sessions/{session_id}/livekit-token",
+        headers={"Authorization": f"Bearer {joined['device_token']}"},
+    )
+
+    assert host_response.status_code == 200
+    assert speaker_response.status_code == 200
+    host_body = host_response.json()
+    speaker_body = speaker_response.json()
+    expected_room = f"syncinit-{session_id}"
+    assert host_body["server_url"] == "wss://sync-in-it.example.livekit.cloud"
+    assert host_body["room_name"] == expected_room
+    assert speaker_body["room_name"] == expected_room
+    assert "test-api-secret-never-return-this" not in host_response.text
+    assert "test-api-secret-never-return-this" not in speaker_response.text
+
+    host_claims = _jwt_claims(host_body["participant_token"])
+    speaker_claims = _jwt_claims(speaker_body["participant_token"])
+    assert host_claims["video"]["roomJoin"] is True
+    assert host_claims["video"]["canPublish"] is True
+    assert host_claims["video"]["canSubscribe"] is False
+    assert speaker_claims["video"]["roomJoin"] is True
+    assert speaker_claims["video"]["canPublish"] is False
+    assert speaker_claims["video"]["canSubscribe"] is True
+    assert host_claims["video"]["room"] == expected_room
+    assert speaker_claims["video"]["room"] == expected_room
+
+
+def test_livekit_token_requires_session_credentials_and_configuration(tmp_path, monkeypatch):
+    client = TestClient(create_app(tmp_path / "livekit-auth.sqlite3"))
+    host = client.post("/api/v1/sessions", json={}).json()
+    endpoint = f"/api/v1/sessions/{host['session_id']}/livekit-token"
+
+    assert client.post(endpoint).status_code == 401
+    response = client.post(
+        endpoint,
+        headers={"Authorization": f"Bearer {host['host_token']}"},
+    )
+    assert response.status_code == 503
+    assert response.json()["detail"] == "livekit_not_configured"
+
+
+def test_livekit_media_ingress_rejects_speaker_credentials(tmp_path, monkeypatch):
+    client = TestClient(create_app(tmp_path / "livekit-media-auth.sqlite3"))
+    host = client.post("/api/v1/sessions", json={}).json()
+    speaker = client.post(
+        "/api/v1/sessions/join",
+        json={"join_code": host["join_code"], "device_name": "Speaker A"},
+    ).json()
+
+    with client.websocket_connect(
+        f"/api/v1/sessions/{host['session_id']}/media/host"
+    ) as websocket:
+        websocket.send_text(json.dumps({
+            "type": "authenticate",
+            "token": speaker["device_token"],
+        }))
+        with pytest.raises(Exception):
+            websocket.receive_text()
