@@ -35,4 +35,9 @@ jobs:
           gradle-version: "8.13"
 
       - name: Compile and run transport integration tests
-        run: gradle -p android/transport check
+        run: |
+          if [ ! -f android/transport/build.gradle.kts ]; then
+            echo "::notice::The local socket transport module was removed from this cloud-only branch; legacy transport checks are skipped."
+            exit 0
+          fi
+          gradle -p android/transport check
