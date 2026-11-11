@@ -80,7 +80,7 @@ The release-preparation branch adds a separate stable lane that:
 - Confirms the app version name and monotonically increasing versionCode.
 - Creates a non-prerelease GitHub release only after the required validation gates are signed off.
 
-The new lane fails closed unless the four dedicated secrets are present, the operator enters the explicit `ALL_RELEASE_GATES_PASSED` acknowledgement, and the release notes no longer identify the release as a preview or no-go. The lane remains unmerged and untested with the user's production keystore; it does not remove the product, integration or physical-test blockers.
+The new lane fails closed unless these GitHub Actions secrets are present: `SYNCINIT_RELEASE_KEYSTORE_BASE64` (base64-encoded production JKS), `SYNCINIT_RELEASE_KEYSTORE_PASSWORD`, `SYNCINIT_RELEASE_KEY_ALIAS` and `SYNCINIT_RELEASE_KEY_PASSWORD`. The operator must also enter the explicit `ALL_RELEASE_GATES_PASSED` acknowledgement, and the release notes must no longer identify the release as a preview or no-go. Preview tags use `vX.Y.Z-preview.N` or `vX.Y.Z-rc.N`; the unsuffixed `vX.Y.Z` tag is reserved for stable publication. The lane remains unmerged and untested with the production keystore; it does not remove the product, integration or physical-test blockers.
 
 Do not reuse or expose signing keys in workflow logs, repository files or this checklist.
 
