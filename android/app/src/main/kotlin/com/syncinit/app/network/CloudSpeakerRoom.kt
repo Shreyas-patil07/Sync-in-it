@@ -19,7 +19,7 @@ import kotlinx.coroutines.CoroutineStart
 import kotlinx.coroutines.Dispatchers
 import kotlinx.coroutines.SupervisorJob
 import kotlinx.coroutines.cancel
-import kotlinx.coroutines.flow.collect
+import io.livekit.android.events.collect
 import kotlinx.coroutines.launch
 import kotlinx.coroutines.runBlocking
 
