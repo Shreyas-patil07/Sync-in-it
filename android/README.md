@@ -79,7 +79,14 @@ Updateable preview APKs use application ID `com.syncinit.app.debug`. To install 
 - `SYNCINIT_PREVIEW_KEYSTORE_BASE64`
 - `SYNCINIT_PREVIEW_KEYSTORE_PASSWORD`
 
-The main-branch publisher currently builds `:app:assembleDebug`, signs with the preview key and always marks releases as prereleases. This is **not** a production stable-release pipeline. The release-preparation branch adds a separate stable lane that builds `:app:assembleRelease` (application ID `com.syncinit.app`), requires a dedicated production keystore, verifies the APK signature, and publishes without the prerelease flag only after explicit manual sign-off and stable release notes. The lane is not available on `main` until this branch is merged; it also requires the production signing secrets listed below.
+The main-branch publisher currently builds `:app:assembleDebug`, signs with the preview key and always marks releases as prereleases. This is **not** a production stable-release pipeline. The release-preparation branch adds a separate stable lane that builds `:app:assembleRelease` (application ID `com.syncinit.app`), requires a dedicated production keystore, verifies the APK signature, and publishes without the prerelease flag only after explicit manual sign-off and stable release notes. The lane is not available on `main` until this branch is merged. It requires these GitHub Actions secrets:
+
+- `SYNCINIT_RELEASE_KEYSTORE_BASE64` — base64-encoded production JKS keystore.
+- `SYNCINIT_RELEASE_KEYSTORE_PASSWORD` — keystore password.
+- `SYNCINIT_RELEASE_KEY_ALIAS` — production signing alias.
+- `SYNCINIT_RELEASE_KEY_PASSWORD` — private-key password.
+
+Preview signing remains separate and continues to use `SYNCINIT_PREVIEW_KEYSTORE_BASE64` and `SYNCINIT_PREVIEW_KEYSTORE_PASSWORD`.
 
 Never commit keystores or passwords.
 
