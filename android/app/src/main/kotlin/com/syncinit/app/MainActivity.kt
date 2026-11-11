@@ -692,7 +692,7 @@ class MainActivity : Activity() {
                         "Connecting to LiveKit cloud media"
                     )
                 }
-                activeRoom.connect()
+                activeRoom.connectAndAwait()
                 appendDiagnostic(
                     "LIVEKIT_SPEAKER_JOIN_STARTED",
                     "sessionId=${joined.sessionId} deviceId=${joined.deviceId} room=${credentials.roomName}"
