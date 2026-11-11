@@ -188,7 +188,7 @@ class MainActivity : Activity() {
         }.also { content.addView(it) }
 
         TextView(this).apply {
-            text = "Create a local speaker group over your phone hotspot or private Wi-Fi. No internet connection is needed."
+            text = "Create a cloud speaker group. Host and Speakers can be on completely different networks."
             textSize = 14f
             setTextColor(Color.rgb(157, 169, 194))
             setLineSpacing(dp(2).toFloat(), 1f)
@@ -198,14 +198,14 @@ class MainActivity : Activity() {
         val featureRow = LinearLayout(this).apply {
             orientation = LinearLayout.HORIZONTAL
         }
-        featureRow.addView(featureChip("NO INTERNET"), LinearLayout.LayoutParams(
+        featureRow.addView(featureChip("CLOUD CONNECTED"), LinearLayout.LayoutParams(
             LinearLayout.LayoutParams.WRAP_CONTENT, LinearLayout.LayoutParams.WRAP_CONTENT
         ).apply { rightMargin = dp(8) })
         featureRow.addView(featureChip("UP TO ${PreviewConfig.MAX_SPEAKERS} SPEAKERS"))
         content.addView(featureRow, sectionMargins(bottom = 18))
 
         foundationStatus = TextView(this).apply {
-            text = "Running native protocol and TCP/UDP loopback checks…"
+            text = "Running native audio and scheduling checks…"
             textSize = 12f
             setTextColor(Color.rgb(169, 185, 211))
             setPadding(dp(13), dp(12), dp(13), dp(12))
@@ -217,7 +217,7 @@ class MainActivity : Activity() {
             parent = content,
             eyebrow = "01 / HOST",
             title = "Start a speaker group",
-            description = "Choose a local audio file to stream from this phone to every connected Speaker. The diagnostic timing signal remains available for sync tests."
+            description = "Choose audio from this phone and publish it to the cloud. Every Speaker receives the same LiveKit room audio over the internet."
         )
         hostCard.addView(actionButton("Choose audio file") { chooseAudioFile() }, sectionMargins(top = 12, bottom = 7))
         hostCard.addView(actionButton("Capture system audio") { requestSystemAudioCapture() }, sectionMargins(bottom = 7))
@@ -259,34 +259,28 @@ class MainActivity : Activity() {
             bottomMargin = dp(6)
         })
 
-        val nearbyCard = sectionCard(
+        val joinCard = sectionCard(
             parent = content,
             eyebrow = "02 / JOIN",
-            title = "Scan a Host QR code",
-            description = "Scan the Host's invitation, then connect both phones to the same Wi-Fi or hotspot. QR pairing handles coordination; audio stays on the local network."
+            title = "Join a cloud speaker group",
+            description = "Scan the Host invitation. Backend authentication and LiveKit WebRTC deliver audio over the internet. Same Wi-Fi is not required."
         )
-        nearbyCard.addView(actionButton("Scan Host QR code") { scanHostQrCode() }, sectionMargins(top = 12, bottom = 7))
-        nearbyCard.addView(actionButton("Refresh nearby sessions") { scanNearbySessions() }, sectionMargins(bottom = 8))
-        discoveryStatus = TextView(this).apply {
-            text = "Searching when this screen is open…"
+        joinCard.addView(actionButton("Scan Host QR code") { scanHostQrCode() }, sectionMargins(top = 12, bottom = 7))
+        inviteStatus = TextView(this).apply {
+            text = "Ready to scan a Host invitation."
             textSize = 12f
             setTextColor(Color.rgb(142, 160, 190))
             setPadding(dp(2), dp(7), dp(2), dp(10))
         }
-        nearbyCard.addView(discoveryStatus)
-        nearbySessionsContainer = LinearLayout(this).apply {
-            orientation = LinearLayout.VERTICAL
-        }
-        nearbyCard.addView(nearbySessionsContainer)
-
+        joinCard.addView(inviteStatus)
         val connectionCard = sectionCard(
             parent = content,
             eyebrow = "03 / SESSION",
             title = "Connection status",
-            description = "Live host, clock and receiver updates appear here."
+            description = "Live backend session, WebRTC media and Speaker status appear here."
         )
         status = TextView(this).apply {
-            text = "Idle · connect all phones to the same hotspot or private Wi-Fi network."
+            text = "Idle · connect to the internet to host or join a cloud speaker group."
             textSize = 13f
             setTextColor(Color.rgb(190, 204, 228))
             setLineSpacing(dp(2).toFloat(), 1f)
@@ -299,13 +293,12 @@ class MainActivity : Activity() {
         val diagnosticsCard = sectionCard(
             parent = content,
             eyebrow = "04 / DIAGNOSTICS",
-            title = "Network debugger",
-            description = "Capture network, clock and session events. Save the full app-private diagnostic history as a plain-text report."
+            title = "Cloud media debugger",
+            description = "Capture backend, LiveKit and audio events. Save the full app-private diagnostic history as a plain-text report."
         )
         val diagnosticActions = LinearLayout(this).apply {
             orientation = LinearLayout.VERTICAL
         }
-        diagnosticActions.addView(actionButton("Capture local network state") { captureNetworkSnapshot() })
         diagnosticActions.addView(actionButton("Save diagnostic report (.txt)") { exportDiagnosticLog() }, sectionMargins(top = 7))
         diagnosticActions.addView(actionButton("Clear diagnostic log") { clearDiagnosticLog() }, sectionMargins(top = 7))
         diagnosticsCard.addView(diagnosticActions, sectionMargins(top = 12, bottom = 10))
@@ -322,7 +315,7 @@ class MainActivity : Activity() {
         diagnosticsCard.addView(debugLog)
 
         TextView(this).apply {
-            text = "PLAYBACK NOTE\nThe Host can stream a selected local file, capture eligible Android app playback with explicit system consent, or use the diagnostic signal. Both media sources feed the same 48 kHz stereo PCM16 timeline and TCP audio channel. Android may block capture for protected or capture-restricted apps. The Host waits for clock-stable, buffered Speakers before coordinating the shared start anchor."
+            text = "PLAYBACK NOTE\nThe Host can stream a selected local file, capture eligible Android app playback with explicit system consent, or use the diagnostic signal. Audio is uploaded to the backend and published to LiveKit. Speakers receive the cloud audio track through WebRTC. Android may block capture for protected or capture-restricted apps."
             textSize = 11f
             setTextColor(Color.rgb(119, 137, 168))
             setLineSpacing(dp(2).toFloat(), 1f)
@@ -335,13 +328,8 @@ class MainActivity : Activity() {
 
     override fun onStart() {
         super.onStart()
-        scanNearbySessions()
     }
 
-    override fun onStop() {
-        stopDiscovery()
-        super.onStop()
-    }
 
     @Deprecated("Deprecated in Android API")
     override fun onActivityResult(requestCode: Int, resultCode: Int, data: Intent?) {
