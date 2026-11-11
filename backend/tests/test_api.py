@@ -2,7 +2,6 @@
 import base64
 import json
 
-import pytest
 from fastapi.testclient import TestClient
 
 from app.main import create_app
@@ -248,5 +247,6 @@ def test_livekit_media_ingress_rejects_speaker_credentials(tmp_path, monkeypatch
             "type": "authenticate",
             "token": speaker["device_token"],
         }))
-        with pytest.raises(Exception):
-            websocket.receive_text()
+        closed = websocket.receive()
+        assert closed["type"] == "websocket.close"
+        assert closed["code"] == 4401
