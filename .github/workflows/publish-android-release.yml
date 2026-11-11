@@ -65,14 +65,12 @@ jobs:
       - name: Set up Android SDK
         uses: android-actions/setup-android@v4
 
-      - name: Install Android SDK, NDK and CMake
+      - name: Install Android SDK
         run: |
           sdkmanager --install \
             "platform-tools" \
             "platforms;android-36" \
-            "build-tools;36.0.0" \
-            "ndk;30.0.16248370" \
-            "cmake;3.22.1"
+            "build-tools;36.0.0"
 
       - name: Require persistent preview signing key
         env:
@@ -101,7 +99,7 @@ jobs:
           ORG_GRADLE_PROJECT_previewStorePassword: ${{ secrets.SYNCINIT_PREVIEW_KEYSTORE_PASSWORD }}
           ORG_GRADLE_PROJECT_previewKeyPassword: ${{ secrets.SYNCINIT_PREVIEW_KEYSTORE_PASSWORD }}
           ORG_GRADLE_PROJECT_previewKeyAlias: syncinit-preview
-        run: gradle -p android :app:assembleDebug :transport:check --stacktrace
+        run: gradle -p android :app:assembleDebug :backend:check --stacktrace
 
       - name: Verify APK signature
         run: |
