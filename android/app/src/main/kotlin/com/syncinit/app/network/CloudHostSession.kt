@@ -99,8 +99,12 @@ class CloudHostSession(
                 var chunkNumber = 0L
                 var nextDeadlineNs = System.nanoTime()
                 while (!closed.get()) {
-                    val pcm = source?.readFrames(PreviewConfig.CHUNK_FRAMES)
-                        ?: createDiagnosticChunk(sampleIndex)
+                    val pcm = when (source) {
+                        is LocalAudioFilePcmSource -> source.readFrames(PreviewConfig.CHUNK_FRAMES)
+                        is SystemAudioPcmSource -> source.readFrames(PreviewConfig.CHUNK_FRAMES)
+                        null -> createDiagnosticChunk(sampleIndex)
+                        else -> throw IOException("Unsupported cloud audio source: ${source.javaClass.name}")
+                    }
                     if (!connection.sendPcmChunk(pcm)) {
                         throw IOException("Cloud media uplink is backpressured or disconnected")
                     }
