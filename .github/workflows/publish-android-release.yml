@@ -1,5 +1,5 @@
 # SPDX-License-Identifier: Apache-2.0
-name: Publish Android Preview Release
+name: Publish Android Release
 
 on:
   push:
@@ -8,8 +8,20 @@ on:
   workflow_dispatch:
     inputs:
       release_tag:
-        description: "Semantic version tag to publish (for example v0.6.1)"
+        description: "Semantic version tag to publish (for example v0.9.0)"
         required: true
+        type: string
+      release_channel:
+        description: "Preview keeps the debug package; stable builds the production package."
+        required: true
+        type: choice
+        options:
+          - preview
+          - stable
+        default: preview
+      stable_release_ack:
+        description: "For stable only, enter ALL_RELEASE_GATES_PASSED after reviewing the readiness checklist."
+        required: false
         type: string
 
 permissions:
@@ -20,8 +32,8 @@ concurrency:
   cancel-in-progress: false
 
 jobs:
-  publish-android-preview:
-    name: Build and publish Android preview
+  publish-android:
+    name: Build and publish Android ${{ inputs.release_channel || 'preview' }}
     runs-on: ubuntu-latest
     timeout-minutes: 30
     steps:
@@ -30,13 +42,16 @@ jobs:
         with:
           ref: ${{ github.sha }}
 
-      - name: Derive release tag and app version
+      - name: Derive release tag, app version and channel
         id: release
         env:
           INPUT_RELEASE_TAG: ${{ inputs.release_tag }}
+          INPUT_RELEASE_CHANNEL: ${{ inputs.release_channel }}
+          STABLE_RELEASE_ACK: ${{ inputs.stable_release_ack }}
           REF_NAME: ${{ github.ref_name }}
         shell: bash
         run: |
+          set -euo pipefail
           RELEASE_TAG="$INPUT_RELEASE_TAG"
           if [ -z "$RELEASE_TAG" ]; then
             RELEASE_TAG="${REF_NAME#release/}"
@@ -44,12 +59,22 @@ jobs:
           if [[ "$RELEASE_TAG" =~ ^v([0-9]+\.[0-9]+\.[0-9]+)$ ]]; then
             VERSION="${BASH_REMATCH[1]}"
           else
-            echo "::error::Expected a semantic version tag such as v0.6.1; received '$RELEASE_TAG'."
+            echo "::error::Expected a semantic version tag such as v0.9.0; received '$RELEASE_TAG'."
+            exit 1
+          fi
+          CHANNEL="${INPUT_RELEASE_CHANNEL:-preview}"
+          if [[ "$CHANNEL" != "preview" && "$CHANNEL" != "stable" ]]; then
+            echo "::error::Release channel must be preview or stable."
+            exit 1
+          fi
+          if [[ "$CHANNEL" == "stable" && "$STABLE_RELEASE_ACK" != "ALL_RELEASE_GATES_PASSED" ]]; then
+            echo "::error::Stable publishing requires stable_release_ack=ALL_RELEASE_GATES_PASSED."
             exit 1
           fi
           echo "tag=$RELEASE_TAG" >> "$GITHUB_OUTPUT"
           echo "version=$VERSION" >> "$GITHUB_OUTPUT"
-          echo "Publishing $RELEASE_TAG from $GITHUB_SHA"
+          echo "channel=$CHANNEL" >> "$GITHUB_OUTPUT"
+          echo "Publishing $RELEASE_TAG ($CHANNEL) from $GITHUB_SHA"
 
       - name: Set up JDK 17
         uses: actions/setup-java@v4
@@ -72,13 +97,34 @@ jobs:
             "platforms;android-36" \
             "build-tools;36.0.0"
 
+      - name: Require production signing key
+        if: steps.release.outputs.channel == 'stable'
+        env:
+          RELEASE_KEYSTORE_BASE64: ${{ secrets.SYNCINIT_RELEASE_KEYSTORE_BASE64 }}
+          RELEASE_KEYSTORE_PASSWORD: ${{ secrets.SYNCINIT_RELEASE_KEYSTORE_PASSWORD }}
+          RELEASE_KEY_ALIAS: ${{ secrets.SYNCINIT_RELEASE_KEY_ALIAS }}
+          RELEASE_KEY_PASSWORD: ${{ secrets.SYNCINIT_RELEASE_KEY_PASSWORD }}
+        run: |
+          set -euo pipefail
+          if [ -z "$RELEASE_KEYSTORE_BASE64" ] || [ -z "$RELEASE_KEYSTORE_PASSWORD" ] || [ -z "$RELEASE_KEY_ALIAS" ] || [ -z "$RELEASE_KEY_PASSWORD" ]; then
+            echo "::error::Configure SYNCINIT_RELEASE_KEYSTORE_BASE64, SYNCINIT_RELEASE_KEYSTORE_PASSWORD, SYNCINIT_RELEASE_KEY_ALIAS and SYNCINIT_RELEASE_KEY_PASSWORD before a stable release."
+            exit 1
+          fi
+          mkdir -p android/app
+          printf '%s' "$RELEASE_KEYSTORE_BASE64" | base64 --decode > android/app/syncinit-release.jks
+          test -s android/app/syncinit-release.jks
+          keytool -list -keystore android/app/syncinit-release.jks \
+            -storepass "$RELEASE_KEYSTORE_PASSWORD" -alias "$RELEASE_KEY_ALIAS" >/dev/null
+
       - name: Require persistent preview signing key
+        if: steps.release.outputs.channel == 'preview'
         env:
           PREVIEW_KEYSTORE_BASE64: ${{ secrets.SYNCINIT_PREVIEW_KEYSTORE_BASE64 }}
           PREVIEW_KEYSTORE_PASSWORD: ${{ secrets.SYNCINIT_PREVIEW_KEYSTORE_PASSWORD }}
         run: |
+          set -euo pipefail
           if [ -z "$PREVIEW_KEYSTORE_BASE64" ] || [ -z "$PREVIEW_KEYSTORE_PASSWORD" ]; then
-            echo "::error::Configure SYNCINIT_PREVIEW_KEYSTORE_BASE64 and SYNCINIT_PREVIEW_KEYSTORE_PASSWORD before publishing an updateable APK."
+            echo "::error::Configure SYNCINIT_PREVIEW_KEYSTORE_BASE64 and SYNCINIT_PREVIEW_KEYSTORE_PASSWORD before publishing an updateable preview APK."
             exit 1
           fi
           mkdir -p android/app
@@ -91,7 +137,19 @@ jobs:
         id: apk_version
         run: echo "code=$(date -u +%s)" >> "$GITHUB_OUTPUT"
 
-      - name: Build updateable APK and run transport tests
+      - name: Build stable release APK and run backend checks
+        if: steps.release.outputs.channel == 'stable'
+        env:
+          ORG_GRADLE_PROJECT_syncinitVersionCode: ${{ steps.apk_version.outputs.code }}
+          ORG_GRADLE_PROJECT_syncinitVersionName: ${{ steps.release.outputs.version }}
+          ORG_GRADLE_PROJECT_releaseKeystorePath: ${{ github.workspace }}/android/app/syncinit-release.jks
+          ORG_GRADLE_PROJECT_releaseStorePassword: ${{ secrets.SYNCINIT_RELEASE_KEYSTORE_PASSWORD }}
+          ORG_GRADLE_PROJECT_releaseKeyAlias: ${{ secrets.SYNCINIT_RELEASE_KEY_ALIAS }}
+          ORG_GRADLE_PROJECT_releaseKeyPassword: ${{ secrets.SYNCINIT_RELEASE_KEY_PASSWORD }}
+        run: gradle -p android :app:assembleRelease :backend:check --stacktrace
+
+      - name: Build preview APK and run backend checks
+        if: steps.release.outputs.channel == 'preview'
         env:
           ORG_GRADLE_PROJECT_syncinitVersionCode: ${{ steps.apk_version.outputs.code }}
           ORG_GRADLE_PROJECT_syncinitVersionName: ${{ steps.release.outputs.version }}
@@ -101,60 +159,87 @@ jobs:
           ORG_GRADLE_PROJECT_previewKeyAlias: syncinit-preview
         run: gradle -p android :app:assembleDebug :backend:check --stacktrace
 
-      - name: Verify APK signature
+      - name: Verify stable APK signature
+        if: steps.release.outputs.channel == 'stable'
         run: |
-          "$ANDROID_HOME/build-tools/36.0.0/apksigner" verify --verbose android/app/build/outputs/apk/debug/app-debug.apk
-          "$ANDROID_HOME/build-tools/36.0.0/apksigner" verify --print-certs android/app/build/outputs/apk/debug/app-debug.apk
+          APK="android/app/build/outputs/apk/release/app-release.apk"
+          test -s "$APK"
+          "$ANDROID_HOME/build-tools/36.0.0/apksigner" verify --verbose "$APK"
+          "$ANDROID_HOME/build-tools/36.0.0/apksigner" verify --print-certs "$APK"
+
+      - name: Verify preview APK signature
+        if: steps.release.outputs.channel == 'preview'
+        run: |
+          APK="android/app/build/outputs/apk/debug/app-debug.apk"
+          test -s "$APK"
+          "$ANDROID_HOME/build-tools/36.0.0/apksigner" verify --verbose "$APK"
+          "$ANDROID_HOME/build-tools/36.0.0/apksigner" verify --print-certs "$APK"
 
       - name: Prepare release assets
+        id: assets
         env:
           VERSION: ${{ steps.release.outputs.version }}
+          CHANNEL: ${{ steps.release.outputs.channel }}
         run: |
+          set -euo pipefail
           mkdir -p release-assets
-          APK="SyncInIt-Android-preview-v${VERSION}.apk"
-          cp android/app/build/outputs/apk/debug/app-debug.apk "release-assets/$APK"
+          if [ "$CHANNEL" = "stable" ]; then
+            APK="SyncInIt-Android-v${VERSION}.apk"
+            cp android/app/build/outputs/apk/release/app-release.apk "release-assets/$APK"
+          else
+            APK="SyncInIt-Android-preview-v${VERSION}.apk"
+            cp android/app/build/outputs/apk/debug/app-debug.apk "release-assets/$APK"
+          fi
           sha256sum "release-assets/$APK" | awk '{print $1}' > release-assets/SHA256SUMS.txt
           echo "apk=$APK" >> "$GITHUB_OUTPUT"
-        id: assets
 
       - name: Prepare release notes
         env:
           VERSION: ${{ steps.release.outputs.version }}
           RELEASE_TAG: ${{ steps.release.outputs.tag }}
+          CHANNEL: ${{ steps.release.outputs.channel }}
         run: |
+          set -euo pipefail
           NOTES_FILE="RELEASE_NOTES_${RELEASE_TAG}.md"
           if [ -f "$NOTES_FILE" ]; then
             cp "$NOTES_FILE" release-notes.md
           else
             cat > release-notes.md <<EOF
-          # Sync In It Android Preview v${VERSION}
+          # Sync In It Android ${VERSION}
 
-          This is an engineering preview. Read the release-specific notes and validation status before installing.
-
-          ### Validation and limitations
-          - The release workflow builds an updateable APK with the persistent preview signing key and runs Android transport checks.
-          - Physical multi-device playback and long-duration network reliability require separate device validation.
-          - Do not treat a successful build or software scheduling logs as proof of acoustic synchronization.
-          - Diagnostic reports can contain device model, local network addresses, session IDs and timing metadata. Review before sharing.
+          Read the release-specific notes and validation status before installing.
           EOF
           fi
+          if [ "$CHANNEL" = "stable" ] && grep -Eiq 'preview|NO-GO|not cleared|not a stable release' release-notes.md; then
+            echo "::error::Stable publishing is blocked while release notes still label this build as a preview or not cleared."
+            exit 1
+          fi
 
-      - name: Create GitHub pre-release and upload APK
+      - name: Create GitHub release and upload APK
         env:
           GH_TOKEN: ${{ secrets.GITHUB_TOKEN }}
           RELEASE_TAG: ${{ steps.release.outputs.tag }}
           VERSION: ${{ steps.release.outputs.version }}
+          CHANNEL: ${{ steps.release.outputs.channel }}
           APK: ${{ steps.assets.outputs.apk }}
         run: |
+          set -euo pipefail
           if gh release view "$RELEASE_TAG" --repo "$GITHUB_REPOSITORY" >/dev/null 2>&1; then
             echo "::error::Release $RELEASE_TAG already exists; refusing to overwrite a published release."
             exit 1
           fi
-          gh release create "$RELEASE_TAG" \
-            "release-assets/$APK#$APK" \
-            "release-assets/SHA256SUMS.txt#SHA256SUMS.txt" \
-            --repo "$GITHUB_REPOSITORY" \
-            --target "$GITHUB_SHA" \
-            --title "Sync In It Android Preview v$VERSION" \
-            --notes-file release-notes.md \
-            --prerelease
+          ARGS=(
+            "$RELEASE_TAG"
+            "release-assets/$APK#$APK"
+            "release-assets/SHA256SUMS.txt#SHA256SUMS.txt"
+            --repo "$GITHUB_REPOSITORY"
+            --target "$GITHUB_SHA"
+            --notes-file release-notes.md
+          )
+          if [ "$CHANNEL" = "stable" ]; then
+            TITLE="Sync In It Android v$VERSION"
+            gh release create "${ARGS[@]}" --title "$TITLE"
+          else
+            TITLE="Sync In It Android Preview v$VERSION"
+            gh release create "${ARGS[@]}" --title "$TITLE" --prerelease
+          fi
