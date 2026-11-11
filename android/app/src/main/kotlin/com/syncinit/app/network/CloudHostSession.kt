@@ -13,7 +13,9 @@ import java.io.Closeable
 import java.io.IOException
 import java.nio.ByteBuffer
 import java.nio.ByteOrder
+import java.util.concurrent.CountDownLatch
 import java.util.concurrent.TimeUnit
+import java.util.concurrent.atomic.AtomicReference
 import java.util.concurrent.atomic.AtomicBoolean
 import kotlin.math.PI
 import kotlin.math.sin
@@ -31,12 +33,14 @@ class CloudHostSession(
 ) : Closeable {
     private val appContext = context.applicationContext
     private val closed = AtomicBoolean(false)
+    private val startupReady = CountDownLatch(1)
+    private val startupFailure = AtomicReference<Throwable?>(null)
     @Volatile private var mediaConnection: BackendHostMediaConnection? = null
     @Volatile private var fileSource: LocalAudioFilePcmSource? = null
     @Volatile private var systemSource: SystemAudioPcmSource? = null
     @Volatile private var worker: Thread? = null
 
-    fun start() {
+    fun startAndAwaitReady() {
         check(!closed.get()) { "cloud Host session is closed" }
         check(worker == null) { "cloud Host session has already started" }
 
@@ -45,6 +49,7 @@ class CloudHostSession(
             hostToken = hostToken,
             listener = object : BackendHostMediaListener {
                 override fun onReady() {
+                    startupReady.countDown()
                     onStatus("Cloud media publisher connected to LiveKit.")
                 }
 
@@ -53,11 +58,17 @@ class CloudHostSession(
                 }
 
                 override fun onFailure(error: Throwable) {
+                    startupFailure.compareAndSet(null, error)
+                    startupReady.countDown()
                     onStatus("Cloud media connection failed: ${error.message ?: error.javaClass.simpleName}")
                 }
 
                 override fun onClosed(code: Int, reason: String) {
-                    if (!closed.get()) onStatus("Cloud media connection closed ($code): $reason")
+                    if (!closed.get()) {
+                        startupFailure.compareAndSet(null, IOException("Cloud media connection closed ($code): $reason"))
+                        startupReady.countDown()
+                        onStatus("Cloud media connection closed ($code): $reason")
+                    }
                 }
             }
         )
@@ -115,6 +126,8 @@ class CloudHostSession(
                 }
             } catch (error: Exception) {
                 if (!closed.get()) {
+                    startupFailure.compareAndSet(null, error)
+                    startupReady.countDown()
                     onStatus("Cloud Host media failed: ${error.message ?: error.javaClass.simpleName}")
                 }
             } finally {
@@ -125,6 +138,11 @@ class CloudHostSession(
         }
         worker = thread
         thread.start()
+        if (!startupReady.await(50, TimeUnit.SECONDS)) {
+            throw IOException("Timed out waiting for the Host cloud media connection")
+        }
+        startupFailure.get()?.let { throw IOException("Host cloud media connection failed", it) }
+        check(!closed.get()) { "Host cloud media session closed during startup" }
     }
 
     private fun createDiagnosticChunk(firstSampleIndex: Long): ByteArray {
