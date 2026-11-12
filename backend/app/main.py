@@ -706,7 +706,7 @@ def create_app(database_path: str | Path | None = None) -> FastAPI:
         if not connected.issubset(ready):
             raise HTTPException(status_code=409, detail="speakers_not_ready")
 
-        start_at_ns = time.monotonic_ns() + 4_500_000_000
+        start_at_ns = time.monotonic_ns() + 2_500_000_000
         message = {
             "type": "playback.scheduled",
             "start_at_server_monotonic_ns": start_at_ns,
