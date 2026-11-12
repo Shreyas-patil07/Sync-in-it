@@ -9,6 +9,7 @@ import io.livekit.android.LiveKitOverrides
 import io.livekit.android.events.RoomEvent
 import io.livekit.android.room.Room
 import io.livekit.android.room.track.RemoteAudioTrack
+import com.syncinit.backend.BackendDeviceState
 import java.io.Closeable
 import java.io.IOException
 import java.util.concurrent.CountDownLatch
@@ -35,7 +36,8 @@ class CloudSpeakerRoom(
     private val refreshServerMinusLocalClockOffsetNs: () -> Long,
     private val onStatus: (String) -> Unit,
     private val onPlaybackStarted: () -> Unit,
-    private val onPlaybackDegraded: (String) -> Unit
+    private val onPlaybackDegraded: (String) -> Unit,
+    private val onDeviceStateChanged: (BackendDeviceState, String) -> Unit
 ) : Closeable {
     private val room: Room = LiveKit.create(
         context.applicationContext,
@@ -47,6 +49,10 @@ class CloudSpeakerRoom(
     private val audioTrackSubscribed = CountDownLatch(1)
     private val trackSetupFailure = AtomicReference<Throwable?>(null)
     private val clockOffsetNs = AtomicLong(initialServerMinusLocalClockOffsetNs)
+    private val connectionEstablished = AtomicBoolean(false)
+    private val transportReady = AtomicBoolean(false)
+    private val clockEstimateValid = AtomicBoolean(true)
+    private val lastReportedDeviceState = AtomicReference<BackendDeviceState?>(null)
     private val clockSyncExecutor = Executors.newSingleThreadScheduledExecutor { task ->
         Thread(task, "syncinit-speaker-clock-sync").apply { isDaemon = true }
     }
@@ -60,22 +66,87 @@ class CloudSpeakerRoom(
     private val eventJob = eventScope.launch(start = CoroutineStart.UNDISPATCHED) {
         room.events.collect { event ->
             when (event) {
+                is RoomEvent.Reconnecting -> {
+                    transportReady.set(false)
+                    clockEstimateValid.set(false)
+                    val detail = "LiveKit connection interrupted · attempting automatic recovery."
+                    onStatus(detail)
+                    if (connectionEstablished.get()) {
+                        if (player.hasPlaybackStarted()) {
+                            player.markTransportInterrupted(
+                                "LiveKit reconnected during playback. Restart synchronized playback to restore alignment."
+                            )
+                            reportDeviceState(BackendDeviceState.DEGRADED, detail)
+                        } else {
+                            reportDeviceState(BackendDeviceState.SYNCING, detail)
+                        }
+                    }
+                }
+                is RoomEvent.Reconnected -> {
+                    val detail = "LiveKit connection restored · refreshing the shared clock."
+                    onStatus(detail)
+                    if (player.hasPlaybackStarted()) {
+                        val playbackDetail =
+                            "LiveKit transport was interrupted during playback. Stop and restart the synchronized session."
+                        player.markTransportInterrupted(playbackDetail)
+                        reportDeviceState(BackendDeviceState.DEGRADED, playbackDetail)
+                    } else {
+                        transportReady.set(player.hasAttachedTrack())
+                        runCatching { clockSyncExecutor.execute(::refreshClockEstimate) }
+                        publishReadyIfPossible()
+                    }
+                }
+                is RoomEvent.Disconnected -> {
+                    if (!closed.get()) {
+                        val detail = "LiveKit room disconnected. Rejoin the Speaker before restarting playback."
+                        if (player.hasPlaybackStarted()) player.markTransportInterrupted(detail)
+                        reportDeviceState(BackendDeviceState.DEGRADED, detail)
+                        onStatus(detail)
+                    }
+                }
                 is RoomEvent.TrackSubscribed -> {
                     val track = event.track as? RemoteAudioTrack ?: return@collect
                     try {
                         player.attach(track)
-                        onStatus("LiveKit PCM sink attached · waiting for synchronized Host start.")
+                        transportReady.set(true)
+                        onStatus("LiveKit PCM sink attached · synchronized audio path is ready.")
                         audioTrackSubscribed.countDown()
+                        publishReadyIfPossible()
                     } catch (error: Exception) {
                         trackSetupFailure.compareAndSet(null, error)
                         audioTrackSubscribed.countDown()
+                        val detail = "Could not attach the LiveKit audio track: " +
+                            (error.message ?: error.javaClass.simpleName)
+                        onStatus(detail)
+                        if (connectionEstablished.get()) {
+                            reportDeviceState(BackendDeviceState.DEGRADED, detail)
+                        }
                     }
                 }
+                is RoomEvent.TrackUnsubscribed -> {
+                    val track = event.track as? RemoteAudioTrack ?: return@collect
+                    player.detach(track)
+                    transportReady.set(false)
+                    val detail = "LiveKit audio track was interrupted · waiting for the Host track to return."
+                    if (connectionEstablished.get()) {
+                        if (player.hasPlaybackStarted()) {
+                            reportDeviceState(BackendDeviceState.DEGRADED, detail)
+                        } else {
+                            reportDeviceState(BackendDeviceState.SYNCING, detail)
+                        }
+                    }
+                    onStatus(detail)
+                }
                 is RoomEvent.TrackSubscriptionFailed -> {
-                    onStatus(
-                        "LiveKit could not subscribe to an audio track: " +
-                            (event.exception.message ?: event.exception.javaClass.simpleName)
-                    )
+                    val detail = "LiveKit audio subscription failed: " +
+                        (event.exception.message ?: event.exception.javaClass.simpleName)
+                    if (!connectionEstablished.get()) {
+                        trackSetupFailure.compareAndSet(null, event.exception)
+                        audioTrackSubscribed.countDown()
+                    } else {
+                        reportDeviceState(BackendDeviceState.SYNCING, detail)
+                    }
+                    onStatus(detail)
                 }
                 else -> Unit
             }
@@ -100,14 +171,13 @@ class CloudSpeakerRoom(
             trackSetupFailure.get()?.let {
                 throw IOException("Could not prepare synchronized audio output", it)
             }
-            clockSyncExecutor.scheduleAtFixedRate({
-                if (closed.get()) return@scheduleAtFixedRate
-                runCatching { refreshServerMinusLocalClockOffsetNs() }
-                    .onSuccess(clockOffsetNs::set)
-                    .onFailure {
-                        onStatus("Clock refresh missed · keeping the last synchronized clock estimate.")
-                    }
-            }, CLOCK_REFRESH_INTERVAL_SECONDS, CLOCK_REFRESH_INTERVAL_SECONDS, TimeUnit.SECONDS)
+            connectionEstablished.set(true)
+            clockSyncExecutor.scheduleAtFixedRate(
+                ::refreshClockEstimate,
+                CLOCK_REFRESH_INTERVAL_SECONDS,
+                CLOCK_REFRESH_INTERVAL_SECONDS,
+                TimeUnit.SECONDS
+            )
             onStatus("Speaker ready · shared clock estimated and synchronized PCM sink attached.")
         } catch (error: Exception) {
             if (!closed.get()) {
@@ -115,6 +185,42 @@ class CloudSpeakerRoom(
             }
             throw error
         }
+    }
+
+    private fun refreshClockEstimate() {
+        if (closed.get()) return
+        runCatching { refreshServerMinusLocalClockOffsetNs() }
+            .onSuccess {
+                clockOffsetNs.set(it)
+                clockEstimateValid.set(true)
+                publishReadyIfPossible()
+            }
+            .onFailure {
+                clockEstimateValid.set(false)
+                val detail = "Shared clock refresh failed · waiting to re-synchronize before playback."
+                onStatus(detail)
+                if (connectionEstablished.get() && !player.hasPlaybackStarted()) {
+                    reportDeviceState(BackendDeviceState.SYNCING, detail)
+                }
+            }
+    }
+
+    private fun publishReadyIfPossible() {
+        if (connectionEstablished.get() &&
+            transportReady.get() &&
+            clockEstimateValid.get() &&
+            !player.hasPlaybackStarted()
+        ) {
+            reportDeviceState(
+                BackendDeviceState.READY,
+                "LiveKit audio track attached and shared clock refreshed"
+            )
+        }
+    }
+
+    private fun reportDeviceState(state: BackendDeviceState, detail: String) {
+        val previous = lastReportedDeviceState.getAndSet(state)
+        if (previous != state) onDeviceStateChanged(state, detail)
     }
 
     fun schedulePlayback(serverStartAtNs: Long) {
