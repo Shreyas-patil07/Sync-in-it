@@ -542,11 +542,6 @@ class MainActivity : Activity() {
                     media = media
                 )
                 hostBackendSession = state
-                coordinator.start()
-                media.startAndAwaitReady()
-                check(sessionGeneration.get() == attempt && hostBackendSession === state) {
-                    "Host start was cancelled"
-                }
 
                 val qrPayload = BackendInviteCodec.encode(
                     BackendInvite(created.sessionId, created.joinCode)
@@ -560,12 +555,24 @@ class MainActivity : Activity() {
 
                 runOnUiThread {
                     if (isFinishing || isDestroyed || hostBackendSession !== state) return@runOnUiThread
-                    hostDetails.text =
-                        "Cloud Host active · $sourceDescription\nWaiting for up to ${PreviewConfig.MAX_SPEAKERS} Speakers."
+                    hostDetails.text = "Cloud Host created · connecting media source…"
                     hostJoinCodeDetails.text =
                         "Backend session: ${created.sessionId}\nJoin code: ${created.joinCode}\nScan this QR on each Speaker. Same Wi-Fi is not required."
                     hostQrImage.setImageBitmap(qrBitmap)
                     hostQrImage.visibility = ImageView.VISIBLE
+                    inviteStatus.text = "Invitation ready · Host media is connecting."
+                }
+
+                coordinator.start()
+                media.startAndAwaitReady()
+                check(sessionGeneration.get() == attempt && hostBackendSession === state) {
+                    "Host start was cancelled"
+                }
+
+                runOnUiThread {
+                    if (isFinishing || isDestroyed || hostBackendSession !== state) return@runOnUiThread
+                    hostDetails.text =
+                        "Cloud Host active · $sourceDescription\nWaiting for up to ${PreviewConfig.MAX_SPEAKERS} Speakers."
                     inviteStatus.text = "Host is online in LiveKit. Share the QR invitation."
                     postStatus("Host cloud media is connected. QR invitation is ready.")
                 }

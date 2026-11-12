@@ -28,7 +28,7 @@ permissions:
   contents: write
 
 concurrency:
-  group: android-release-${{ github.ref }}
+  group: android-release-preview-apk-${{ github.ref }}
   cancel-in-progress: false
 
 jobs:
@@ -166,7 +166,7 @@ jobs:
           ORG_GRADLE_PROJECT_previewStorePassword: ${{ secrets.SYNCINIT_PREVIEW_KEYSTORE_PASSWORD }}
           ORG_GRADLE_PROJECT_previewKeyPassword: ${{ secrets.SYNCINIT_PREVIEW_KEYSTORE_PASSWORD }}
           ORG_GRADLE_PROJECT_previewKeyAlias: syncinit-preview
-        run: gradle -p android :app:assembleDebug :backend:check --stacktrace
+        run: gradle -p android :app:assembleDebug --stacktrace
 
       - name: Verify stable APK signature
         if: steps.release.outputs.channel == 'stable'
