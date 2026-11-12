@@ -1,4 +1,6 @@
 # SPDX-License-Identifier: Apache-2.0
+import time
+
 from fastapi.testclient import TestClient
 
 from app.main import create_app
@@ -228,11 +230,12 @@ def test_playback_schedule_requires_all_connected_speakers_ready(tmp_path):
             )
             assert ready.status_code == 200
 
+            schedule_requested_at_ns = time.monotonic_ns()
             scheduled = client.post(schedule_url, headers=host_headers)
             assert scheduled.status_code == 200
             payload = scheduled.json()
             assert payload["speaker_count"] == 1
-            assert payload["start_at_server_monotonic_ns"] > 0
+            assert payload["start_at_server_monotonic_ns"] >= schedule_requested_at_ns + 2_400_000_000
 
             event = speaker_socket.receive_json()
             assert event["type"] == "playback.scheduled"
