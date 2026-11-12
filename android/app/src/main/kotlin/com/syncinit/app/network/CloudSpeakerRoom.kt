@@ -138,6 +138,38 @@ class CloudSpeakerRoom(
                     }
                     onStatus(detail)
                 }
+                is RoomEvent.TrackStreamStateChanged -> {
+                    when (event.streamState) {
+                        io.livekit.android.room.track.Track.StreamState.PAUSED -> {
+                            transportReady.set(false)
+                            val detail = "LiveKit paused the audio stream because of network or bandwidth constraints."
+                            if (player.hasPlaybackStarted()) {
+                                player.markTransportInterrupted(detail)
+                                reportDeviceState(BackendDeviceState.DEGRADED, detail)
+                            } else if (connectionEstablished.get()) {
+                                reportDeviceState(BackendDeviceState.SYNCING, detail)
+                            }
+                            onStatus(detail)
+                        }
+                        io.livekit.android.room.track.Track.StreamState.ACTIVE -> {
+                            transportReady.set(player.hasAttachedTrack())
+                            onStatus("LiveKit audio stream resumed · refreshing synchronization state.")
+                            if (connectionEstablished.get()) {
+                                runCatching { clockSyncExecutor.execute(::refreshClockEstimate) }
+                            }
+                            publishReadyIfPossible()
+                        }
+                        else -> {
+                            transportReady.set(false)
+                            if (connectionEstablished.get() && !player.hasPlaybackStarted()) {
+                                reportDeviceState(
+                                    BackendDeviceState.SYNCING,
+                                    "LiveKit audio stream state is unknown · waiting for an active stream."
+                                )
+                            }
+                        }
+                    }
+                }
                 is RoomEvent.TrackSubscriptionFailed -> {
                     val detail = "LiveKit audio subscription failed: " +
                         (event.exception.message ?: event.exception.javaClass.simpleName)
