@@ -874,6 +874,96 @@ class MainActivity : Activity() {
         }
     )
 
+    private fun waitForSpeakerSinks(
+        session: HostBackendSession,
+        deadlineNs: Long
+    ): Set<String> {
+        var lastSummary = ""
+        while (System.nanoTime() < deadlineNs) {
+            check(hostBackendSession === session) { "Host session changed while waiting for Speakers" }
+            val devices = session.api.listDevices(session.sessionId, session.hostToken)
+            val candidates = devices.filter { it.online }
+            val degraded = candidates.filter { it.state == BackendDeviceState.DEGRADED }
+            if (degraded.isNotEmpty()) {
+                throw IOException(
+                    "Speaker transport degraded: " + degraded.joinToString { it.deviceName + " (" + it.stateDetail.orEmpty() + ")" }
+                )
+            }
+            val attached = candidates.isNotEmpty() && candidates.all {
+                it.transportConnected &&
+                    (it.state == BackendDeviceState.BUFFERING || it.state == BackendDeviceState.READY)
+            }
+            if (attached) return candidates.mapTo(linkedSetOf()) { it.deviceId }
+
+            val summary = if (candidates.isEmpty()) {
+                "No active Speaker connections yet."
+            } else {
+                candidates.joinToString { device ->
+                    "${device.deviceName}: ${device.state?.wireValue ?: "unknown"}" +
+                        if (!device.transportConnected) " · connecting" else ""
+                }
+            }
+            if (summary != lastSummary) {
+                postStatus("Waiting for Speaker audio sinks · $summary")
+                lastSummary = summary
+            }
+            Thread.sleep(350L)
+        }
+        throw IOException(
+            "Timed out waiting for Speakers to attach their LiveKit audio sinks. " +
+                "Keep each Speaker open and connected, then retry."
+        )
+    }
+
+    private fun waitForSpeakerPrebuffer(
+        session: HostBackendSession,
+        expectedDeviceIds: Set<String>,
+        deadlineNs: Long
+    ): Int {
+        var lastSummary = ""
+        while (System.nanoTime() < deadlineNs) {
+            check(hostBackendSession === session) { "Host session changed while buffering Speakers" }
+            val devices = session.api.listDevices(session.sessionId, session.hostToken)
+            val candidates = devices.filter { it.online }
+            val currentIds = candidates.mapTo(linkedSetOf()) { it.deviceId }
+            if (currentIds != expectedDeviceIds) {
+                throw IOException(
+                    "The Speaker group changed during audio pre-roll. Stop the session and create a fresh QR group so every Speaker starts from sample zero."
+                )
+            }
+            if (candidates.any { !it.transportConnected }) {
+                throw IOException(
+                    "A Speaker lost its backend connection during pre-roll. Reconnect all Speakers and restart the Host session."
+                )
+            }
+            val degraded = candidates.filter { it.state == BackendDeviceState.DEGRADED }
+            if (degraded.isNotEmpty()) {
+                throw IOException(
+                    "Speaker prebuffer failed: " + degraded.joinToString {
+                        it.deviceName + " (" + it.stateDetail.orEmpty() + ")"
+                    }
+                )
+            }
+            if (candidates.isNotEmpty() && candidates.all { it.state == BackendDeviceState.READY }) {
+                return candidates.size
+            }
+
+            val summary = candidates.joinToString { device ->
+                "${device.deviceName}: ${device.state?.wireValue ?: "unknown"}" +
+                    if (!device.stateDetail.isNullOrBlank()) " · ${device.stateDetail}" else ""
+            }
+            if (summary != lastSummary) {
+                val readyCount = candidates.count { it.state == BackendDeviceState.READY }
+                postStatus("Prebuffering Speaker audio · $readyCount/${candidates.size} ready. $summary")
+                lastSummary = summary
+            }
+            Thread.sleep(400L)
+        }
+        throw IOException(
+            "Speaker prebuffer timed out. The Host stream has started, but not every connected Speaker buffered 1500 ms of audio. Retry promptly or restart the session."
+        )
+    }
+
     private fun startSynchronizedPlayback() {
         val session = hostBackendSession ?: run {
             postStatus("Start the Host session before scheduling playback.")
@@ -881,17 +971,52 @@ class MainActivity : Activity() {
         }
         if (!synchronizedPlaybackStartInProgress.compareAndSet(false, true)) return
         synchronizedPlaybackButton.isEnabled = false
-        postStatus("Checking Speaker readiness and scheduling a shared playback start…")
+        postStatus("Waiting for connected Speakers to attach their audio sinks…")
         Thread({
             try {
-                val schedule = session.api.scheduleSynchronizedPlayback(
-                    session.sessionId,
-                    session.hostToken
+                val expectedDeviceIds = waitForSpeakerSinks(
+                    session,
+                    System.nanoTime() + TimeUnit.SECONDS.toNanos(20)
                 )
+
+                // Stream sample zero while Speakers are muted. They report READY only after
+                // at least 1.5 seconds is queued, so the shared start does not race LiveKit.
+                session.media.beginPrebuffering()
+                var readyCount = waitForSpeakerPrebuffer(
+                    session,
+                    expectedDeviceIds,
+                    System.nanoTime() + TimeUnit.SECONDS.toNanos(12)
+                )
+
+                var schedule: com.syncinit.backend.BackendPlaybackSchedule? = null
+                var scheduleAttempt = 0
+                while (schedule == null && scheduleAttempt < 3) {
+                    scheduleAttempt += 1
+                    try {
+                        schedule = session.api.scheduleSynchronizedPlayback(
+                            session.sessionId,
+                            session.hostToken
+                        )
+                    } catch (error: BackendApiException) {
+                        if (error.errorCode != "speakers_not_ready" || scheduleAttempt >= 3) {
+                            throw error
+                        }
+                        readyCount = waitForSpeakerPrebuffer(
+                            session,
+                            expectedDeviceIds,
+                            System.nanoTime() + TimeUnit.SECONDS.toNanos(3)
+                        )
+                    }
+                }
+                val acceptedSchedule = schedule
+                    ?: throw IOException("Backend did not accept the synchronized playback schedule")
                 check(hostBackendSession === session) { "Host session changed before playback start" }
-                session.media.startSynchronizedPlayback()
+                appendDiagnostic(
+                    "PLAYBACK_PREBUFFER_COMPLETE",
+                    "speakers=$readyCount ids=${expectedDeviceIds.joinToString(",")}"
+                )
                 postStatus(
-                    "Synchronized playback scheduled for ${schedule.speakerCount} Speaker(s)."
+                    "Synchronized playback scheduled for ${acceptedSchedule.speakerCount} Speaker(s)."
                 )
             } catch (error: Exception) {
                 synchronizedPlaybackStartInProgress.set(false)
