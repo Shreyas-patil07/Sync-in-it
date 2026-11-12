@@ -823,6 +823,22 @@ class MainActivity : Activity() {
                 appendDiagnostic("BACKEND_EVENT", "$label ${event.type}")
                 if (event.type == "session.snapshot") {
                     postStatus("$label backend session snapshot received.")
+                } else if (role == BackendSessionRole.HOST &&
+                    event.type == "device.state_changed"
+                ) {
+                    val deviceId = event.payload.get("device_id")
+                        ?.takeUnless { it.isJsonNull }?.asString ?: "unknown"
+                    val deviceState = event.payload.get("state")
+                        ?.takeUnless { it.isJsonNull }?.asString ?: "unknown"
+                    val detail = event.payload.get("detail")
+                        ?.takeUnless { it.isJsonNull }?.asString.orEmpty()
+                    if (deviceState == BackendDeviceState.READY.wireValue ||
+                        deviceState == BackendDeviceState.DEGRADED.wireValue ||
+                        deviceState == BackendDeviceState.SYNCING.wireValue
+                    ) {
+                        val suffix = detail.takeIf { it.isNotBlank() }?.let { ": $it" }.orEmpty()
+                        postStatus("Speaker ${deviceId.takeLast(6)} · $deviceState$suffix")
+                    }
                 } else if (role == BackendSessionRole.SPEAKER &&
                     event.type == "playback.scheduled"
                 ) {
