@@ -104,9 +104,10 @@ internal class SynchronizedPcmPlayer(
         }
 
         currentTrack?.let { runCatching { it.removeSink(sink) } }
-        remoteTrackRef.set(track)
+        remoteTrackRef.set(null)
         if (outputRef.get() == null) outputRef.set(createOutputTrack())
         track.addSink(sink)
+        remoteTrackRef.set(track)
         if (writerThread == null) {
             writerThread = Thread(
                 { writeAudioLoop() },
