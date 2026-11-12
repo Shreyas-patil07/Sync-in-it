@@ -91,8 +91,13 @@ internal class SynchronizedPcmPlayer(
 
     fun attach(track: RemoteAudioTrack) {
         check(!closed.get()) { "synchronized PCM player is closed" }
+        val existingTrack = remoteTrackRef.get()
+        if (existingTrack === track) return
+        check(existingTrack == null) {
+            "LiveKit replaced the audio track after reconnect; the sample timeline is no longer continuous"
+        }
         check(remoteTrackRef.compareAndSet(null, track)) {
-            "a LiveKit audio track is already attached"
+            "a LiveKit audio track was attached concurrently"
         }
         val output = createOutputTrack()
         outputRef.set(output)
@@ -101,7 +106,7 @@ internal class SynchronizedPcmPlayer(
             isDaemon = true
             start()
         }
-        onStatus("Synchronized PCM output attached · waiting for the Host playback schedule.")
+        onStatus("Synchronized PCM output attached · waiting for Host audio pre-roll.")
     }
 
     fun schedule(serverStartAtNs: Long) {
