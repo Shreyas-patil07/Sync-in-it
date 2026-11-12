@@ -30,13 +30,15 @@ internal class SynchronizedPcmPlayer(
     private val serverMinusLocalClockOffsetNs: AtomicLong,
     private val onStatus: (String) -> Unit,
     private val onPlaybackStarted: () -> Unit,
-    private val onPlaybackDegraded: (String) -> Unit
+    private val onPlaybackDegraded: (String) -> Unit,
+    private val onBufferReady: () -> Unit
 ) : Closeable {
     private val closed = AtomicBoolean(false)
     private val scheduled = AtomicBoolean(false)
     private val cancelled = AtomicBoolean(false)
     private val playbackStarted = AtomicBoolean(false)
     private val primedStatusSent = AtomicBoolean(false)
+    private val bufferReadyNotified = AtomicBoolean(false)
     private val queue = ArrayBlockingQueue<ByteArray>(QUEUE_CAPACITY)
     private val failure = AtomicReference<Throwable?>(null)
     private val writtenBytes = AtomicLong(0L)
@@ -81,6 +83,8 @@ internal class SynchronizedPcmPlayer(
             view.get(copy)
             if (!queue.offer(copy)) {
                 fail(IOException("Synchronized Speaker PCM queue overflowed before playout"))
+            } else {
+                signalIfPrebuffered()
             }
         }
     }
@@ -118,10 +122,17 @@ internal class SynchronizedPcmPlayer(
 
         schedulerThread = Thread({
             try {
+                Process.setThreadPriority(Process.THREAD_PRIORITY_AUDIO)
                 while (!closed.get() && !cancelled.get()) {
                     val remainingNs = localTargetNs - System.nanoTime()
                     if (remainingNs <= 0L) break
-                    LockSupport.parkNanos(min(remainingNs, MAX_PARK_NS))
+                    if (remainingNs > FINAL_SPIN_WINDOW_NS) {
+                        LockSupport.parkNanos(
+                            min(remainingNs - FINAL_SPIN_WINDOW_NS, MAX_PARK_NS)
+                        )
+                    } else {
+                        Thread.yield()
+                    }
                 }
                 if (closed.get() || cancelled.get()) return@Thread
                 failure.get()?.let { throw IOException("PCM receiver failed before scheduled start", it) }
@@ -166,6 +177,7 @@ internal class SynchronizedPcmPlayer(
                     } else {
                         offset += written
                         writtenBytes.addAndGet(written.toLong())
+                        signalIfPrebuffered()
                     }
                 }
                 if (writtenBytes.get() >= MIN_PRIMED_BYTES &&
@@ -179,6 +191,33 @@ internal class SynchronizedPcmPlayer(
             Thread.currentThread().interrupt()
         } catch (error: Exception) {
             if (!closed.get()) fail(error)
+        }
+    }
+
+    private fun signalIfPrebuffered() {
+        if (closed.get() || scheduled.get() || playbackStarted.get() ||
+            bufferReadyNotified.get()
+        ) return
+
+        val output = outputRef.get() ?: return
+        val totalWrittenFrames = writtenBytes.get() / BYTES_PER_FRAME
+        val playedFrames = if (output.playState == PlatformAudioTrack.PLAYSTATE_PLAYING) {
+            output.playbackHeadPosition.toLong() and 0xffff_ffffL
+        } else {
+            0L
+        }
+        val outputPendingFrames = max(0L, totalWrittenFrames - playedFrames)
+        val queuedFrames = queue.sumOf { it.size.toLong() / BYTES_PER_FRAME }
+        val bufferedFrames = outputPendingFrames + queuedFrames
+
+        if (bufferedFrames >= PREBUFFER_FRAMES &&
+            bufferReadyNotified.compareAndSet(false, true)
+        ) {
+            val bufferedMs = bufferedFrames * 1_000L / SAMPLE_RATE_HZ
+            onStatus("Speaker prebuffer complete · ${bufferedMs} ms of PCM is queued.")
+            runCatching { onBufferReady() }.onFailure {
+                fail(IOException("Could not report Speaker prebuffer readiness", it))
+            }
         }
     }
 
@@ -278,11 +317,13 @@ internal class SynchronizedPcmPlayer(
         const val BYTES_PER_FRAME = CHANNELS * 2
         const val CHUNK_BYTES = 960 * BYTES_PER_FRAME
         const val QUEUE_CAPACITY = 700
+        const val PREBUFFER_FRAMES = SAMPLE_RATE_HZ * 3L / 2L
         const val MAX_CALLBACK_BYTES = SAMPLE_RATE_HZ * BYTES_PER_FRAME / 5
         const val OUTPUT_BUFFER_CHUNKS = 12
         const val MIN_PRIMED_BYTES = SAMPLE_RATE_HZ / 5L * BYTES_PER_FRAME
         const val MINIMUM_SCHEDULE_LEAD_NS = 250_000_000L
-        const val MAX_PARK_NS = 10_000_000L
+        const val MAX_PARK_NS = 20_000_000L
+        const val FINAL_SPIN_WINDOW_NS = 1_000_000L
         const val DRIFT_SAMPLE_INTERVAL_MS = 1_000L
         const val TARGET_PENDING_FRAMES = SAMPLE_RATE_HZ * 4L
         const val RATE_CONTROL_GAIN = 0.001
