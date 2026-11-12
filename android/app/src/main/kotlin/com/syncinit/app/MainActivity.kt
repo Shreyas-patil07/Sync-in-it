@@ -690,6 +690,23 @@ class MainActivity : Activity() {
                     sampleCount = 9
                 )
                 appendDiagnostic("PLAYBACK_CLOCK_ESTIMATE", "serverMinusLocalNs=$initialClockOffsetNs")
+                val updateSpeakerState: (BackendDeviceState, String) -> Unit = { deviceState, detail ->
+                    if (!activeCoordinator.updateSpeakerState(deviceState, detail)) {
+                        runCatching {
+                            backendApi.updateDeviceState(
+                                joined.sessionId,
+                                joined.deviceToken,
+                                deviceState,
+                                detail
+                            )
+                        }.onFailure { error ->
+                            appendDiagnostic(
+                                "DEVICE_STATE_UPDATE_FAILED",
+                                "${deviceState.wireValue} ${error.message ?: error.javaClass.simpleName}"
+                            )
+                        }
+                    }
+                }
                 val activeRoom = CloudSpeakerRoom(
                     context = applicationContext,
                     serverUrl = credentials.serverUrl,
@@ -704,17 +721,15 @@ class MainActivity : Activity() {
                     },
                     onStatus = ::postStatus,
                     onPlaybackStarted = {
-                        activeCoordinator.updateSpeakerState(
+                        updateSpeakerState(
                             BackendDeviceState.PLAYING,
                             "scheduled PCM playback started"
                         )
                     },
                     onPlaybackDegraded = { detail ->
-                        activeCoordinator.updateSpeakerState(
-                            BackendDeviceState.DEGRADED,
-                            detail
-                        )
-                    }
+                        updateSpeakerState(BackendDeviceState.DEGRADED, detail)
+                    },
+                    onDeviceStateChanged = updateSpeakerState
                 )
                 room = activeRoom
                 check(sessionGeneration.get() == attempt && !isFinishing && !isDestroyed) {
@@ -749,12 +764,6 @@ class MainActivity : Activity() {
                     }
                     Thread.sleep(100)
                 }
-                backendApi.updateDeviceState(
-                    joined.sessionId,
-                    joined.deviceToken,
-                    BackendDeviceState.READY,
-                    "LiveKit PCM sink attached and shared clock synchronized"
-                )
                 appendDiagnostic(
                     "LIVEKIT_AUDIO_TRACK_SUBSCRIBED",
                     "sessionId=${joined.sessionId} deviceId=${joined.deviceId} room=${credentials.roomName}"
