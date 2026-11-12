@@ -74,7 +74,7 @@ class CloudSpeakerRoom(
                     if (connectionEstablished.get()) {
                         if (player.hasPlaybackStarted() || player.hasScheduleArmed()) {
                             player.markTransportInterrupted(
-                                "LiveKit reconnected during playback. Restart synchronized playback to restore alignment."
+                                "LiveKit transport was interrupted after playback was scheduled. Restart the synchronized session to restore alignment."
                             )
                             reportDeviceState(BackendDeviceState.DEGRADED, detail)
                         } else {
@@ -85,7 +85,7 @@ class CloudSpeakerRoom(
                 is RoomEvent.Reconnected -> {
                     val detail = "LiveKit connection restored · refreshing the shared clock."
                     onStatus(detail)
-                    if (player.hasPlaybackStarted()) {
+                    if (player.hasPlaybackStarted() || player.hasScheduleArmed()) {
                         val playbackDetail =
                             "LiveKit transport was interrupted during playback. Stop and restart the synchronized session."
                         player.markTransportInterrupted(playbackDetail)
@@ -161,7 +161,11 @@ class CloudSpeakerRoom(
                         }
                         else -> {
                             transportReady.set(false)
-                            if (connectionEstablished.get() && !player.hasPlaybackStarted()) {
+                            if (player.hasScheduleArmed() || player.hasPlaybackStarted()) {
+                                val detail = "LiveKit audio stream state became unknown after scheduling. Restart synchronized playback."
+                                player.markTransportInterrupted(detail)
+                                reportDeviceState(BackendDeviceState.DEGRADED, detail)
+                            } else if (connectionEstablished.get()) {
                                 reportDeviceState(
                                     BackendDeviceState.SYNCING,
                                     "LiveKit audio stream state is unknown · waiting for an active stream."
@@ -173,7 +177,10 @@ class CloudSpeakerRoom(
                 is RoomEvent.TrackSubscriptionFailed -> {
                     val detail = "LiveKit audio subscription failed: " +
                         (event.exception.message ?: event.exception.javaClass.simpleName)
-                    if (!connectionEstablished.get()) {
+                    if (player.hasScheduleArmed() || player.hasPlaybackStarted()) {
+                        player.markTransportInterrupted(detail)
+                        reportDeviceState(BackendDeviceState.DEGRADED, detail)
+                    } else if (!connectionEstablished.get()) {
                         trackSetupFailure.set(event.exception)
                     } else {
                         reportDeviceState(BackendDeviceState.SYNCING, detail)
@@ -214,7 +221,7 @@ class CloudSpeakerRoom(
                 TimeUnit.SECONDS
             )
             publishReadyIfPossible()
-            onStatus("Speaker ready · shared clock estimated and synchronized PCM sink attached.")
+            onStatus("Speaker connected · verifying audio track and shared clock readiness.")
         } catch (error: Exception) {
             if (!closed.get()) {
                 onStatus("LiveKit Speaker connection failed: " + (error.message ?: error.javaClass.simpleName))
