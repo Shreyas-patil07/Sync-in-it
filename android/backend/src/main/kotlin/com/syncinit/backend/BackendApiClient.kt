@@ -108,6 +108,52 @@ class BackendApiClient(
         )
     }
 
+    fun estimateServerClockOffsetNs(
+        sessionId: String,
+        bearerToken: String,
+        sampleCount: Int = 9
+    ): Long {
+        require(sampleCount in 3..9) { "sample count must be between 3 and 9" }
+        val samples = ArrayList<Pair<Long, Long>>(sampleCount)
+        repeat(sampleCount) {
+            val requestStartedNs = System.nanoTime()
+            val body = executeJson(
+                authorizedRequest("GET", sessionPath(sessionId, "clock"), bearerToken),
+                expectedCode = 200
+            )
+            val responseReceivedNs = System.nanoTime()
+            val serverTimeNs = body.requiredLong("server_monotonic_ns")
+            val roundTripNs = responseReceivedNs - requestStartedNs
+            val localMidpointNs = requestStartedNs + roundTripNs / 2L
+            samples += (serverTimeNs - localMidpointNs) to roundTripNs
+        }
+        val bestOffsets = samples
+            .sortedBy { it.second }
+            .take(sampleCount / 2 + 1)
+            .map { it.first }
+            .sorted()
+        return bestOffsets[bestOffsets.size / 2]
+    }
+
+    fun scheduleSynchronizedPlayback(
+        sessionId: String,
+        hostToken: String
+    ): BackendPlaybackSchedule {
+        val body = executeJson(
+            authorizedJsonRequest(
+                "POST",
+                sessionPath(sessionId, "playback", "schedule"),
+                hostToken,
+                JsonObject()
+            ),
+            expectedCode = 200
+        )
+        return BackendPlaybackSchedule(
+            startAtServerMonotonicNs = body.requiredLong("start_at_server_monotonic_ns"),
+            speakerCount = body.requiredInt("speaker_count")
+        )
+    }
+
     fun openHostMedia(
         sessionId: String,
         hostToken: String,
@@ -389,6 +435,10 @@ private fun JsonObject.requiredInt(name: String): Int =
 
 private fun JsonObject.requiredDouble(name: String): Double =
     get(name)?.takeUnless { it.isJsonNull }?.asDouble
+        ?: throw IOException("Backend response is missing $name")
+
+private fun JsonObject.requiredLong(name: String): Long =
+    get(name)?.takeUnless { it.isJsonNull }?.asLong
         ?: throw IOException("Backend response is missing $name")
 
 private fun JsonObject.optionalString(name: String): String? =
