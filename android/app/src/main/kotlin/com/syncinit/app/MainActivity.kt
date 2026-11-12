@@ -814,9 +814,7 @@ class MainActivity : Activity() {
                 } else if (role == BackendSessionRole.SPEAKER &&
                     event.type == "playback.scheduled"
                 ) {
-                    val startAtNs = runCatching {
-                        event.payload.get("start_at_server_monotonic_ns")?.asLong
-                    }.getOrNull()
+                    val startAtNs = event.longField("start_at_server_monotonic_ns")
                     val speaker = speakerBackendSession
                     if (startAtNs != null && speaker?.sessionId == sessionId) {
                         speaker.room.schedulePlayback(startAtNs)

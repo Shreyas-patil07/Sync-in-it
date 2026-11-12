@@ -83,7 +83,11 @@ data class BackendPlaybackSchedule(
 data class BackendEvent(
     val type: String,
     val payload: JsonObject
-)
+) {
+    fun longField(name: String): Long? = runCatching {
+        payload.get(name)?.takeUnless { it.isJsonNull }?.asLong
+    }.getOrNull()
+}
 
 interface BackendEventListener {
     fun onEvent(event: BackendEvent)
