@@ -35,7 +35,8 @@ class CloudSpeakerRoom(
     private val refreshServerMinusLocalClockOffsetNs: () -> Long,
     private val onStatus: (String) -> Unit,
     private val onPlaybackStarted: () -> Unit,
-    private val onPlaybackDegraded: (String) -> Unit
+    private val onPlaybackDegraded: (String) -> Unit,
+    private val onBufferReady: () -> Unit
 ) : Closeable {
     private val room: Room = LiveKit.create(
         context.applicationContext,
@@ -54,7 +55,8 @@ class CloudSpeakerRoom(
         serverMinusLocalClockOffsetNs = clockOffsetNs,
         onStatus = onStatus,
         onPlaybackStarted = onPlaybackStarted,
-        onPlaybackDegraded = onPlaybackDegraded
+        onPlaybackDegraded = onPlaybackDegraded,
+        onBufferReady = onBufferReady
     )
     private val eventScope = CoroutineScope(SupervisorJob() + Dispatchers.IO)
     private val eventJob = eventScope.launch(start = CoroutineStart.UNDISPATCHED) {
@@ -100,6 +102,18 @@ class CloudSpeakerRoom(
             trackSetupFailure.get()?.let {
                 throw IOException("Could not prepare synchronized audio output", it)
             }
+
+            // Recalibrate after the LiveKit path is established. The initial sample set is
+            // taken before room connection, so a second measurement reduces setup-path bias.
+            runCatching { refreshServerMinusLocalClockOffsetNs() }
+                .onSuccess { refreshedOffset ->
+                    clockOffsetNs.set(refreshedOffset)
+                    onStatus("Shared clock recalibrated after LiveKit connection.")
+                }
+                .onFailure {
+                    onStatus("Post-connect clock calibration missed · retaining the initial estimate.")
+                }
+
             clockSyncExecutor.scheduleAtFixedRate({
                 if (closed.get()) return@scheduleAtFixedRate
                 runCatching { refreshServerMinusLocalClockOffsetNs() }
@@ -108,7 +122,7 @@ class CloudSpeakerRoom(
                         onStatus("Clock refresh missed · keeping the last synchronized clock estimate.")
                     }
             }, CLOCK_REFRESH_INTERVAL_SECONDS, CLOCK_REFRESH_INTERVAL_SECONDS, TimeUnit.SECONDS)
-            onStatus("Speaker ready · shared clock estimated and synchronized PCM sink attached.")
+            onStatus("Speaker connected · waiting for Host audio pre-roll and PCM buffering.")
         } catch (error: Exception) {
             if (!closed.get()) {
                 onStatus("LiveKit Speaker connection failed: " + (error.message ?: error.javaClass.simpleName))
