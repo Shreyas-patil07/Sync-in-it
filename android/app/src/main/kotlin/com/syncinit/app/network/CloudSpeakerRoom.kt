@@ -72,7 +72,7 @@ class CloudSpeakerRoom(
                     val detail = "LiveKit connection interrupted · attempting automatic recovery."
                     onStatus(detail)
                     if (connectionEstablished.get()) {
-                        if (player.hasPlaybackStarted()) {
+                        if (player.hasPlaybackStarted() || player.hasScheduleArmed()) {
                             player.markTransportInterrupted(
                                 "LiveKit reconnected during playback. Restart synchronized playback to restore alignment."
                             )
@@ -99,7 +99,7 @@ class CloudSpeakerRoom(
                 is RoomEvent.Disconnected -> {
                     if (!closed.get()) {
                         val detail = "LiveKit room disconnected. Rejoin the Speaker before restarting playback."
-                        if (player.hasPlaybackStarted()) player.markTransportInterrupted(detail)
+                        if (player.hasPlaybackStarted() || player.hasScheduleArmed()) player.markTransportInterrupted(detail)
                         reportDeviceState(BackendDeviceState.DEGRADED, detail)
                         onStatus(detail)
                     }
@@ -130,7 +130,7 @@ class CloudSpeakerRoom(
                     transportReady.set(false)
                     val detail = "LiveKit audio track was interrupted · waiting for the Host track to return."
                     if (connectionEstablished.get()) {
-                        if (player.hasPlaybackStarted()) {
+                        if (player.hasPlaybackStarted() || player.hasScheduleArmed()) {
                             reportDeviceState(BackendDeviceState.DEGRADED, detail)
                         } else {
                             reportDeviceState(BackendDeviceState.SYNCING, detail)
@@ -143,7 +143,7 @@ class CloudSpeakerRoom(
                         io.livekit.android.room.track.Track.StreamState.PAUSED -> {
                             transportReady.set(false)
                             val detail = "LiveKit paused the audio stream because of network or bandwidth constraints."
-                            if (player.hasPlaybackStarted()) {
+                            if (player.hasPlaybackStarted() || player.hasScheduleArmed()) {
                                 player.markTransportInterrupted(detail)
                                 reportDeviceState(BackendDeviceState.DEGRADED, detail)
                             } else if (connectionEstablished.get()) {
@@ -245,6 +245,7 @@ class CloudSpeakerRoom(
         if (connectionEstablished.get() &&
             transportReady.get() &&
             clockEstimateValid.get() &&
+            !player.hasScheduleArmed() &&
             !player.hasPlaybackStarted()
         ) {
             reportDeviceState(
