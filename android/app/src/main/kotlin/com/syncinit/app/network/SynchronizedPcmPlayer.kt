@@ -40,6 +40,7 @@ internal class SynchronizedPcmPlayer(
     private val queue = ArrayBlockingQueue<ByteArray>(QUEUE_CAPACITY)
     private val failure = AtomicReference<Throwable?>(null)
     private val writtenBytes = AtomicLong(0L)
+    private val pendingWriteBytes = AtomicLong(0L)
     private val remoteTrackRef = AtomicReference<RemoteAudioTrack?>(null)
     private val outputRef = AtomicReference<PlatformAudioTrack?>(null)
     private var writerThread: Thread? = null
@@ -166,6 +167,16 @@ internal class SynchronizedPcmPlayer(
                 if (closed.get() || cancelled.get()) return@Thread
                 failure.get()?.let { throw IOException("PCM receiver failed before scheduled start", it) }
                 val output = outputRef.get() ?: throw IOException("Android audio output is unavailable")
+                val bufferedFrames = pendingFramesBeforePlayback()
+                if (bufferedFrames < MIN_START_BUFFER_FRAMES) {
+                    val bufferedMs = bufferedFrames * 1_000L / SAMPLE_RATE_HZ
+                    val requiredMs = MIN_START_BUFFER_FRAMES * 1_000L / SAMPLE_RATE_HZ
+                    throw IOException(
+                        "Insufficient synchronized audio prebuffer at the shared start " +
+                            "($bufferedMs ms available; $requiredMs ms required). " +
+                            "Check the Host uplink and Speaker network before retrying."
+                    )
+                }
                 output.play()
                 playbackStarted.set(true)
                 onPlaybackStarted()
@@ -193,6 +204,7 @@ internal class SynchronizedPcmPlayer(
             while (!closed.get() && failure.get() == null) {
                 val pcm = queue.poll(100, TimeUnit.MILLISECONDS) ?: continue
                 var offset = 0
+                pendingWriteBytes.set(pcm.size.toLong())
                 while (offset < pcm.size && !closed.get() && failure.get() == null) {
                     val written = output.write(
                         pcm,
@@ -206,8 +218,10 @@ internal class SynchronizedPcmPlayer(
                     } else {
                         offset += written
                         writtenBytes.addAndGet(written.toLong())
+                        pendingWriteBytes.addAndGet(-written.toLong())
                     }
                 }
+                pendingWriteBytes.set(0L)
                 if (writtenBytes.get() >= MIN_PRIMED_BYTES &&
                     primedStatusSent.compareAndSet(false, true)
                 ) {
@@ -235,7 +249,8 @@ internal class SynchronizedPcmPlayer(
                 val totalWrittenFrames = writtenBytes.get() / BYTES_PER_FRAME
                 val playedFrames = output.playbackHeadPosition.toLong() and 0xffff_ffffL
                 val outputPendingFrames = max(0L, totalWrittenFrames - playedFrames)
-                val pendingFrames = outputPendingFrames + queuedBytes / BYTES_PER_FRAME
+                val pendingFrames = outputPendingFrames +
+                    (queuedBytes + pendingWriteBytes.get()) / BYTES_PER_FRAME
                 val errorFrames = pendingFrames - TARGET_PENDING_FRAMES
                 val correctionHz = (errorFrames * RATE_CONTROL_GAIN)
                     .roundToInt()
@@ -249,6 +264,13 @@ internal class SynchronizedPcmPlayer(
             isDaemon = true
             start()
         }
+    }
+
+    private fun pendingFramesBeforePlayback(): Long {
+        val pendingBytes = writtenBytes.get() +
+            pendingWriteBytes.get() +
+            queue.sumOf { it.size.toLong() }
+        return pendingBytes / BYTES_PER_FRAME
     }
 
     private fun createOutputTrack(): PlatformAudioTrack {
@@ -322,6 +344,7 @@ internal class SynchronizedPcmPlayer(
         const val OUTPUT_BUFFER_CHUNKS = 12
         const val MIN_PRIMED_BYTES = SAMPLE_RATE_HZ / 5L * BYTES_PER_FRAME
         const val MINIMUM_SCHEDULE_LEAD_NS = 250_000_000L
+        const val MIN_START_BUFFER_FRAMES = SAMPLE_RATE_HZ * 7L / 2L
         const val MAX_PARK_NS = 10_000_000L
         const val DRIFT_SAMPLE_INTERVAL_MS = 1_000L
         const val TARGET_PENDING_FRAMES = SAMPLE_RATE_HZ * 4L
