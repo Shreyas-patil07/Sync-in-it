@@ -87,6 +87,11 @@ data class BackendEvent(
     fun longField(name: String): Long? = runCatching {
         payload.get(name)?.takeUnless { it.isJsonNull }?.asLong
     }.getOrNull()
+
+
+    fun stringField(name: String): String? = runCatching {
+        payload.get(name)?.takeUnless { it.isJsonNull }?.asString
+    }.getOrNull()
 }
 
 interface BackendEventListener {
