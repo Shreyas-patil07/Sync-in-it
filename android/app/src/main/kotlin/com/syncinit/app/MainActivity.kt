@@ -770,8 +770,8 @@ class MainActivity : Activity() {
                 )
                 runOnUiThread {
                     if (!isFinishing && !isDestroyed && speakerBackendSession === state) {
-                        inviteStatus.text = "Ready · waiting for the Host to start synchronized playback."
-                        postStatus("Speaker ready. It will start with the other Speakers when the Host schedules playback.")
+                        inviteStatus.text = "Connected · waiting for the Host to start synchronized playback."
+                        postStatus("Speaker connected. The backend will accept playback scheduling only after its audio path and clock are ready.")
                     }
                 }
             } catch (error: Exception) {
