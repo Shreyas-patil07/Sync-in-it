@@ -744,6 +744,18 @@ class MainActivity : Activity() {
                                         "SPEAKER_READY_REPORT_RETRY",
                                         "attempt=${index + 1} error=${error.message ?: error.javaClass.simpleName}"
                                     )
+                                    if (activeCoordinator.updateSpeakerState(
+                                            BackendDeviceState.READY,
+                                            "At least 1500 ms of sample-zero PCM is buffered"
+                                        )
+                                    ) {
+                                        appendDiagnostic(
+                                            "SPEAKER_READY_WS_FALLBACK",
+                                            "sessionId=${joined.sessionId} deviceId=${joined.deviceId}"
+                                        )
+                                        postStatus("Speaker prebuffer complete · readiness sent over the session channel.")
+                                        return@Thread
+                                    }
                                     if (index < 2) Thread.sleep(400L)
                                 }
                             }
