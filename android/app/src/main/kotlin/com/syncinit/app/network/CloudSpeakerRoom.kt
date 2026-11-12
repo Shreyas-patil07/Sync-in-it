@@ -108,6 +108,7 @@ class CloudSpeakerRoom(
                     val track = event.track as? RemoteAudioTrack ?: return@collect
                     try {
                         player.attach(track)
+                        trackSetupFailure.set(null)
                         transportReady.set(true)
                         onStatus("LiveKit PCM sink attached · synchronized audio path is ready.")
                         audioTrackSubscribed.countDown()
@@ -141,8 +142,7 @@ class CloudSpeakerRoom(
                     val detail = "LiveKit audio subscription failed: " +
                         (event.exception.message ?: event.exception.javaClass.simpleName)
                     if (!connectionEstablished.get()) {
-                        trackSetupFailure.compareAndSet(null, event.exception)
-                        audioTrackSubscribed.countDown()
+                        trackSetupFailure.set(event.exception)
                     } else {
                         reportDeviceState(BackendDeviceState.SYNCING, detail)
                     }
