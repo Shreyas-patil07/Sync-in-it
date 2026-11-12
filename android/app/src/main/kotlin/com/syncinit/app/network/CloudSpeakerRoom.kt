@@ -162,9 +162,12 @@ class CloudSpeakerRoom(
             room.setSpeakerMute(true)
             onStatus("LiveKit room connected · preparing synchronized PCM output…")
             if (!audioTrackSubscribed.await(25, TimeUnit.SECONDS)) {
+                val subscriptionError = trackSetupFailure.get()
+                val detail = subscriptionError?.message
+                    ?: "Check that the Host publisher is still streaming."
                 throw IOException(
-                    "LiveKit room connected, but no remote audio track was subscribed within 25 seconds. " +
-                        "Check that the Host publisher is still streaming."
+                    "LiveKit room connected, but no remote audio track was subscribed within 25 seconds. $detail",
+                    subscriptionError
                 )
             }
             check(!closed.get()) { "cloud Speaker room closed while waiting for audio" }
