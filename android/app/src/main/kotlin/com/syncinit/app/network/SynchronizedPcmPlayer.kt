@@ -85,19 +85,59 @@ internal class SynchronizedPcmPlayer(
         }
     }
 
+    @Synchronized
     fun attach(track: RemoteAudioTrack) {
         check(!closed.get()) { "synchronized PCM player is closed" }
-        check(remoteTrackRef.compareAndSet(null, track)) {
-            "a LiveKit audio track is already attached"
+        failure.get()?.let {
+            throw IOException("Synchronized PCM output cannot recover after a playback failure", it)
         }
-        val output = createOutputTrack()
-        outputRef.set(output)
+
+        val currentTrack = remoteTrackRef.get()
+        if (currentTrack === track) return
+        if (playbackStarted.get()) {
+            val error = IOException(
+                "The LiveKit audio track changed during playback. Rejoin and restart synchronized playback."
+            )
+            fail(error)
+            throw error
+        }
+
+        currentTrack?.let { runCatching { it.removeSink(sink) } }
+        remoteTrackRef.set(track)
+        if (outputRef.get() == null) outputRef.set(createOutputTrack())
         track.addSink(sink)
-        writerThread = Thread({ writeAudioLoop() }, "syncinit-synchronized-audio-write").apply {
-            isDaemon = true
-            start()
+        if (writerThread == null) {
+            writerThread = Thread(
+                { writeAudioLoop() },
+                "syncinit-synchronized-audio-write"
+            ).apply {
+                isDaemon = true
+                start()
+            }
         }
         onStatus("Synchronized PCM output attached · waiting for the Host playback schedule.")
+    }
+
+    @Synchronized
+    fun detach(track: RemoteAudioTrack) {
+        if (!remoteTrackRef.compareAndSet(track, null)) return
+        runCatching { track.removeSink(sink) }
+        if (playbackStarted.get()) {
+            fail(
+                IOException(
+                    "The LiveKit audio track was interrupted during playback. " +
+                        "Rejoin and restart the synchronized session to restore alignment."
+                )
+            )
+        }
+    }
+
+    fun hasAttachedTrack(): Boolean = remoteTrackRef.get() != null
+
+    fun hasPlaybackStarted(): Boolean = playbackStarted.get()
+
+    fun markTransportInterrupted(detail: String) {
+        if (playbackStarted.get()) fail(IOException(detail))
     }
 
     fun schedule(serverStartAtNs: Long) {
