@@ -673,6 +673,62 @@ def create_app(database_path: str | Path | None = None) -> FastAPI:
             "chunk_frames": LIVEKIT_CHUNK_FRAMES,
         }
 
+    @app.get("/api/v1/sessions/{session_id}/clock")
+    def session_clock(session_id: str, token: str = Depends(bearer_token)):
+        identity = websocket_identity(session_id, token)
+        if not identity:
+            raise HTTPException(status_code=401, detail="invalid_session_credentials")
+        with database.connect() as db:
+            session = db.execute(
+                "SELECT state, expires_at FROM sessions WHERE id = ?",
+                (session_id,),
+            ).fetchone()
+        if (
+            not session
+            or session["state"] != "active"
+            or session["expires_at"] <= time.time()
+        ):
+            raise HTTPException(status_code=401, detail="invalid_session")
+        return {"server_monotonic_ns": time.monotonic_ns()}
+
+    @app.post("/api/v1/sessions/{session_id}/playback/schedule")
+    async def schedule_playback(session_id: str, host=Depends(require_host)):
+        connected = await manager.connected_devices(session_id)
+        if not connected:
+            raise HTTPException(status_code=409, detail="no_connected_speakers")
+
+        with database.connect() as db:
+            rows = db.execute(
+                "SELECT id, state FROM devices WHERE session_id = ?",
+                (session_id,),
+            ).fetchall()
+        ready = {row["id"] for row in rows if row["state"] == "ready"}
+        if not connected.issubset(ready):
+            raise HTTPException(status_code=409, detail="speakers_not_ready")
+
+        start_at_ns = time.monotonic_ns() + 4_500_000_000
+        message = {
+            "type": "playback.scheduled",
+            "start_at_server_monotonic_ns": start_at_ns,
+        }
+        delivered = await manager.send_speakers(
+            session_id,
+            message,
+            target_device_ids=sorted(connected),
+        )
+        if set(delivered) != connected:
+            await manager.send_speakers(
+                session_id,
+                {"type": "playback.cancelled", "reason": "schedule-delivery-failed"},
+                target_device_ids=delivered,
+            )
+            raise HTTPException(status_code=503, detail="playback_schedule_delivery_failed")
+
+        return {
+            "start_at_server_monotonic_ns": start_at_ns,
+            "speaker_count": len(delivered),
+        }
+
     @app.delete("/api/v1/sessions/{session_id}", status_code=204)
     async def close_session(session_id: str, host=Depends(require_host)):
         now = time.time()

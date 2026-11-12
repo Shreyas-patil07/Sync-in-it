@@ -74,6 +74,11 @@ data class BackendHeartbeat(
     val serverTime: Double
 )
 
+data class BackendPlaybackSchedule(
+    val startAtServerMonotonicNs: Long,
+    val speakerCount: Int
+)
+
 /** A validated server event. Payload retains all event fields for forward compatibility. */
 data class BackendEvent(
     val type: String,

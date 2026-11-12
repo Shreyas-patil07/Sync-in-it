@@ -158,3 +158,82 @@ def test_health_supports_get_and_head(tmp_path):
 def test_unauthorized_session_access_is_rejected(tmp_path):
     client = TestClient(create_app(tmp_path / "test.sqlite3"))
     assert client.get("/api/v1/sessions/anything").status_code == 401
+
+
+def test_session_clock_requires_valid_session_credentials(tmp_path):
+    client = TestClient(create_app(tmp_path / "clock.sqlite3"))
+    host = client.post("/api/v1/sessions", json={}).json()
+    joined = client.post(
+        "/api/v1/sessions/join",
+        json={"join_code": host["join_code"], "device_name": "Speaker"},
+    ).json()
+
+    host_clock = client.get(
+        f"/api/v1/sessions/{host['session_id']}/clock",
+        headers={"Authorization": f"Bearer {host['host_token']}"},
+    )
+    speaker_clock = client.get(
+        f"/api/v1/sessions/{host['session_id']}/clock",
+        headers={"Authorization": f"Bearer {joined['device_token']}"},
+    )
+    invalid_clock = client.get(
+        f"/api/v1/sessions/{host['session_id']}/clock",
+        headers={"Authorization": "Bearer " + "x" * 40},
+    )
+
+    assert host_clock.status_code == 200
+    assert host_clock.json()["server_monotonic_ns"] > 0
+    assert speaker_clock.status_code == 200
+    assert speaker_clock.json()["server_monotonic_ns"] > 0
+    assert invalid_clock.status_code == 401
+
+
+def test_playback_schedule_requires_all_connected_speakers_ready(tmp_path):
+    client = TestClient(create_app(tmp_path / "playback-schedule.sqlite3"))
+    host = client.post(
+        "/api/v1/sessions",
+        json={"host_name": "Host", "max_speakers": 2},
+    ).json()
+    joined = client.post(
+        "/api/v1/sessions/join",
+        json={"join_code": host["join_code"], "device_name": "Speaker"},
+    ).json()
+    host_headers = {"Authorization": f"Bearer {host['host_token']}"}
+    speaker_headers = {"Authorization": f"Bearer {joined['device_token']}"}
+    schedule_url = f"/api/v1/sessions/{host['session_id']}/playback/schedule"
+
+    with client.websocket_connect(
+        f"/api/v1/sessions/{host['session_id']}/ws"
+    ) as speaker_socket:
+        speaker_socket.send_json({"type": "authenticate", "token": joined["device_token"]})
+        assert speaker_socket.receive_json()["type"] == "authenticated"
+        assert speaker_socket.receive_json()["type"] == "session.snapshot"
+
+        not_ready = client.post(schedule_url, headers=host_headers)
+        assert not_ready.status_code == 409
+        assert not_ready.json()["detail"] == "speakers_not_ready"
+
+        with client.websocket_connect(
+            f"/api/v1/sessions/{host['session_id']}/ws"
+        ) as host_socket:
+            host_socket.send_json({"type": "authenticate", "token": host["host_token"]})
+            assert host_socket.receive_json()["type"] == "authenticated"
+            assert host_socket.receive_json()["type"] == "session.snapshot"
+            assert speaker_socket.receive_json()["type"] == "session.host_connected"
+
+            ready = client.patch(
+                f"/api/v1/sessions/{host['session_id']}/devices/me/state",
+                headers=speaker_headers,
+                json={"state": "ready", "detail": "synchronized PCM sink ready"},
+            )
+            assert ready.status_code == 200
+
+            scheduled = client.post(schedule_url, headers=host_headers)
+            assert scheduled.status_code == 200
+            payload = scheduled.json()
+            assert payload["speaker_count"] == 1
+            assert payload["start_at_server_monotonic_ns"] > 0
+
+            event = speaker_socket.receive_json()
+            assert event["type"] == "playback.scheduled"
+            assert event["start_at_server_monotonic_ns"] == payload["start_at_server_monotonic_ns"]

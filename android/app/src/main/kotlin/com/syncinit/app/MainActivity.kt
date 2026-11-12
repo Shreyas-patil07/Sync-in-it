@@ -36,6 +36,7 @@ import com.syncinit.app.network.CloudSpeakerRoom
 import com.google.mlkit.vision.barcode.common.Barcode
 import com.google.mlkit.vision.codescanner.GmsBarcodeScannerOptions
 import com.google.mlkit.vision.codescanner.GmsBarcodeScanning
+import java.util.concurrent.TimeUnit
 
 class MainActivity : Activity() {
     private lateinit var status: TextView
@@ -43,6 +44,7 @@ class MainActivity : Activity() {
     private lateinit var hostDetails: TextView
     private lateinit var hostJoinCodeDetails: TextView
     private lateinit var hostQrImage: ImageView
+    private lateinit var synchronizedPlaybackButton: Button
     private lateinit var audioSelectionDetails: TextView
     private lateinit var inviteStatus: TextView
     private lateinit var debugLog: TextView
@@ -80,6 +82,7 @@ class MainActivity : Activity() {
     @Volatile private var selectedAudioName: String? = null
     @Volatile private var selectedSystemAudio = false
     private val sessionGeneration = java.util.concurrent.atomic.AtomicLong(0L)
+    private val synchronizedPlaybackStartInProgress = java.util.concurrent.atomic.AtomicBoolean(false)
     override fun onCreate(savedInstanceState: Bundle?) {
         super.onCreate(savedInstanceState)
         diagnosticLogStore = DiagnosticLogStore(applicationContext)
@@ -227,6 +230,10 @@ class MainActivity : Activity() {
         hostCard.addView(audioSelectionDetails, sectionMargins(bottom = 7))
         hostCard.addView(actionButton("Use diagnostic test signal") { clearAudioSelection() }, sectionMargins(bottom = 8))
         hostCard.addView(actionButton("Start hosting") { startHosting() }, sectionMargins(bottom = 8))
+        synchronizedPlaybackButton = actionButton("Start synchronized playback") {
+            startSynchronizedPlayback()
+        }.apply { isEnabled = false }
+        hostCard.addView(synchronizedPlaybackButton, sectionMargins(bottom = 8))
         hostDetails = TextView(this).apply {
             text = "You are not hosting a session."
             textSize = 13f
@@ -311,7 +318,7 @@ class MainActivity : Activity() {
         diagnosticsCard.addView(debugLog)
 
         TextView(this).apply {
-            text = "CLOUD PLAYBACK NOTE\nThe Host can stream a selected local file, capture eligible Android app playback with explicit system consent, or use the diagnostic signal. Audio is uploaded to the backend and published to LiveKit. Speakers receive the cloud audio track through WebRTC. This preview does not yet align playback clocks across phones or compensate for device output latency, so synchronized acoustic playback is not guaranteed. Android may block capture for protected or capture-restricted apps."
+            text = "CLOUD PLAYBACK NOTE\nThe Host prepares the selected local file or audio source, waits for connected Speakers to attach their PCM output and estimate the shared clock, then schedules a common future playback start. LiveKit remains the cloud transport. Each Speaker mutes default WebRTC playout and writes decoded PCM through a locally scheduled Android AudioTrack with buffer-based clock correction. Physical output latency still varies by device and requires external acoustic measurement; this preview is an engineering synchronization test, not a certified acoustic-latency guarantee. Android may block capture for protected or capture-restricted apps."
             textSize = 11f
             setTextColor(Color.rgb(119, 137, 168))
             setLineSpacing(dp(2).toFloat(), 1f)
@@ -572,9 +579,10 @@ class MainActivity : Activity() {
                 runOnUiThread {
                     if (isFinishing || isDestroyed || hostBackendSession !== state) return@runOnUiThread
                     hostDetails.text =
-                        "Cloud Host active · $sourceDescription\nWaiting for up to ${PreviewConfig.MAX_SPEAKERS} Speakers."
+                        "Cloud Host active · $sourceDescription\nJoin every Speaker, then start synchronized playback."
                     inviteStatus.text = "Host is online in LiveKit. Share the QR invitation."
-                    postStatus("Host cloud media is connected. QR invitation is ready.")
+                    synchronizedPlaybackButton.isEnabled = true
+                    postStatus("Host cloud media is connected. Waiting for Speakers to become ready.")
                 }
             } catch (error: Exception) {
                 state?.let(::closeBackendHostState)
@@ -584,6 +592,7 @@ class MainActivity : Activity() {
                 }
                 runOnUiThread {
                     if (isFinishing || isDestroyed || sessionGeneration.get() != attempt) return@runOnUiThread
+                    synchronizedPlaybackButton.isEnabled = false
                     hostDetails.text = "Cloud Host did not start."
                     hostJoinCodeDetails.text =
                         "Cloud setup failed: ${error.message ?: error.javaClass.simpleName}"
@@ -671,11 +680,38 @@ class MainActivity : Activity() {
                     label = "Speaker"
                 )
                 coordinator = activeCoordinator
+                postStatus("Estimating the shared playback clock…")
+                val initialClockOffsetNs = backendApi.estimateServerClockOffsetNs(
+                    joined.sessionId,
+                    joined.deviceToken,
+                    sampleCount = 9
+                )
+                appendDiagnostic("PLAYBACK_CLOCK_ESTIMATE", "serverMinusLocalNs=$initialClockOffsetNs")
                 val activeRoom = CloudSpeakerRoom(
                     context = applicationContext,
                     serverUrl = credentials.serverUrl,
                     participantToken = credentials.participantToken,
-                    onStatus = ::postStatus
+                    initialServerMinusLocalClockOffsetNs = initialClockOffsetNs,
+                    refreshServerMinusLocalClockOffsetNs = {
+                        backendApi.estimateServerClockOffsetNs(
+                            joined.sessionId,
+                            joined.deviceToken,
+                            sampleCount = 5
+                        )
+                    },
+                    onStatus = ::postStatus,
+                    onPlaybackStarted = {
+                        activeCoordinator.updateSpeakerState(
+                            BackendDeviceState.PLAYING,
+                            "scheduled PCM playback started"
+                        )
+                    },
+                    onPlaybackDegraded = { detail ->
+                        activeCoordinator.updateSpeakerState(
+                            BackendDeviceState.DEGRADED,
+                            detail
+                        )
+                    }
                 )
                 room = activeRoom
                 check(sessionGeneration.get() == attempt && !isFinishing && !isDestroyed) {
@@ -700,14 +736,30 @@ class MainActivity : Activity() {
                     )
                 }
                 activeRoom.connectAndAwait()
+                val coordinatorDeadlineNs = System.nanoTime() + TimeUnit.SECONDS.toNanos(15)
+                while (activeCoordinator.currentState() != BackendConnectionState.CONNECTED) {
+                    check(activeCoordinator.currentState() != BackendConnectionState.FAILED) {
+                        "Speaker backend event channel failed"
+                    }
+                    check(System.nanoTime() < coordinatorDeadlineNs) {
+                        "Speaker backend event channel did not become ready"
+                    }
+                    Thread.sleep(100)
+                }
+                backendApi.updateDeviceState(
+                    joined.sessionId,
+                    joined.deviceToken,
+                    BackendDeviceState.READY,
+                    "LiveKit PCM sink attached and shared clock synchronized"
+                )
                 appendDiagnostic(
                     "LIVEKIT_AUDIO_TRACK_SUBSCRIBED",
                     "sessionId=${joined.sessionId} deviceId=${joined.deviceId} room=${credentials.roomName}"
                 )
                 runOnUiThread {
                     if (!isFinishing && !isDestroyed && speakerBackendSession === state) {
-                        inviteStatus.text = "Authenticated · audio track subscribed."
-                        postStatus("Backend session joined. LiveKit audio track is subscribed.")
+                        inviteStatus.text = "Ready · waiting for the Host to start synchronized playback."
+                        postStatus("Speaker ready. It will start with the other Speakers when the Host schedules playback.")
                     }
                 }
             } catch (error: Exception) {
@@ -759,6 +811,21 @@ class MainActivity : Activity() {
                 appendDiagnostic("BACKEND_EVENT", "$label ${event.type}")
                 if (event.type == "session.snapshot") {
                     postStatus("$label backend session snapshot received.")
+                } else if (role == BackendSessionRole.SPEAKER &&
+                    event.type == "playback.scheduled"
+                ) {
+                    val startAtNs = runCatching {
+                        event.payload.get("start_at_server_monotonic_ns")?.asLong
+                    }.getOrNull()
+                    val speaker = speakerBackendSession
+                    if (startAtNs != null && speaker?.sessionId == sessionId) {
+                        speaker.room.schedulePlayback(startAtNs)
+                    }
+                } else if (role == BackendSessionRole.SPEAKER &&
+                    event.type == "playback.cancelled"
+                ) {
+                    speakerBackendSession?.takeIf { it.sessionId == sessionId }
+                        ?.room?.cancelScheduledPlayback()
                 }
             }
 
@@ -770,6 +837,39 @@ class MainActivity : Activity() {
             }
         }
     )
+
+    private fun startSynchronizedPlayback() {
+        val session = hostBackendSession ?: run {
+            postStatus("Start the Host session before scheduling playback.")
+            return
+        }
+        if (!synchronizedPlaybackStartInProgress.compareAndSet(false, true)) return
+        synchronizedPlaybackButton.isEnabled = false
+        postStatus("Checking Speaker readiness and scheduling a shared playback start…")
+        Thread({
+            try {
+                val schedule = session.api.scheduleSynchronizedPlayback(
+                    session.sessionId,
+                    session.hostToken
+                )
+                check(hostBackendSession === session) { "Host session changed before playback start" }
+                session.media.startSynchronizedPlayback()
+                postStatus(
+                    "Synchronized playback scheduled for ${schedule.speakerCount} Speaker(s)."
+                )
+            } catch (error: Exception) {
+                synchronizedPlaybackStartInProgress.set(false)
+                runOnUiThread {
+                    if (!isFinishing && !isDestroyed && hostBackendSession === session) {
+                        synchronizedPlaybackButton.isEnabled = true
+                    }
+                }
+                postStatus(
+                    "Could not start synchronized playback: ${error.message ?: error.javaClass.simpleName}"
+                )
+            }
+        }, "syncinit-playback-schedule").apply { isDaemon = true }.start()
+    }
 
     private fun closeBackendHostState(session: HostBackendSession) {
         session.media.close()
@@ -813,6 +913,10 @@ class MainActivity : Activity() {
 
     private fun stopConnections(stopCapture: Boolean = true) {
         sessionGeneration.incrementAndGet()
+        synchronizedPlaybackStartInProgress.set(false)
+        if (::synchronizedPlaybackButton.isInitialized) {
+            synchronizedPlaybackButton.isEnabled = false
+        }
         stopBackendHostSession()
         stopBackendSpeakerSession()
         if (stopCapture && selectedSystemAudio) {
@@ -929,7 +1033,8 @@ class MainActivity : Activity() {
         minHeight = dp(46)
         setPadding(dp(14), dp(5), dp(14), dp(5))
         typeface = Typeface.create("sans-serif-medium", Typeface.NORMAL)
-        val isPrimary = label == "Start hosting" || label == "Join this session"
+        val isPrimary = label == "Start hosting" ||
+            label == "Start synchronized playback" || label == "Join this session"
         val isDanger = label.startsWith("Stop session")
         background = when {
             isPrimary -> pillBackground(Color.rgb(35, 111, 224), Color.rgb(35, 111, 224))

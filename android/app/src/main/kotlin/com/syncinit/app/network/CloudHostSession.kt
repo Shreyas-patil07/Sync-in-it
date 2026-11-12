@@ -34,6 +34,8 @@ class CloudHostSession(
     private val appContext = context.applicationContext
     private val closed = AtomicBoolean(false)
     private val startupReady = CountDownLatch(1)
+    private val synchronizedPlaybackGate = CountDownLatch(1)
+    private val playbackStarted = AtomicBoolean(false)
     private val startupFailure = AtomicReference<Throwable?>(null)
     @Volatile private var mediaConnection: BackendHostMediaConnection? = null
     @Volatile private var fileSource: LocalAudioFilePcmSource? = null
@@ -95,6 +97,10 @@ class CloudHostSession(
                 }
 
                 startupReady.countDown()
+                onStatus("Audio source prepared · waiting for connected Speakers to become ready.")
+                synchronizedPlaybackGate.await()
+                if (closed.get()) return@Thread
+                onStatus("Synchronized audio stream started from sample zero.")
                 var sampleIndex = 0L
                 var chunkNumber = 0L
                 var nextDeadlineNs = System.nanoTime()
@@ -149,6 +155,14 @@ class CloudHostSession(
         check(!closed.get()) { "Host cloud media session closed during startup" }
     }
 
+    fun startSynchronizedPlayback() {
+        check(!closed.get()) { "cloud Host session is closed" }
+        check(playbackStarted.compareAndSet(false, true)) {
+            "synchronized playback has already been started"
+        }
+        synchronizedPlaybackGate.countDown()
+    }
+
     private fun createDiagnosticChunk(firstSampleIndex: Long): ByteArray {
         val output = ByteBuffer
             .allocate(PreviewConfig.CHUNK_FRAMES * PreviewConfig.CHANNELS * 2)
@@ -172,6 +186,7 @@ class CloudHostSession(
 
     override fun close() {
         if (!closed.compareAndSet(false, true)) return
+        synchronizedPlaybackGate.countDown()
         mediaConnection?.close()
         mediaConnection = null
         worker?.interrupt()
