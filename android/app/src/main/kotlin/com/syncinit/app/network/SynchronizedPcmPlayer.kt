@@ -95,9 +95,10 @@ internal class SynchronizedPcmPlayer(
 
         val currentTrack = remoteTrackRef.get()
         if (currentTrack === track) return
-        if (playbackStarted.get()) {
+        if (scheduled.get() || playbackStarted.get()) {
             val error = IOException(
-                "The LiveKit audio track changed during playback. Rejoin and restart synchronized playback."
+                "The LiveKit audio track changed after synchronized playback was scheduled. " +
+                    "Rejoin and restart to preserve the audio timeline."
             )
             fail(error)
             throw error
@@ -124,10 +125,10 @@ internal class SynchronizedPcmPlayer(
     fun detach(track: RemoteAudioTrack) {
         if (!remoteTrackRef.compareAndSet(track, null)) return
         runCatching { track.removeSink(sink) }
-        if (playbackStarted.get()) {
+        if (scheduled.get() || playbackStarted.get()) {
             fail(
                 IOException(
-                    "The LiveKit audio track was interrupted during playback. " +
+                    "The LiveKit audio track was interrupted after playback was scheduled. " +
                         "Rejoin and restart the synchronized session to restore alignment."
                 )
             )
@@ -136,10 +137,12 @@ internal class SynchronizedPcmPlayer(
 
     fun hasAttachedTrack(): Boolean = remoteTrackRef.get() != null
 
+    fun hasScheduleArmed(): Boolean = scheduled.get()
+
     fun hasPlaybackStarted(): Boolean = playbackStarted.get()
 
     fun markTransportInterrupted(detail: String) {
-        if (playbackStarted.get()) fail(IOException(detail))
+        if (scheduled.get() || playbackStarted.get()) fail(IOException(detail))
     }
 
     fun schedule(serverStartAtNs: Long) {
