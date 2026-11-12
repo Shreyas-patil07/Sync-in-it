@@ -35,7 +35,7 @@ class CloudHostSession(
     private val closed = AtomicBoolean(false)
     private val startupReady = CountDownLatch(1)
     private val synchronizedPlaybackGate = CountDownLatch(1)
-    private val playbackStarted = AtomicBoolean(false)
+    private val prebufferingStarted = AtomicBoolean(false)
     private val startupFailure = AtomicReference<Throwable?>(null)
     @Volatile private var mediaConnection: BackendHostMediaConnection? = null
     @Volatile private var fileSource: LocalAudioFilePcmSource? = null
@@ -100,7 +100,7 @@ class CloudHostSession(
                 onStatus("Audio source prepared · waiting for connected Speakers to become ready.")
                 synchronizedPlaybackGate.await()
                 if (closed.get()) return@Thread
-                onStatus("Synchronized audio stream started from sample zero.")
+                onStatus("Host audio pre-roll started from sample zero.")
                 var sampleIndex = 0L
                 var chunkNumber = 0L
                 var nextDeadlineNs = System.nanoTime()
@@ -155,13 +155,19 @@ class CloudHostSession(
         check(!closed.get()) { "Host cloud media session closed during startup" }
     }
 
-    fun startSynchronizedPlayback() {
+    /**
+     * Starts sending sample zero so Speakers can prebuffer before the shared playout instant.
+     * Idempotent: a timed-out readiness check can be retried without restarting the source.
+     */
+    fun beginPrebuffering() {
         check(!closed.get()) { "cloud Host session is closed" }
-        check(playbackStarted.compareAndSet(false, true)) {
-            "synchronized playback has already been started"
+        if (prebufferingStarted.compareAndSet(false, true)) {
+            onStatus("Starting Host audio pre-roll · waiting for every connected Speaker to buffer.")
+            synchronizedPlaybackGate.countDown()
         }
-        synchronizedPlaybackGate.countDown()
     }
+
+    fun isPrebufferingStarted(): Boolean = prebufferingStarted.get()
 
     private fun createDiagnosticChunk(firstSampleIndex: Long): ByteArray {
         val output = ByteBuffer
