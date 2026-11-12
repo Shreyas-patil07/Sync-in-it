@@ -69,15 +69,47 @@ class CloudSpeakerRoom(
                         onStatus("LiveKit PCM sink attached · waiting for synchronized Host start.")
                         audioTrackSubscribed.countDown()
                     } catch (error: Exception) {
-                        trackSetupFailure.compareAndSet(null, error)
-                        audioTrackSubscribed.countDown()
+                        if (audioTrackSubscribed.count > 0L) {
+                            trackSetupFailure.compareAndSet(null, error)
+                            audioTrackSubscribed.countDown()
+                        } else {
+                            val detail =
+                                "LiveKit replaced the audio track during reconnect; restart the Host session to preserve sample-zero alignment."
+                            onStatus(detail)
+                            onPlaybackDegraded(detail)
+                        }
                     }
                 }
                 is RoomEvent.TrackSubscriptionFailed -> {
-                    onStatus(
-                        "LiveKit could not subscribe to an audio track: " +
-                            (event.exception.message ?: event.exception.javaClass.simpleName)
-                    )
+                    val detail = "LiveKit could not subscribe to an audio track: " +
+                        (event.exception.message ?: event.exception.javaClass.simpleName)
+                    onStatus(detail)
+                    if (audioTrackSubscribed.count == 0L) onPlaybackDegraded(detail)
+                }
+                is RoomEvent.Reconnecting -> {
+                    onStatus("LiveKit network interruption · attempting automatic reconnection.")
+                }
+                is RoomEvent.Reconnected -> {
+                    onStatus("LiveKit reconnected · validating audio-track continuity.")
+                }
+                is RoomEvent.Disconnected -> {
+                    if (!closed.get()) {
+                        val detail = "LiveKit disconnected: " +
+                            (event.error?.message ?: event.reason.toString())
+                        onStatus(detail)
+                        onPlaybackDegraded(detail)
+                    }
+                }
+                is RoomEvent.FailedToConnect -> {
+                    val detail = "LiveKit failed to connect: " +
+                        (event.error.message ?: event.error.javaClass.simpleName)
+                    onStatus(detail)
+                    if (audioTrackSubscribed.count > 0L) {
+                        trackSetupFailure.compareAndSet(null, IOException(detail, event.error))
+                        audioTrackSubscribed.countDown()
+                    } else {
+                        onPlaybackDegraded(detail)
+                    }
                 }
                 else -> Unit
             }
