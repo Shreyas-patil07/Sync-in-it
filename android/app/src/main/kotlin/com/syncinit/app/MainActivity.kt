@@ -26,6 +26,8 @@ import com.syncinit.app.audio.SystemAudioCaptureBuffer
 import com.syncinit.app.audio.SystemAudioCaptureService
 import com.syncinit.backend.BackendApiClient
 import com.syncinit.backend.BackendConnectionState
+import com.syncinit.backend.BackendApiException
+import com.syncinit.backend.BackendDevice
 import com.syncinit.backend.BackendDeviceState
 import com.syncinit.backend.BackendEvent
 import com.syncinit.backend.BackendSessionCoordinator
@@ -714,6 +716,41 @@ class MainActivity : Activity() {
                             BackendDeviceState.DEGRADED,
                             detail
                         )
+                    },
+                    onBufferReady = {
+                        Thread({
+                            var lastFailure: Exception? = null
+                            repeat(3) { index ->
+                                if (sessionGeneration.get() != attempt ||
+                                    speakerBackendSession?.sessionId != joined.sessionId ||
+                                    isFinishing || isDestroyed
+                                ) return@Thread
+                                try {
+                                    backendApi.updateDeviceState(
+                                        joined.sessionId,
+                                        joined.deviceToken,
+                                        BackendDeviceState.READY,
+                                        "At least 1500 ms of sample-zero PCM is buffered"
+                                    )
+                                    appendDiagnostic(
+                                        "SPEAKER_PCM_PREBUFFER_READY",
+                                        "sessionId=${joined.sessionId} deviceId=${joined.deviceId}"
+                                    )
+                                    postStatus("Speaker prebuffer complete · ready for shared playback.")
+                                    return@Thread
+                                } catch (error: Exception) {
+                                    lastFailure = error
+                                    appendDiagnostic(
+                                        "SPEAKER_READY_REPORT_RETRY",
+                                        "attempt=${index + 1} error=${error.message ?: error.javaClass.simpleName}"
+                                    )
+                                    if (index < 2) Thread.sleep(400L)
+                                }
+                            }
+                            lastFailure?.let {
+                                postStatus("Speaker audio is buffered, but readiness could not be reported: ${it.message ?: it.javaClass.simpleName}")
+                            }
+                        }, "syncinit-speaker-ready-report").apply { isDaemon = true }.start()
                     }
                 )
                 room = activeRoom
@@ -730,14 +767,12 @@ class MainActivity : Activity() {
                 )
                 speakerBackendSession = state
                 activeCoordinator.start()
-                runCatching {
-                    backendApi.updateDeviceState(
-                        joined.sessionId,
-                        joined.deviceToken,
-                        BackendDeviceState.SYNCING,
-                        "Connecting to LiveKit cloud media"
-                    )
-                }
+                backendApi.updateDeviceState(
+                    joined.sessionId,
+                    joined.deviceToken,
+                    BackendDeviceState.SYNCING,
+                    "Connecting to LiveKit cloud media"
+                )
                 activeRoom.connectAndAwait()
                 val coordinatorDeadlineNs = System.nanoTime() + TimeUnit.SECONDS.toNanos(15)
                 while (activeCoordinator.currentState() != BackendConnectionState.CONNECTED) {
@@ -752,8 +787,8 @@ class MainActivity : Activity() {
                 backendApi.updateDeviceState(
                     joined.sessionId,
                     joined.deviceToken,
-                    BackendDeviceState.READY,
-                    "LiveKit PCM sink attached and shared clock synchronized"
+                    BackendDeviceState.BUFFERING,
+                    "LiveKit PCM sink attached; waiting for 1500 ms of sample-zero audio"
                 )
                 appendDiagnostic(
                     "LIVEKIT_AUDIO_TRACK_SUBSCRIBED",
@@ -761,8 +796,8 @@ class MainActivity : Activity() {
                 )
                 runOnUiThread {
                     if (!isFinishing && !isDestroyed && speakerBackendSession === state) {
-                        inviteStatus.text = "Ready · waiting for the Host to start synchronized playback."
-                        postStatus("Speaker ready. It will start with the other Speakers when the Host schedules playback.")
+                        inviteStatus.text = "Connected · buffering audio from the Host."
+                        postStatus("Speaker connected. Waiting for the Host to begin audio pre-roll.")
                     }
                 }
             } catch (error: Exception) {
