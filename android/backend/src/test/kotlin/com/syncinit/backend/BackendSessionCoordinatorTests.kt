@@ -183,7 +183,7 @@ private fun speakerCoordinatorStaysConnectedWhenHeartbeatAcknowledgementsArrive(
     val server = MockWebServer()
     server.start()
     val authenticated = CountDownLatch(1)
-    val heartbeatAcks = CountDownLatch(2)
+    val heartbeatAcks = CountDownLatch(4)
     val reconnectedWait = AtomicReference(false)
     val serverListener = object : WebSocketListener() {
         override fun onMessage(webSocket: WebSocket, text: String) {
@@ -195,7 +195,6 @@ private fun speakerCoordinatorStaysConnectedWhenHeartbeatAcknowledgementsArrive(
                 }
                 "heartbeat" -> {
                     webSocket.send("""{"type":"heartbeat.ack","server_time":1000.0}""")
-                    heartbeatAcks.countDown()
                 }
             }
         }
@@ -214,7 +213,10 @@ private fun speakerCoordinatorStaysConnectedWhenHeartbeatAcknowledgementsArrive(
                     if (state == BackendConnectionState.RECONNECT_WAIT) reconnectedWait.set(true)
                 }
 
-                override fun onEvent(event: BackendEvent) = Unit
+                override fun onEvent(event: BackendEvent) {
+                    if (event.type == "heartbeat.ack") heartbeatAcks.countDown()
+                }
+
                 override fun onFailure(error: Throwable) = Unit
             }
         )
@@ -222,12 +224,13 @@ private fun speakerCoordinatorStaysConnectedWhenHeartbeatAcknowledgementsArrive(
 
         expectCoordinator(authenticated.await(3, TimeUnit.SECONDS), "Speaker authenticates before heartbeat ACK test")
         expectCoordinator(
-            heartbeatAcks.await(5, TimeUnit.SECONDS),
+            heartbeatAcks.await(6, TimeUnit.SECONDS),
             "Speaker receives heartbeat acknowledgements from the backend"
         )
+        Thread.sleep(1_200)
         expectCoordinator(
             !reconnectedWait.get(),
-            "valid heartbeat acknowledgements keep the backend connection connected"
+            "valid heartbeat acknowledgements keep the backend connection connected beyond the timeout"
         )
         coordinator.close()
     } finally {
