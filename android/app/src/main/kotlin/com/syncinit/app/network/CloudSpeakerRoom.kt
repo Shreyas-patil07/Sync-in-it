@@ -178,6 +178,7 @@ class CloudSpeakerRoom(
                 CLOCK_REFRESH_INTERVAL_SECONDS,
                 TimeUnit.SECONDS
             )
+            publishReadyIfPossible()
             onStatus("Speaker ready · shared clock estimated and synchronized PCM sink attached.")
         } catch (error: Exception) {
             if (!closed.get()) {
