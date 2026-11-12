@@ -242,7 +242,12 @@ class CloudSpeakerRoom(
                 clockEstimateValid.set(false)
                 val detail = "Shared clock refresh failed · waiting to re-synchronize before playback."
                 onStatus(detail)
-                if (connectionEstablished.get() && !player.hasPlaybackStarted()) {
+                if (player.hasScheduleArmed() || player.hasPlaybackStarted()) {
+                    val playbackDetail =
+                        "Shared clock refresh failed after playback was scheduled. Restart the synchronized session."
+                    player.markTransportInterrupted(playbackDetail)
+                    reportDeviceState(BackendDeviceState.DEGRADED, playbackDetail)
+                } else if (connectionEstablished.get()) {
                     reportDeviceState(BackendDeviceState.SYNCING, detail)
                 }
             }
