@@ -27,6 +27,7 @@ class CloudHostSession(
     private val sessionId: String,
     private val hostToken: String,
     private val onStatus: (String) -> Unit,
+    private val onFatalError: (String) -> Unit,
     private val audioFileUri: Uri? = null,
     private val audioFileLabel: String? = null,
     private val systemAudioCaptureEnabled: Boolean = false
@@ -37,6 +38,7 @@ class CloudHostSession(
     private val synchronizedPlaybackGate = CountDownLatch(1)
     private val prebufferingStarted = AtomicBoolean(false)
     private val startupFailure = AtomicReference<Throwable?>(null)
+    private val failureReported = AtomicBoolean(false)
     @Volatile private var mediaConnection: BackendHostMediaConnection? = null
     @Volatile private var fileSource: LocalAudioFilePcmSource? = null
     @Volatile private var systemSource: SystemAudioPcmSource? = null
@@ -59,16 +61,12 @@ class CloudHostSession(
                 }
 
                 override fun onFailure(error: Throwable) {
-                    startupFailure.compareAndSet(null, error)
-                    startupReady.countDown()
-                    onStatus("Cloud media connection failed: ${error.message ?: error.javaClass.simpleName}")
+                    reportFailure(error)
                 }
 
                 override fun onClosed(code: Int, reason: String) {
                     if (!closed.get()) {
-                        startupFailure.compareAndSet(null, IOException("Cloud media connection closed ($code): $reason"))
-                        startupReady.countDown()
-                        onStatus("Cloud media connection closed ($code): $reason")
+                        reportFailure(IOException("Cloud media connection closed ($code): $reason"))
                     }
                 }
             }
@@ -135,11 +133,7 @@ class CloudHostSession(
                     onStatus("Cloud media upload interrupted.")
                 }
             } catch (error: Exception) {
-                if (!closed.get()) {
-                    startupFailure.compareAndSet(null, error)
-                    startupReady.countDown()
-                    onStatus("Cloud Host media failed: ${error.message ?: error.javaClass.simpleName}")
-                }
+                if (!closed.get()) reportFailure(error)
             } finally {
                 closeSources()
             }
@@ -168,6 +162,19 @@ class CloudHostSession(
     }
 
     fun isPrebufferingStarted(): Boolean = prebufferingStarted.get()
+
+    private fun reportFailure(error: Throwable) {
+        startupFailure.compareAndSet(null, error)
+        startupReady.countDown()
+        if (closed.get() || !failureReported.compareAndSet(false, true)) return
+        val detail = error.message ?: error.javaClass.simpleName
+        onStatus("Cloud Host media failed: $detail")
+        onFatalError(detail)
+    }
+
+    fun failureReason(): String? = startupFailure.get()?.let {
+        it.message ?: it.javaClass.simpleName
+    }
 
     private fun createDiagnosticChunk(firstSampleIndex: Long): ByteArray {
         val output = ByteBuffer
