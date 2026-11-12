@@ -27,7 +27,6 @@ import com.syncinit.app.audio.SystemAudioCaptureService
 import com.syncinit.backend.BackendApiClient
 import com.syncinit.backend.BackendConnectionState
 import com.syncinit.backend.BackendApiException
-import com.syncinit.backend.BackendDevice
 import com.syncinit.backend.BackendDeviceState
 import com.syncinit.backend.BackendEvent
 import com.syncinit.backend.BackendSessionCoordinator
@@ -538,6 +537,19 @@ class MainActivity : Activity() {
                     sessionId = created.sessionId,
                     hostToken = created.hostToken,
                     onStatus = ::postStatus,
+                    onFatalError = { detail ->
+                        runOnUiThread {
+                            if (!isFinishing && !isDestroyed &&
+                                hostBackendSession?.sessionId == created.sessionId
+                            ) {
+                                synchronizedPlaybackButton.isEnabled = false
+                                hostDetails.text = "Host media connection lost."
+                                postStatus(
+                                    "Host media transport failed: $detail. Stop the session and start a new one."
+                                )
+                            }
+                        }
+                    },
                     audioFileUri = audioUri,
                     audioFileLabel = audioName,
                     systemAudioCaptureEnabled = useSystemAudio
@@ -893,6 +905,7 @@ class MainActivity : Activity() {
         var lastSummary = ""
         while (System.nanoTime() < deadlineNs) {
             check(hostBackendSession === session) { "Host session changed while waiting for Speakers" }
+            session.media.failureReason()?.let { throw IOException("Host media stream failed: $it") }
             val devices = session.api.listDevices(session.sessionId, session.hostToken)
             val candidates = devices.filter { it.online }
             val degraded = candidates.filter { it.state == BackendDeviceState.DEGRADED }
@@ -935,6 +948,7 @@ class MainActivity : Activity() {
         var lastSummary = ""
         while (System.nanoTime() < deadlineNs) {
             check(hostBackendSession === session) { "Host session changed while buffering Speakers" }
+            session.media.failureReason()?.let { throw IOException("Host media stream failed: $it") }
             val devices = session.api.listDevices(session.sessionId, session.hostToken)
             val candidates = devices.filter { it.online }
             val currentIds = candidates.mapTo(linkedSetOf()) { it.deviceId }
@@ -993,6 +1007,7 @@ class MainActivity : Activity() {
 
                 // Stream sample zero while Speakers are muted. They report READY only after
                 // at least 1.5 seconds is queued, so the shared start does not race LiveKit.
+                session.media.failureReason()?.let { throw IOException("Host media stream failed: $it") }
                 session.media.beginPrebuffering()
                 var readyCount = waitForSpeakerPrebuffer(
                     session,
@@ -1005,6 +1020,7 @@ class MainActivity : Activity() {
                 while (schedule == null && scheduleAttempt < 3) {
                     scheduleAttempt += 1
                     try {
+                        session.media.failureReason()?.let { throw IOException("Host media stream failed: $it") }
                         schedule = session.api.scheduleSynchronizedPlayback(
                             session.sessionId,
                             session.hostToken
