@@ -618,9 +618,12 @@ class MainActivity : Activity() {
                         postStatus("Invalid invitation QR: ${error.message ?: "unsupported code"}")
                         return@addOnSuccessListener
                     }
-                    inviteStatus.text = "Invitation scanned · authenticating with the backend…"
-                    postStatus("QR accepted. Joining the backend session and connecting to LiveKit…")
-                    joinCloudSession(invite)
+                    runOnUiThread {
+                        if (isFinishing || isDestroyed) return@runOnUiThread
+                        inviteStatus.text = "Invitation scanned · authenticating with the backend…"
+                        postStatus("QR accepted. Joining the backend session and connecting to LiveKit…")
+                        joinCloudSession(invite)
+                    }
                 }
                 .addOnCanceledListener {
                     postStatus("QR scanning cancelled.")
@@ -970,12 +973,23 @@ class MainActivity : Activity() {
     private fun appendDiagnostic(category: String, message: String) {
         if (::diagnosticLogStore.isInitialized) diagnosticLogStore.append(category, message)
         if (!::debugLog.isInitialized) return
+
         val timestamp = java.text.SimpleDateFormat("HH:mm:ss.SSS", java.util.Locale.US)
             .format(java.util.Date())
         synchronized(diagnosticEvents) {
             diagnosticEvents.addLast("$timestamp [$category] $message")
             while (diagnosticEvents.size > 240) diagnosticEvents.removeFirst()
-            debugLog.text = diagnosticEvents.joinToString("\n")
+        }
+
+        // Backend, LiveKit and audio callbacks run on worker threads. Only render Views
+        // on the main thread; compute the latest snapshot inside the UI task to avoid
+        // displaying stale snapshots when callbacks arrive concurrently.
+        runOnUiThread {
+            if (isFinishing || isDestroyed || !::debugLog.isInitialized) return@runOnUiThread
+            val snapshot = synchronized(diagnosticEvents) {
+                diagnosticEvents.joinToString("\n")
+            }
+            debugLog.text = snapshot
         }
     }
 
