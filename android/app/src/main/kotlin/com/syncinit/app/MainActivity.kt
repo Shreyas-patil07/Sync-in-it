@@ -826,12 +826,9 @@ class MainActivity : Activity() {
                 } else if (role == BackendSessionRole.HOST &&
                     event.type == "device.state_changed"
                 ) {
-                    val deviceId = event.payload.get("device_id")
-                        ?.takeUnless { it.isJsonNull }?.asString ?: "unknown"
-                    val deviceState = event.payload.get("state")
-                        ?.takeUnless { it.isJsonNull }?.asString ?: "unknown"
-                    val detail = event.payload.get("detail")
-                        ?.takeUnless { it.isJsonNull }?.asString.orEmpty()
+                    val deviceId = event.stringField("device_id") ?: "unknown"
+                    val deviceState = event.stringField("state") ?: "unknown"
+                    val detail = event.stringField("detail").orEmpty()
                     if (deviceState == BackendDeviceState.READY.wireValue ||
                         deviceState == BackendDeviceState.DEGRADED.wireValue ||
                         deviceState == BackendDeviceState.SYNCING.wireValue
