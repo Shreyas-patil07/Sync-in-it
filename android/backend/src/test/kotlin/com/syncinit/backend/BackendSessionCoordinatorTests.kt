@@ -19,6 +19,8 @@ fun runBackendSessionCoordinatorTests() {
     coordinatorReconnectsAfterTransientServerClose()
     coordinatorStopsAfterTerminalServerClose()
     speakerCoordinatorFallsBackToRestHeartbeat()
+    speakerCoordinatorReconnectsWhenHeartbeatAcknowledgementsStop()
+    speakerCoordinatorStaysConnectedWhenHeartbeatAcknowledgementsArrive()
 }
 
 private fun hostCoordinatorForwardsAuthenticatedSnapshot() {
@@ -171,6 +173,114 @@ private fun coordinatorStopsAfterTerminalServerClose() {
         expectCoordinator(failed.await(3, TimeUnit.SECONDS), "terminal close moves coordinator to failed state")
         expectCoordinator(server.takeRequest(1500, TimeUnit.MILLISECONDS) == null, "terminal close does not trigger reconnect")
         expectCoordinator(authenticationCount.get() == 1, "terminal close is authenticated only once")
+        coordinator.close()
+    } finally {
+        server.shutdown()
+    }
+}
+
+private fun speakerCoordinatorStaysConnectedWhenHeartbeatAcknowledgementsArrive() {
+    val server = MockWebServer()
+    server.start()
+    val authenticated = CountDownLatch(1)
+    val heartbeatAcks = CountDownLatch(4)
+    val reconnectedWait = AtomicReference(false)
+    val serverListener = object : WebSocketListener() {
+        override fun onMessage(webSocket: WebSocket, text: String) {
+            val message = JsonParser.parseString(text).asJsonObject
+            when (message.get("type")?.asString) {
+                "authenticate" -> {
+                    webSocket.send("""{"type":"authenticated","role":"speaker"}""")
+                    authenticated.countDown()
+                }
+                "heartbeat" -> {
+                    webSocket.send("""{"type":"heartbeat.ack","server_time":1000.0}""")
+                }
+            }
+        }
+    }
+
+    try {
+        server.enqueue(MockResponse().withWebSocketUpgrade(serverListener))
+        val coordinator = BackendSessionCoordinator(
+            api = BackendApiClient(server.url("/").toString()),
+            sessionId = "session-1",
+            bearerToken = "s".repeat(43),
+            role = BackendSessionRole.SPEAKER,
+            heartbeatIntervalSeconds = 1,
+            listener = object : BackendSessionCoordinatorListener {
+                override fun onConnectionStateChanged(state: BackendConnectionState) {
+                    if (state == BackendConnectionState.RECONNECT_WAIT) reconnectedWait.set(true)
+                }
+
+                override fun onEvent(event: BackendEvent) {
+                    if (event.type == "heartbeat.ack") heartbeatAcks.countDown()
+                }
+
+                override fun onFailure(error: Throwable) = Unit
+            }
+        )
+        coordinator.start()
+
+        expectCoordinator(authenticated.await(3, TimeUnit.SECONDS), "Speaker authenticates before heartbeat ACK test")
+        expectCoordinator(
+            heartbeatAcks.await(6, TimeUnit.SECONDS),
+            "Speaker receives heartbeat acknowledgements from the backend"
+        )
+        Thread.sleep(1_200)
+        expectCoordinator(
+            !reconnectedWait.get(),
+            "valid heartbeat acknowledgements keep the backend connection connected beyond the timeout"
+        )
+        coordinator.close()
+    } finally {
+        server.shutdown()
+    }
+}
+
+private fun speakerCoordinatorReconnectsWhenHeartbeatAcknowledgementsStop() {
+    val server = MockWebServer()
+    server.start()
+    val authenticated = CountDownLatch(1)
+    val reconnecting = CountDownLatch(1)
+    val serverListener = object : WebSocketListener() {
+        override fun onMessage(webSocket: WebSocket, text: String) {
+            val message = JsonParser.parseString(text).asJsonObject
+            if (message.get("type")?.asString == "authenticate") {
+                webSocket.send("""{"type":"authenticated","role":"speaker"}""")
+                authenticated.countDown()
+            }
+            // Deliberately withhold heartbeat.ack to simulate a half-open WebSocket.
+        }
+    }
+
+    try {
+        server.enqueue(MockResponse().withWebSocketUpgrade(serverListener))
+        val coordinator = BackendSessionCoordinator(
+            api = BackendApiClient(server.url("/").toString()),
+            sessionId = "session-1",
+            bearerToken = "s".repeat(43),
+            role = BackendSessionRole.SPEAKER,
+            heartbeatIntervalSeconds = 1,
+            listener = object : BackendSessionCoordinatorListener {
+                override fun onConnectionStateChanged(state: BackendConnectionState) {
+                    if (state == BackendConnectionState.RECONNECT_WAIT) reconnecting.countDown()
+                }
+
+                override fun onEvent(event: BackendEvent) = Unit
+                override fun onFailure(error: Throwable) = Unit
+            }
+        )
+        coordinator.start()
+
+        expectCoordinator(
+            authenticated.await(3, TimeUnit.SECONDS),
+            "Speaker coordinator authenticates before testing heartbeat acknowledgements"
+        )
+        expectCoordinator(
+            reconnecting.await(6, TimeUnit.SECONDS),
+            "missing WebSocket heartbeat acknowledgements force a reconnect"
+        )
         coordinator.close()
     } finally {
         server.shutdown()

@@ -51,6 +51,7 @@ class BackendSessionCoordinator(
     private val generation = AtomicLong(0)
     private val reconnectScheduled = AtomicBoolean(false)
     private val reconnectAttempt = AtomicInteger(0)
+    private val lastHeartbeatAckNs = AtomicLong(0L)
     private val state = AtomicReference(BackendConnectionState.STOPPED)
     private val connection = AtomicReference<BackendEventConnection?>(null)
     private val scheduler: ScheduledExecutorService = Executors.newScheduledThreadPool(2) { task ->
@@ -119,9 +120,13 @@ class BackendSessionCoordinator(
                 listener = object : BackendEventListener {
                     override fun onEvent(event: BackendEvent) {
                         if (!isCurrent(currentGeneration)) return
-                        if (event.type == "authenticated") {
-                            reconnectAttempt.set(0)
-                            updateState(BackendConnectionState.CONNECTED)
+                        when (event.type) {
+                            "authenticated" -> {
+                                reconnectAttempt.set(0)
+                                lastHeartbeatAckNs.set(System.nanoTime())
+                                updateState(BackendConnectionState.CONNECTED)
+                            }
+                            "heartbeat.ack" -> lastHeartbeatAckNs.set(System.nanoTime())
                         }
                         safeCallback { listener.onEvent(event) }
                     }
@@ -176,10 +181,19 @@ class BackendSessionCoordinator(
         if (closed.get() || role != BackendSessionRole.SPEAKER ||
             state.get() == BackendConnectionState.FAILED
         ) return
+
         val activeConnection = connection.get()
-        if (state.get() == BackendConnectionState.CONNECTED &&
-            activeConnection?.heartbeat() == true
-        ) return
+        if (state.get() == BackendConnectionState.CONNECTED && activeConnection != null) {
+            val sent = activeConnection.heartbeat()
+            val lastAckNs = lastHeartbeatAckNs.get()
+            val ackExpired = lastAckNs == 0L ||
+                System.nanoTime() - lastAckNs >= heartbeatAckTimeoutNs()
+            if (sent && !ackExpired) return
+
+            // A successful WebSocket send only means that OkHttp queued the frame. Requiring
+            // heartbeat.ack prevents a half-open socket from being treated as a live Speaker.
+            scheduleReconnect(generation.get())
+        }
 
         ioExecutor.execute {
             if (closed.get()) return@execute
@@ -190,6 +204,9 @@ class BackendSessionCoordinator(
             }
         }
     }
+
+    private fun heartbeatAckTimeoutNs(): Long =
+        TimeUnit.SECONDS.toNanos(heartbeatIntervalSeconds.toLong() * HEARTBEAT_ACK_TIMEOUT_INTERVALS)
 
     private fun isCurrent(candidate: Long): Boolean =
         !closed.get() && generation.get() == candidate
@@ -220,6 +237,7 @@ class BackendSessionCoordinator(
         const val BASE_RECONNECT_DELAY_MS = 1_000L
         const val MAX_RECONNECT_DELAY_MS = 30_000L
         const val MAX_BACKOFF_SHIFT = 5
+        const val HEARTBEAT_ACK_TIMEOUT_INTERVALS = 3L
         val FATAL_CLOSE_CODES = setOf(4000, 4001, 4003, 4401)
     }
 }
