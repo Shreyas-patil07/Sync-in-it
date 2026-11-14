@@ -81,7 +81,7 @@ jobs:
         id: apk_version
         run: echo "code=$(date -u +%s)" >> "$GITHUB_OUTPUT"
 
-      - name: Build Android debug and release variants with backend checks
+      - name: Run Android unit tests and build debug and release variants
         env:
           ORG_GRADLE_PROJECT_syncinitVersionCode: ${{ steps.apk_version.outputs.code }}
           ORG_GRADLE_PROJECT_syncinitVersionName: "0.9.0"
@@ -93,7 +93,7 @@ jobs:
           ORG_GRADLE_PROJECT_releaseStorePassword: ci-only-changeit
           ORG_GRADLE_PROJECT_releaseKeyPassword: ci-only-changeit
           ORG_GRADLE_PROJECT_releaseKeyAlias: syncinit-ci-release
-        run: gradle --no-daemon --console=plain --max-workers=2 -p android :app:assembleDebug :app:assembleRelease :backend:check --stacktrace
+        run: gradle --no-daemon --console=plain --max-workers=2 -p android :app:testDebugUnitTest :app:assembleDebug :app:assembleRelease :backend:check --stacktrace
 
       - name: Verify release APK signature and package ID
         run: |
