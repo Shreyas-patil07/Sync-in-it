@@ -37,6 +37,7 @@ internal class SynchronizedPcmPlayer(
     private val cancelled = AtomicBoolean(false)
     private val playbackStarted = AtomicBoolean(false)
     private val primedStatusSent = AtomicBoolean(false)
+    private val firstPcmStatusSent = AtomicBoolean(false)
     private val queue = ArrayBlockingQueue<ByteArray>(QUEUE_CAPACITY)
     private val failure = AtomicReference<Throwable?>(null)
     private val writtenBytes = AtomicLong(0L)
@@ -57,29 +58,27 @@ internal class SynchronizedPcmPlayer(
             absoluteCaptureTimestampMs: Long
         ) {
             if (closed.get() || failure.get() != null) return
-            if (bitsPerSample != 16 || sampleRate != SAMPLE_RATE_HZ ||
-                numberOfChannels != CHANNELS || numberOfFrames <= 0
-            ) {
-                fail(
-                    IOException(
-                        "LiveKit PCM format mismatch: bits=" + bitsPerSample +
-                            " rate=" + sampleRate + " channels=" + numberOfChannels
-                    )
+            val outputByteCount = numberOfFrames.toLong() * BYTES_PER_FRAME
+            if (outputByteCount <= 0L || outputByteCount > MAX_CALLBACK_BYTES) {
+                fail(IOException("LiveKit supplied an oversized or empty PCM callback"))
+                return
+            }
+            val copy = try {
+                LiveKitPcmConverter.toStereoPcm16(
+                    audioData = audioData,
+                    bitsPerSample = bitsPerSample,
+                    sampleRateHz = sampleRate,
+                    channels = numberOfChannels,
+                    frames = numberOfFrames
                 )
+            } catch (error: IOException) {
+                fail(error)
                 return
             }
-            val byteCount = numberOfFrames.toLong() * BYTES_PER_FRAME
-            if (byteCount > MAX_CALLBACK_BYTES) {
-                fail(IOException("LiveKit supplied an oversized PCM callback"))
-                return
+            if (firstPcmStatusSent.compareAndSet(false, true)) {
+                val inputLayout = if (numberOfChannels == 1) "mono" else "stereo"
+                onStatus("LiveKit PCM active · 48 kHz $inputLayout converted to stereo output.")
             }
-            val view = audioData.duplicate()
-            if (view.remaining().toLong() < byteCount) {
-                fail(IOException("LiveKit supplied an incomplete PCM callback buffer"))
-                return
-            }
-            val copy = ByteArray(byteCount.toInt())
-            view.get(copy)
             if (!queue.offer(copy)) {
                 fail(IOException("Synchronized Speaker PCM queue overflowed before playout"))
             }
