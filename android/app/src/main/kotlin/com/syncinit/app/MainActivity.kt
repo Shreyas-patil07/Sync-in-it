@@ -901,7 +901,11 @@ class MainActivity : Activity() {
         if (hostBackendSession !== session || !session.mediaReady || session.playbackStarted) return
         if (!synchronizedPlaybackStartInProgress.compareAndSet(false, true)) return
         val readyEventVersion = session.readyStateEvents.get()
-        synchronizedPlaybackButton.isEnabled = false
+        runOnUiThread {
+            if (!isFinishing && !isDestroyed && hostBackendSession === session) {
+                synchronizedPlaybackButton.isEnabled = false
+            }
+        }
         postStatus(
             if (automatic) {
                 "Speaker readiness confirmed · automatically scheduling synchronized playback…"
