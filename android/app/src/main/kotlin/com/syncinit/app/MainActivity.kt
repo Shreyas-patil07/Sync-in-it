@@ -936,8 +936,9 @@ class MainActivity : Activity() {
                 }
 
                 val apiError = error as? com.syncinit.backend.BackendApiException
-                val waitingForGroup = automatic &&
-                    apiError?.errorCode in setOf("no_connected_speakers", "speakers_not_ready")
+                val waitingForGroup = automatic && apiError != null &&
+                    (apiError.errorCode == "no_connected_speakers" ||
+                        apiError.errorCode == "speakers_not_ready")
                 if (waitingForGroup && hostBackendSession === session && !session.playbackStarted) {
                     postStatus(
                         "Waiting for all joined Speakers to finish preparing. Playback will start automatically when the group is ready."
