@@ -1000,6 +1000,13 @@ def create_app(database_path: str | Path | None = None) -> FastAPI:
                         "host_connected": await manager.is_host_connected(session_id),
                     }
                 )
+                with database.connect() as db:
+                    current_device = db.execute(
+                        "SELECT state FROM devices WHERE session_id = ? AND id = ?",
+                        (session_id, client_id),
+                    ).fetchone()
+                if current_device and current_device["state"] == "ready":
+                    await schedule_ready_speakers(session_id, {client_id})
                 await manager.send_host(
                     session_id,
                     {
