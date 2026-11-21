@@ -66,7 +66,11 @@ class MainActivity : Activity() {
         val hostToken: String,
         val coordinator: BackendSessionCoordinator,
         val media: CloudHostSession
-    )
+    ) {
+        @Volatile var mediaReady = false
+        @Volatile var playbackStarted = false
+        val readyStateEvents = java.util.concurrent.atomic.AtomicLong(0L)
+    }
 
     private data class SpeakerBackendSession(
         val api: BackendApiClient,
@@ -575,6 +579,8 @@ class MainActivity : Activity() {
                 check(sessionGeneration.get() == attempt && hostBackendSession === state) {
                     "Host start was cancelled"
                 }
+                val activeHost = checkNotNull(state) { "Host backend session was not initialized" }
+                activeHost.mediaReady = true
 
                 runOnUiThread {
                     if (isFinishing || isDestroyed || hostBackendSession !== state) return@runOnUiThread
@@ -584,6 +590,7 @@ class MainActivity : Activity() {
                     synchronizedPlaybackButton.isEnabled = true
                     postStatus("Host cloud media is connected. Waiting for Speakers to become ready.")
                 }
+                tryAutoStartSynchronizedPlayback(activeHost)
             } catch (error: Exception) {
                 state?.let(::closeBackendHostState)
                 if (state != null && hostBackendSession === state) hostBackendSession = null
@@ -835,6 +842,13 @@ class MainActivity : Activity() {
                     ) {
                         val suffix = detail.takeIf { it.isNotBlank() }?.let { ": $it" }.orEmpty()
                         postStatus("Speaker ${deviceId.takeLast(6)} · $deviceState$suffix")
+                        if (deviceState == BackendDeviceState.READY.wireValue) {
+                            val activeHost = hostBackendSession
+                            if (activeHost?.sessionId == sessionId) {
+                                activeHost.readyStateEvents.incrementAndGet()
+                                tryAutoStartSynchronizedPlayback(activeHost)
+                            }
+                        }
                     }
                 } else if (role == BackendSessionRole.SPEAKER &&
                     event.type == "playback.scheduled"
@@ -866,9 +880,29 @@ class MainActivity : Activity() {
             postStatus("Start the Host session before scheduling playback.")
             return
         }
+        startSynchronizedPlayback(session, automatic = false)
+    }
+
+    private fun tryAutoStartSynchronizedPlayback(session: HostBackendSession) {
+        if (hostBackendSession !== session || !session.mediaReady || session.playbackStarted) return
+        startSynchronizedPlayback(session, automatic = true)
+    }
+
+    private fun startSynchronizedPlayback(
+        session: HostBackendSession,
+        automatic: Boolean
+    ) {
+        if (hostBackendSession !== session || !session.mediaReady || session.playbackStarted) return
         if (!synchronizedPlaybackStartInProgress.compareAndSet(false, true)) return
+        val readyEventVersion = session.readyStateEvents.get()
         synchronizedPlaybackButton.isEnabled = false
-        postStatus("Checking Speaker readiness and scheduling a shared playback start…")
+        postStatus(
+            if (automatic) {
+                "Speaker readiness confirmed · automatically scheduling synchronized playback…"
+            } else {
+                "Checking Speaker readiness and scheduling a shared playback start…"
+            }
+        )
         Thread({
             try {
                 val schedule = session.api.scheduleSynchronizedPlayback(
@@ -876,20 +910,42 @@ class MainActivity : Activity() {
                     session.hostToken
                 )
                 check(hostBackendSession === session) { "Host session changed before playback start" }
+                session.playbackStarted = true
                 session.media.startSynchronizedPlayback()
                 postStatus(
                     "Synchronized playback scheduled for ${schedule.speakerCount} Speaker(s)."
                 )
             } catch (error: Exception) {
-                synchronizedPlaybackStartInProgress.set(false)
+                if (!session.playbackStarted) {
+                    synchronizedPlaybackStartInProgress.set(false)
+                }
                 runOnUiThread {
-                    if (!isFinishing && !isDestroyed && hostBackendSession === session) {
+                    if (!isFinishing && !isDestroyed &&
+                        hostBackendSession === session &&
+                        !session.playbackStarted &&
+                        !synchronizedPlaybackStartInProgress.get()
+                    ) {
                         synchronizedPlaybackButton.isEnabled = true
                     }
                 }
-                postStatus(
-                    "Could not start synchronized playback: ${error.message ?: error.javaClass.simpleName}"
-                )
+
+                val apiError = error as? com.syncinit.backend.BackendApiException
+                val waitingForGroup = automatic &&
+                    apiError?.errorCode in setOf("no_connected_speakers", "speakers_not_ready")
+                if (waitingForGroup && hostBackendSession === session && !session.playbackStarted) {
+                    postStatus(
+                        "Waiting for all joined Speakers to finish preparing. Playback will start automatically when the group is ready."
+                    )
+                    // A second READY event can arrive while the first schedule request is
+                    // in flight. Re-check once after releasing the one-shot start guard.
+                    if (session.readyStateEvents.get() > readyEventVersion) {
+                        tryAutoStartSynchronizedPlayback(session)
+                    }
+                } else {
+                    postStatus(
+                        "Could not start synchronized playback: ${error.message ?: error.javaClass.simpleName}"
+                    )
+                }
             }
         }, "syncinit-playback-schedule").apply { isDaemon = true }.start()
     }
