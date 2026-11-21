@@ -579,9 +579,10 @@ class MainActivity : Activity() {
                 runOnUiThread {
                     if (isFinishing || isDestroyed || hostBackendSession !== state) return@runOnUiThread
                     hostDetails.text =
-                        "Cloud Host active · $sourceDescription\nJoin every Speaker, then start synchronized playback."
+                        "Cloud Host active · $sourceDescription\nPlayback starts automatically when the first Speaker is ready. Later Speakers are scheduled as they become ready."
                     inviteStatus.text = "Host is online in LiveKit. Share the QR invitation."
-                    synchronizedPlaybackButton.isEnabled = true
+                    synchronizedPlaybackButton.isEnabled =
+                        !synchronizedPlaybackStartInProgress.get()
                     postStatus("Host cloud media is connected. Waiting for Speakers to become ready.")
                 }
             } catch (error: Exception) {
@@ -823,6 +824,19 @@ class MainActivity : Activity() {
                 appendDiagnostic("BACKEND_EVENT", "$label ${event.type}")
                 if (event.type == "session.snapshot") {
                     postStatus("$label backend session snapshot received.")
+                    if (role == BackendSessionRole.HOST) {
+                        val readySpeakerConnected = event.payload
+                            .getAsJsonArray("devices")
+                            ?.any { device ->
+                                device.isJsonObject &&
+                                    device.asJsonObject.get("state")?.asString ==
+                                        BackendDeviceState.READY.wireValue &&
+                                    device.asJsonObject.get("transport_connected")?.asBoolean == true
+                            } == true
+                        if (readySpeakerConnected) {
+                            startSynchronizedPlayback(autoStart = true)
+                        }
+                    }
                 } else if (role == BackendSessionRole.HOST &&
                     event.type == "device.state_changed"
                 ) {
@@ -835,6 +849,9 @@ class MainActivity : Activity() {
                     ) {
                         val suffix = detail.takeIf { it.isNotBlank() }?.let { ": $it" }.orEmpty()
                         postStatus("Speaker ${deviceId.takeLast(6)} · $deviceState$suffix")
+                        if (deviceState == BackendDeviceState.READY.wireValue) {
+                            startSynchronizedPlayback(autoStart = true)
+                        }
                     }
                 } else if (role == BackendSessionRole.SPEAKER &&
                     event.type == "playback.scheduled"
@@ -861,14 +878,24 @@ class MainActivity : Activity() {
         }
     )
 
-    private fun startSynchronizedPlayback() {
+    private fun startSynchronizedPlayback(autoStart: Boolean = false) {
         val session = hostBackendSession ?: run {
             postStatus("Start the Host session before scheduling playback.")
             return
         }
         if (!synchronizedPlaybackStartInProgress.compareAndSet(false, true)) return
-        synchronizedPlaybackButton.isEnabled = false
-        postStatus("Checking Speaker readiness and scheduling a shared playback start…")
+        runOnUiThread {
+            if (!isFinishing && !isDestroyed && ::synchronizedPlaybackButton.isInitialized) {
+                synchronizedPlaybackButton.isEnabled = false
+            }
+        }
+        postStatus(
+            if (autoStart) {
+                "Speaker ready · automatically scheduling synchronized playback…"
+            } else {
+                "Checking Speaker readiness and scheduling a shared playback start…"
+            }
+        )
         Thread({
             try {
                 val schedule = session.api.scheduleSynchronizedPlayback(

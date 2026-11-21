@@ -34,6 +34,7 @@ JOIN_LIMIT = 20
 JOIN_WINDOW_SECONDS = 60
 MAX_SPEAKERS_HARD_LIMIT = 8
 MAX_WS_MESSAGE_BYTES = 16 * 1024
+PLAYBACK_SCHEDULE_LEAD_NS = 4_500_000_000
 DEVICE_STATES = {
     "joining",
     "syncing",
@@ -335,6 +336,9 @@ def create_app(database_path: str | Path | None = None) -> FastAPI:
     join_attempts: dict[str, list[float]] = {}
     active_media_sockets: dict[str, WebSocket] = {}
     active_media_lock = asyncio.Lock()
+    active_playback_sessions: set[str] = set()
+    scheduled_playback_devices: dict[str, set[str]] = {}
+    playback_schedule_lock = asyncio.Lock()
 
     app = FastAPI(
         title="Sync In It Session API",
@@ -414,6 +418,57 @@ def create_app(database_path: str | Path | None = None) -> FastAPI:
         ):
             return {"role": "speaker", "client_id": device["id"], "device": device}
         return None
+
+    async def schedule_ready_speakers(
+        session_id: str,
+        candidate_device_ids: set[str] | None = None,
+        *,
+        activate: bool = False,
+    ) -> dict | None:
+        async with playback_schedule_lock:
+            if not activate and session_id not in active_playback_sessions:
+                return None
+
+            connected = await manager.connected_devices(session_id)
+            if not connected:
+                return None
+
+            with database.connect() as db:
+                rows = db.execute(
+                    "SELECT id, state FROM devices WHERE session_id = ?",
+                    (session_id,),
+                ).fetchall()
+
+            ready = {row["id"] for row in rows if row["state"] == "ready"}
+            targets = connected.intersection(ready)
+            if candidate_device_ids is not None:
+                targets.intersection_update(candidate_device_ids)
+
+            already_scheduled = scheduled_playback_devices.setdefault(session_id, set())
+            targets.difference_update(already_scheduled)
+            if not targets:
+                return None
+
+            start_at_ns = time.monotonic_ns() + PLAYBACK_SCHEDULE_LEAD_NS
+            delivered = await manager.send_speakers(
+                session_id,
+                {
+                    "type": "playback.scheduled",
+                    "start_at_server_monotonic_ns": start_at_ns,
+                },
+                target_device_ids=sorted(targets),
+            )
+            if not delivered:
+                return None
+
+            already_scheduled.update(delivered)
+            if activate:
+                active_playback_sessions.add(session_id)
+
+            return {
+                "start_at_server_monotonic_ns": start_at_ns,
+                "speaker_count": len(delivered),
+            }
 
     @app.get("/healthz")
     def health():
@@ -623,6 +678,8 @@ def create_app(database_path: str | Path | None = None) -> FastAPI:
                 "occurred_at": now,
             },
         )
+        if payload.state == "ready":
+            await schedule_ready_speakers(session_id, {device["id"]})
         return {"ok": True, "device_id": device["id"], "state": payload.state}
 
     @app.post("/api/v1/sessions/{session_id}/livekit-token")
@@ -697,37 +754,10 @@ def create_app(database_path: str | Path | None = None) -> FastAPI:
         if not connected:
             raise HTTPException(status_code=409, detail="no_connected_speakers")
 
-        with database.connect() as db:
-            rows = db.execute(
-                "SELECT id, state FROM devices WHERE session_id = ?",
-                (session_id,),
-            ).fetchall()
-        ready = {row["id"] for row in rows if row["state"] == "ready"}
-        if not connected.issubset(ready):
-            raise HTTPException(status_code=409, detail="speakers_not_ready")
-
-        start_at_ns = time.monotonic_ns() + 4_500_000_000
-        message = {
-            "type": "playback.scheduled",
-            "start_at_server_monotonic_ns": start_at_ns,
-        }
-        delivered = await manager.send_speakers(
-            session_id,
-            message,
-            target_device_ids=sorted(connected),
-        )
-        if set(delivered) != connected:
-            await manager.send_speakers(
-                session_id,
-                {"type": "playback.cancelled", "reason": "schedule-delivery-failed"},
-                target_device_ids=delivered,
-            )
-            raise HTTPException(status_code=503, detail="playback_schedule_delivery_failed")
-
-        return {
-            "start_at_server_monotonic_ns": start_at_ns,
-            "speaker_count": len(delivered),
-        }
+        schedule = await schedule_ready_speakers(session_id, activate=True)
+        if schedule is None:
+            raise HTTPException(status_code=409, detail="no_ready_speakers")
+        return schedule
 
     @app.delete("/api/v1/sessions/{session_id}", status_code=204)
     async def close_session(session_id: str, host=Depends(require_host)):
@@ -740,6 +770,9 @@ def create_app(database_path: str | Path | None = None) -> FastAPI:
         await manager.close_session(
             session_id, {"type": "session.closed", "occurred_at": now}
         )
+        async with playback_schedule_lock:
+            active_playback_sessions.discard(session_id)
+            scheduled_playback_devices.pop(session_id, None)
         async with active_media_lock:
             media_socket = active_media_sockets.get(session_id)
         if media_socket:
@@ -967,6 +1000,13 @@ def create_app(database_path: str | Path | None = None) -> FastAPI:
                         "host_connected": await manager.is_host_connected(session_id),
                     }
                 )
+                with database.connect() as db:
+                    current_device = db.execute(
+                        "SELECT state FROM devices WHERE session_id = ? AND id = ?",
+                        (session_id, client_id),
+                    ).fetchone()
+                if current_device and current_device["state"] == "ready":
+                    await schedule_ready_speakers(session_id, {client_id})
                 await manager.send_host(
                     session_id,
                     {
@@ -1045,6 +1085,8 @@ def create_app(database_path: str | Path | None = None) -> FastAPI:
                             "server_time": now,
                         }
                     )
+                    if state_message.state == "ready":
+                        await schedule_ready_speakers(session_id, {client_id})
                     continue
 
                 if message_type == "control.command" and identity["role"] == "host":

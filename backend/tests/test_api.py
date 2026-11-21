@@ -188,52 +188,112 @@ def test_session_clock_requires_valid_session_credentials(tmp_path):
     assert invalid_clock.status_code == 401
 
 
-def test_playback_schedule_requires_all_connected_speakers_ready(tmp_path):
+def test_playback_starts_with_first_ready_speaker_and_schedules_late_speakers(tmp_path):
     client = TestClient(create_app(tmp_path / "playback-schedule.sqlite3"))
     host = client.post(
         "/api/v1/sessions",
-        json={"host_name": "Host", "max_speakers": 2},
+        json={"host_name": "Host", "max_speakers": 3},
     ).json()
-    joined = client.post(
-        "/api/v1/sessions/join",
-        json={"join_code": host["join_code"], "device_name": "Speaker"},
-    ).json()
+    speakers = [
+        client.post(
+            "/api/v1/sessions/join",
+            json={"join_code": host["join_code"], "device_name": f"Speaker {index}"},
+        ).json()
+        for index in range(1, 4)
+    ]
     host_headers = {"Authorization": f"Bearer {host['host_token']}"}
-    speaker_headers = {"Authorization": f"Bearer {joined['device_token']}"}
     schedule_url = f"/api/v1/sessions/{host['session_id']}/playback/schedule"
+    speaker_url = f"/api/v1/sessions/{host['session_id']}/devices/me/state"
 
+    # Connect Speakers before the Host so the host-connected event is delivered to all.
     with client.websocket_connect(
         f"/api/v1/sessions/{host['session_id']}/ws"
-    ) as speaker_socket:
-        speaker_socket.send_json({"type": "authenticate", "token": joined["device_token"]})
-        assert speaker_socket.receive_json()["type"] == "authenticated"
-        assert speaker_socket.receive_json()["type"] == "session.snapshot"
-
-        not_ready = client.post(schedule_url, headers=host_headers)
-        assert not_ready.status_code == 409
-        assert not_ready.json()["detail"] == "speakers_not_ready"
+    ) as speaker_one_socket:
+        speaker_one_socket.send_json(
+            {"type": "authenticate", "token": speakers[0]["device_token"]}
+        )
+        assert speaker_one_socket.receive_json()["type"] == "authenticated"
+        assert speaker_one_socket.receive_json()["type"] == "session.snapshot"
 
         with client.websocket_connect(
             f"/api/v1/sessions/{host['session_id']}/ws"
-        ) as host_socket:
-            host_socket.send_json({"type": "authenticate", "token": host["host_token"]})
-            assert host_socket.receive_json()["type"] == "authenticated"
-            assert host_socket.receive_json()["type"] == "session.snapshot"
-            assert speaker_socket.receive_json()["type"] == "session.host_connected"
-
-            ready = client.patch(
-                f"/api/v1/sessions/{host['session_id']}/devices/me/state",
-                headers=speaker_headers,
-                json={"state": "ready", "detail": "synchronized PCM sink ready"},
+        ) as speaker_two_socket:
+            speaker_two_socket.send_json(
+                {"type": "authenticate", "token": speakers[1]["device_token"]}
             )
-            assert ready.status_code == 200
+            assert speaker_two_socket.receive_json()["type"] == "authenticated"
+            assert speaker_two_socket.receive_json()["type"] == "session.snapshot"
 
-            scheduled = client.post(schedule_url, headers=host_headers)
-            assert scheduled.status_code == 200
-            payload = scheduled.json()
-            assert payload["speaker_count"] == 1
-            assert payload["start_at_server_monotonic_ns"] > 0
+            with client.websocket_connect(
+                f"/api/v1/sessions/{host['session_id']}/ws"
+            ) as speaker_three_socket:
+                speaker_three_socket.send_json(
+                    {"type": "authenticate", "token": speakers[2]["device_token"]}
+                )
+                assert speaker_three_socket.receive_json()["type"] == "authenticated"
+                assert speaker_three_socket.receive_json()["type"] == "session.snapshot"
 
-            event = speaker_socket.receive_json()
-            assert event["type"] == "playback.scheduled"
-            assert event["start_at_server_monotonic_ns"] == payload["start_at_server_monotonic_ns"]
+                with client.websocket_connect(
+                    f"/api/v1/sessions/{host['session_id']}/ws"
+                ) as host_socket:
+                    host_socket.send_json(
+                        {"type": "authenticate", "token": host["host_token"]}
+                    )
+                    assert host_socket.receive_json()["type"] == "authenticated"
+                    assert host_socket.receive_json()["type"] == "session.snapshot"
+                    assert speaker_one_socket.receive_json()["type"] == "session.host_connected"
+                    assert speaker_two_socket.receive_json()["type"] == "session.host_connected"
+                    assert speaker_three_socket.receive_json()["type"] == "session.host_connected"
+
+                    not_ready = client.post(schedule_url, headers=host_headers)
+                    assert not_ready.status_code == 409
+                    assert not_ready.json()["detail"] == "no_ready_speakers"
+
+                    first_ready = client.patch(
+                        speaker_url,
+                        headers={"Authorization": f"Bearer {speakers[0]['device_token']}"},
+                        json={"state": "ready", "detail": "PCM sink ready"},
+                    )
+                    assert first_ready.status_code == 200
+
+                    # One READY Speaker is enough to start; other connected Speakers
+                    # are not allowed to hold the first Speaker behind a group-wide gate.
+                    scheduled = client.post(schedule_url, headers=host_headers)
+                    assert scheduled.status_code == 200
+                    payload = scheduled.json()
+                    assert payload["speaker_count"] == 1
+                    assert payload["start_at_server_monotonic_ns"] > 0
+                    first_event = speaker_one_socket.receive_json()
+                    assert first_event["type"] == "playback.scheduled"
+                    assert first_event["start_at_server_monotonic_ns"] == payload[
+                        "start_at_server_monotonic_ns"
+                    ]
+
+                    # A Speaker that reaches READY after playback has begun receives
+                    # its own future join schedule instead of blocking the active group.
+                    second_ready = client.patch(
+                        speaker_url,
+                        headers={"Authorization": f"Bearer {speakers[1]['device_token']}"},
+                        json={"state": "ready", "detail": "late Speaker ready"},
+                    )
+                    assert second_ready.status_code == 200
+                    second_event = speaker_two_socket.receive_json()
+                    assert second_event["type"] == "playback.scheduled"
+                    assert second_event["start_at_server_monotonic_ns"] > payload[
+                        "start_at_server_monotonic_ns"
+                    ]
+
+                    # The authenticated WebSocket state path has the same late-join behavior.
+                    speaker_three_socket.send_json(
+                        {
+                            "type": "device.state",
+                            "state": "ready",
+                            "detail": "late Speaker ready over WebSocket",
+                        }
+                    )
+                    assert speaker_three_socket.receive_json()["type"] == "device.state.ack"
+                    third_event = speaker_three_socket.receive_json()
+                    assert third_event["type"] == "playback.scheduled"
+                    assert third_event["start_at_server_monotonic_ns"] > second_event[
+                        "start_at_server_monotonic_ns"
+                    ]
