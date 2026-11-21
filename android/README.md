@@ -18,6 +18,8 @@ Host Android sends PCM16/48 kHz/20 ms frames to the Render FastAPI WebSocket ing
 
 The Host starts a backend session and LiveKit publisher before displaying a QR invitation. The QR v2 payload contains only `session_id` and `join_code`. A Speaker scans the QR, joins the backend, verifies the returned session ID, requests a role-scoped LiveKit token and connects to the LiveKit room. No same-Wi-Fi network or local Host discovery is required.
 
+The Host now schedules synchronized playback automatically once its publisher is ready and every recently joined Speaker is connected and reports `READY`. The 4.5-second future start remains intentional: it gives each Speaker time to prefill the local PCM output before playout. The backend closes the join window when that schedule is committed. A Speaker that joins after playback starts is rejected; create a new Host session to form another synchronized group.
+
 ## Audio sources
 
 The Host supports:
