@@ -48,10 +48,13 @@ Health and OpenAPI:
 | GET | /api/v1/sessions/{id}/devices | Device list | Host bearer token |
 | POST | /api/v1/sessions/{id}/devices/me/heartbeat | Speaker presence heartbeat | Speaker bearer token |
 | PATCH | /api/v1/sessions/{id}/devices/me/state | Coarse Speaker state | Speaker bearer token |
+| POST | /api/v1/sessions/{id}/playback/schedule | Commit one shared playback start for the connected, READY cohort | Host bearer token |
 | DELETE | /api/v1/sessions/{id}/devices/me | Speaker leaves session | Speaker bearer token |
 | DELETE | /api/v1/sessions/{id} | Close session | Host bearer token |
 
 The Host media WebSocket accepts binary frames of exactly 3,840 bytes (960 samples/channel × 2 channels × 2 bytes/sample). The backend publishes each 20 ms frame as 48 kHz stereo PCM using livekit.rtc.AudioSource. The backend limits a session to one active Host media socket.
+
+The Host app requests the start automatically when all recently joined Speakers have connected and reported `ready`. The backend atomically records the first schedule, rejects additional schedule attempts, and rejects new Speaker joins after that point. It also rejects Speaker LiveKit-token requests with HTTP 409 and new Speaker event-WebSocket authentication with close code 4403 after the start boundary, so Android can detect the admission failure before subscribing to the live audio track. This prevents a late participant from receiving an already-running LiveKit stream without the original shared playback schedule. Start a new Host session to add another Speaker.
 
 The WebSocket authentication token is sent in the first text frame, never in the URL. LiveKit participant JWTs are minted server-side with role-specific grants: Host can publish; Speakers can subscribe but cannot publish.
 

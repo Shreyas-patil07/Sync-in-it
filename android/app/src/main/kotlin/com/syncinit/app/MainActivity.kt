@@ -66,7 +66,11 @@ class MainActivity : Activity() {
         val hostToken: String,
         val coordinator: BackendSessionCoordinator,
         val media: CloudHostSession
-    )
+    ) {
+        @Volatile var mediaReady = false
+        @Volatile var playbackStarted = false
+        val readyStateEvents = java.util.concurrent.atomic.AtomicLong(0L)
+    }
 
     private data class SpeakerBackendSession(
         val api: BackendApiClient,
@@ -575,15 +579,18 @@ class MainActivity : Activity() {
                 check(sessionGeneration.get() == attempt && hostBackendSession === state) {
                     "Host start was cancelled"
                 }
+                val activeHost = checkNotNull(state) { "Host backend session was not initialized" }
+                activeHost.mediaReady = true
 
                 runOnUiThread {
                     if (isFinishing || isDestroyed || hostBackendSession !== state) return@runOnUiThread
                     hostDetails.text =
-                        "Cloud Host active · $sourceDescription\nJoin every Speaker, then start synchronized playback."
+                        "Cloud Host active · $sourceDescription\nPlayback starts automatically when every joined Speaker is ready."
                     inviteStatus.text = "Host is online in LiveKit. Share the QR invitation."
                     synchronizedPlaybackButton.isEnabled = true
                     postStatus("Host cloud media is connected. Waiting for Speakers to become ready.")
                 }
+                tryAutoStartSynchronizedPlayback(activeHost)
             } catch (error: Exception) {
                 state?.let(::closeBackendHostState)
                 if (state != null && hostBackendSession === state) hostBackendSession = null
@@ -753,7 +760,6 @@ class MainActivity : Activity() {
                         "Connecting to LiveKit cloud media"
                     )
                 }
-                activeRoom.connectAndAwait()
                 val coordinatorDeadlineNs = System.nanoTime() + TimeUnit.SECONDS.toNanos(15)
                 while (activeCoordinator.currentState() != BackendConnectionState.CONNECTED) {
                     check(activeCoordinator.currentState() != BackendConnectionState.FAILED) {
@@ -764,14 +770,15 @@ class MainActivity : Activity() {
                     }
                     Thread.sleep(100)
                 }
+                activeRoom.connectAndAwait()
                 appendDiagnostic(
                     "LIVEKIT_AUDIO_TRACK_SUBSCRIBED",
                     "sessionId=${joined.sessionId} deviceId=${joined.deviceId} room=${credentials.roomName}"
                 )
                 runOnUiThread {
                     if (!isFinishing && !isDestroyed && speakerBackendSession === state) {
-                        inviteStatus.text = "Connected · waiting for the Host to start synchronized playback."
-                        postStatus("Speaker connected. The backend will accept playback scheduling only after its audio path and clock are ready.")
+                        inviteStatus.text = "Connected · waiting for the Host group to become ready."
+                        postStatus("Speaker connected. Synchronized playback starts automatically when every joined Speaker is ready.")
                     }
                 }
             } catch (error: Exception) {
@@ -788,8 +795,14 @@ class MainActivity : Activity() {
                 }
                 runOnUiThread {
                     if (!isFinishing && !isDestroyed && sessionGeneration.get() == attempt) {
-                        inviteStatus.text = "Could not join the cloud session."
-                        postStatus("Cloud Speaker join failed: ${error.message ?: error.javaClass.simpleName}")
+                        val apiError = error as? com.syncinit.backend.BackendApiException
+                        if (apiError?.errorCode == "playback_already_started") {
+                            inviteStatus.text = "Playback already started · join a new Host session."
+                            postStatus("This session has already started playback. Start a new Host session before joining another Speaker.")
+                        } else {
+                            inviteStatus.text = "Could not join the cloud session."
+                            postStatus("Cloud Speaker join failed: ${error.message ?: error.javaClass.simpleName}")
+                        }
                     }
                 }
                 appendDiagnostic("CLOUD_SPEAKER_JOIN_FAILED", error.message ?: error.javaClass.simpleName)
@@ -835,6 +848,13 @@ class MainActivity : Activity() {
                     ) {
                         val suffix = detail.takeIf { it.isNotBlank() }?.let { ": $it" }.orEmpty()
                         postStatus("Speaker ${deviceId.takeLast(6)} · $deviceState$suffix")
+                        if (deviceState == BackendDeviceState.READY.wireValue) {
+                            val activeHost = hostBackendSession
+                            if (activeHost != null && activeHost.sessionId == sessionId) {
+                                activeHost.readyStateEvents.incrementAndGet()
+                                tryAutoStartSynchronizedPlayback(activeHost)
+                            }
+                        }
                     }
                 } else if (role == BackendSessionRole.SPEAKER &&
                     event.type == "playback.scheduled"
@@ -866,9 +886,33 @@ class MainActivity : Activity() {
             postStatus("Start the Host session before scheduling playback.")
             return
         }
+        startSynchronizedPlayback(session, automatic = false)
+    }
+
+    private fun tryAutoStartSynchronizedPlayback(session: HostBackendSession) {
+        if (hostBackendSession !== session || !session.mediaReady || session.playbackStarted) return
+        startSynchronizedPlayback(session, automatic = true)
+    }
+
+    private fun startSynchronizedPlayback(
+        session: HostBackendSession,
+        automatic: Boolean
+    ) {
+        if (hostBackendSession !== session || !session.mediaReady || session.playbackStarted) return
         if (!synchronizedPlaybackStartInProgress.compareAndSet(false, true)) return
-        synchronizedPlaybackButton.isEnabled = false
-        postStatus("Checking Speaker readiness and scheduling a shared playback start…")
+        val readyEventVersion = session.readyStateEvents.get()
+        runOnUiThread {
+            if (!isFinishing && !isDestroyed && hostBackendSession === session) {
+                synchronizedPlaybackButton.isEnabled = false
+            }
+        }
+        postStatus(
+            if (automatic) {
+                "Speaker readiness confirmed · automatically scheduling synchronized playback…"
+            } else {
+                "Checking Speaker readiness and scheduling a shared playback start…"
+            }
+        )
         Thread({
             try {
                 val schedule = session.api.scheduleSynchronizedPlayback(
@@ -876,20 +920,43 @@ class MainActivity : Activity() {
                     session.hostToken
                 )
                 check(hostBackendSession === session) { "Host session changed before playback start" }
+                session.playbackStarted = true
                 session.media.startSynchronizedPlayback()
                 postStatus(
                     "Synchronized playback scheduled for ${schedule.speakerCount} Speaker(s)."
                 )
             } catch (error: Exception) {
-                synchronizedPlaybackStartInProgress.set(false)
+                if (!session.playbackStarted) {
+                    synchronizedPlaybackStartInProgress.set(false)
+                }
                 runOnUiThread {
-                    if (!isFinishing && !isDestroyed && hostBackendSession === session) {
+                    if (!isFinishing && !isDestroyed &&
+                        hostBackendSession === session &&
+                        !session.playbackStarted &&
+                        !synchronizedPlaybackStartInProgress.get()
+                    ) {
                         synchronizedPlaybackButton.isEnabled = true
                     }
                 }
-                postStatus(
-                    "Could not start synchronized playback: ${error.message ?: error.javaClass.simpleName}"
-                )
+
+                val apiError = error as? com.syncinit.backend.BackendApiException
+                val waitingForGroup = automatic && apiError != null &&
+                    (apiError.errorCode == "no_connected_speakers" ||
+                        apiError.errorCode == "speakers_not_ready")
+                if (waitingForGroup && hostBackendSession === session && !session.playbackStarted) {
+                    postStatus(
+                        "Waiting for all joined Speakers to finish preparing. Playback will start automatically when the group is ready."
+                    )
+                    // A second READY event can arrive while the first schedule request is
+                    // in flight. Re-check once after releasing the one-shot start guard.
+                    if (session.readyStateEvents.get() > readyEventVersion) {
+                        tryAutoStartSynchronizedPlayback(session)
+                    }
+                } else {
+                    postStatus(
+                        "Could not start synchronized playback: ${error.message ?: error.javaClass.simpleName}"
+                    )
+                }
             }
         }, "syncinit-playback-schedule").apply { isDaemon = true }.start()
     }
