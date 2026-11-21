@@ -581,7 +581,8 @@ class MainActivity : Activity() {
                     hostDetails.text =
                         "Cloud Host active · $sourceDescription\nJoin every Speaker, then start synchronized playback."
                     inviteStatus.text = "Host is online in LiveKit. Share the QR invitation."
-                    synchronizedPlaybackButton.isEnabled = true
+                    synchronizedPlaybackButton.isEnabled =
+                        !synchronizedPlaybackStartInProgress.get()
                     postStatus("Host cloud media is connected. Waiting for Speakers to become ready.")
                 }
             } catch (error: Exception) {
