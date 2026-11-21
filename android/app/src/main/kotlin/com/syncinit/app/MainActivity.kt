@@ -835,6 +835,9 @@ class MainActivity : Activity() {
                     ) {
                         val suffix = detail.takeIf { it.isNotBlank() }?.let { ": $it" }.orEmpty()
                         postStatus("Speaker ${deviceId.takeLast(6)} · $deviceState$suffix")
+                        if (deviceState == BackendDeviceState.READY.wireValue) {
+                            startSynchronizedPlayback(autoStart = true)
+                        }
                     }
                 } else if (role == BackendSessionRole.SPEAKER &&
                     event.type == "playback.scheduled"
@@ -861,14 +864,24 @@ class MainActivity : Activity() {
         }
     )
 
-    private fun startSynchronizedPlayback() {
+    private fun startSynchronizedPlayback(autoStart: Boolean = false) {
         val session = hostBackendSession ?: run {
             postStatus("Start the Host session before scheduling playback.")
             return
         }
         if (!synchronizedPlaybackStartInProgress.compareAndSet(false, true)) return
-        synchronizedPlaybackButton.isEnabled = false
-        postStatus("Checking Speaker readiness and scheduling a shared playback start…")
+        runOnUiThread {
+            if (!isFinishing && !isDestroyed && ::synchronizedPlaybackButton.isInitialized) {
+                synchronizedPlaybackButton.isEnabled = false
+            }
+        }
+        postStatus(
+            if (autoStart) {
+                "Speaker ready · automatically scheduling synchronized playback…"
+            } else {
+                "Checking Speaker readiness and scheduling a shared playback start…"
+            }
+        )
         Thread({
             try {
                 val schedule = session.api.scheduleSynchronizedPlayback(
