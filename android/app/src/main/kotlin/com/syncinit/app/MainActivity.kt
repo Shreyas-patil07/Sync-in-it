@@ -760,7 +760,6 @@ class MainActivity : Activity() {
                         "Connecting to LiveKit cloud media"
                     )
                 }
-                activeRoom.connectAndAwait()
                 val coordinatorDeadlineNs = System.nanoTime() + TimeUnit.SECONDS.toNanos(15)
                 while (activeCoordinator.currentState() != BackendConnectionState.CONNECTED) {
                     check(activeCoordinator.currentState() != BackendConnectionState.FAILED) {
@@ -771,6 +770,7 @@ class MainActivity : Activity() {
                     }
                     Thread.sleep(100)
                 }
+                activeRoom.connectAndAwait()
                 appendDiagnostic(
                     "LIVEKIT_AUDIO_TRACK_SUBSCRIBED",
                     "sessionId=${joined.sessionId} deviceId=${joined.deviceId} room=${credentials.roomName}"
