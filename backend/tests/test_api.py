@@ -203,46 +203,44 @@ def test_playback_starts_with_first_ready_speaker_and_schedules_late_speakers(tm
     ]
     host_headers = {"Authorization": f"Bearer {host['host_token']}"}
     schedule_url = f"/api/v1/sessions/{host['session_id']}/playback/schedule"
-    devices_url = f"/api/v1/sessions/{host['session_id']}/devices"
-    speaker_sockets = []
+    speaker_url = f"/api/v1/sessions/{host['session_id']}/devices/me/state"
 
+    # Connect Speakers before the Host so the host-connected event is delivered to all.
     with client.websocket_connect(
         f"/api/v1/sessions/{host['session_id']}/ws"
-    ) as host_socket:
-        host_socket.send_json({"type": "authenticate", "token": host["host_token"]})
-        assert host_socket.receive_json()["type"] == "authenticated"
-        assert host_socket.receive_json()["type"] == "session.snapshot"
+    ) as speaker_one_socket:
+        speaker_one_socket.send_json(
+            {"type": "authenticate", "token": speakers[0]["device_token"]}
+        )
+        assert speaker_one_socket.receive_json()["type"] == "authenticated"
+        assert speaker_one_socket.receive_json()["type"] == "session.snapshot"
 
         with client.websocket_connect(
             f"/api/v1/sessions/{host['session_id']}/ws"
-        ) as speaker_one_socket:
-            speaker_one_socket.send_json(
-                {"type": "authenticate", "token": speakers[0]["device_token"]}
+        ) as speaker_two_socket:
+            speaker_two_socket.send_json(
+                {"type": "authenticate", "token": speakers[1]["device_token"]}
             )
-            assert speaker_one_socket.receive_json()["type"] == "authenticated"
-            assert speaker_one_socket.receive_json()["type"] == "session.snapshot"
-            assert host_socket.receive_json()["type"] == "device.connected"
+            assert speaker_two_socket.receive_json()["type"] == "authenticated"
+            assert speaker_two_socket.receive_json()["type"] == "session.snapshot"
 
             with client.websocket_connect(
                 f"/api/v1/sessions/{host['session_id']}/ws"
-            ) as speaker_two_socket:
-                speaker_two_socket.send_json(
-                    {"type": "authenticate", "token": speakers[1]["device_token"]}
+            ) as speaker_three_socket:
+                speaker_three_socket.send_json(
+                    {"type": "authenticate", "token": speakers[2]["device_token"]}
                 )
-                assert speaker_two_socket.receive_json()["type"] == "authenticated"
-                assert speaker_two_socket.receive_json()["type"] == "session.snapshot"
-                assert host_socket.receive_json()["type"] == "device.connected"
+                assert speaker_three_socket.receive_json()["type"] == "authenticated"
+                assert speaker_three_socket.receive_json()["type"] == "session.snapshot"
 
                 with client.websocket_connect(
                     f"/api/v1/sessions/{host['session_id']}/ws"
-                ) as speaker_three_socket:
-                    speaker_three_socket.send_json(
-                        {"type": "authenticate", "token": speakers[2]["device_token"]}
+                ) as host_socket:
+                    host_socket.send_json(
+                        {"type": "authenticate", "token": host["host_token"]}
                     )
-                    assert speaker_three_socket.receive_json()["type"] == "authenticated"
-                    assert speaker_three_socket.receive_json()["type"] == "session.snapshot"
-                    assert host_socket.receive_json()["type"] == "device.connected"
-
+                    assert host_socket.receive_json()["type"] == "authenticated"
+                    assert host_socket.receive_json()["type"] == "session.snapshot"
                     assert speaker_one_socket.receive_json()["type"] == "session.host_connected"
                     assert speaker_two_socket.receive_json()["type"] == "session.host_connected"
                     assert speaker_three_socket.receive_json()["type"] == "session.host_connected"
@@ -252,7 +250,7 @@ def test_playback_starts_with_first_ready_speaker_and_schedules_late_speakers(tm
                     assert not_ready.json()["detail"] == "no_ready_speakers"
 
                     first_ready = client.patch(
-                        f"/api/v1/sessions/{host['session_id']}/devices/me/state",
+                        speaker_url,
                         headers={"Authorization": f"Bearer {speakers[0]['device_token']}"},
                         json={"state": "ready", "detail": "PCM sink ready"},
                     )
@@ -274,7 +272,7 @@ def test_playback_starts_with_first_ready_speaker_and_schedules_late_speakers(tm
                     # A Speaker that reaches READY after playback has begun receives
                     # its own future join schedule instead of blocking the active group.
                     second_ready = client.patch(
-                        f"/api/v1/sessions/{host['session_id']}/devices/me/state",
+                        speaker_url,
                         headers={"Authorization": f"Bearer {speakers[1]['device_token']}"},
                         json={"state": "ready", "detail": "late Speaker ready"},
                     )
@@ -285,8 +283,7 @@ def test_playback_starts_with_first_ready_speaker_and_schedules_late_speakers(tm
                         "start_at_server_monotonic_ns"
                     ]
 
-                    # The authenticated WebSocket state path must provide the same
-                    # late-join scheduling behavior as the REST fallback.
+                    # The authenticated WebSocket state path has the same late-join behavior.
                     speaker_three_socket.send_json(
                         {
                             "type": "device.state",
