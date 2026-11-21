@@ -824,6 +824,19 @@ class MainActivity : Activity() {
                 appendDiagnostic("BACKEND_EVENT", "$label ${event.type}")
                 if (event.type == "session.snapshot") {
                     postStatus("$label backend session snapshot received.")
+                    if (role == BackendSessionRole.HOST) {
+                        val readySpeakerConnected = event.payload
+                            .getAsJsonArray("devices")
+                            ?.any { device ->
+                                device.isJsonObject &&
+                                    device.asJsonObject.get("state")?.asString ==
+                                        BackendDeviceState.READY.wireValue &&
+                                    device.asJsonObject.get("transport_connected")?.asBoolean == true
+                            } == true
+                        if (readySpeakerConnected) {
+                            startSynchronizedPlayback(autoStart = true)
+                        }
+                    }
                 } else if (role == BackendSessionRole.HOST &&
                     event.type == "device.state_changed"
                 ) {
