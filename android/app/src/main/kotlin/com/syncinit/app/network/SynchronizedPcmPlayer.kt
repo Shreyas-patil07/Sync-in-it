@@ -57,7 +57,10 @@ internal class SynchronizedPcmPlayer(
             numberOfFrames: Int,
             absoluteCaptureTimestampMs: Long
         ) {
-            if (closed.get() || failure.get() != null) return
+            // LiveKit may emit decoded silence as soon as the remote track is attached.
+            // Do not feed an unstarted AudioTrack: its blocking writer can fill the queue
+            // while the Host or other Speakers are still waiting to become ready.
+            if (closed.get() || failure.get() != null || !scheduled.get() || cancelled.get()) return
             val outputByteCount = numberOfFrames.toLong() * BYTES_PER_FRAME
             if (outputByteCount <= 0L || outputByteCount > MAX_CALLBACK_BYTES) {
                 fail(IOException("LiveKit supplied an oversized or empty PCM callback"))
