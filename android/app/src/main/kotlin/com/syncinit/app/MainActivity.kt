@@ -579,7 +579,7 @@ class MainActivity : Activity() {
                 runOnUiThread {
                     if (isFinishing || isDestroyed || hostBackendSession !== state) return@runOnUiThread
                     hostDetails.text =
-                        "Cloud Host active · $sourceDescription\nJoin every Speaker, then start synchronized playback."
+                        "Cloud Host active · $sourceDescription\nPlayback starts automatically when the first Speaker is ready. Later Speakers are scheduled as they become ready."
                     inviteStatus.text = "Host is online in LiveKit. Share the QR invitation."
                     synchronizedPlaybackButton.isEnabled =
                         !synchronizedPlaybackStartInProgress.get()
