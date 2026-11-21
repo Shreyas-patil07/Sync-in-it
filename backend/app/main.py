@@ -640,11 +640,13 @@ def create_app(database_path: str | Path | None = None) -> FastAPI:
 
         with database.connect() as db:
             session = db.execute(
-                "SELECT state, expires_at FROM sessions WHERE id = ?",
+                "SELECT state, expires_at, playback_started_at FROM sessions WHERE id = ?",
                 (session_id,),
             ).fetchone()
         if not session or session["state"] != "active" or session["expires_at"] <= time.time():
             raise HTTPException(status_code=401, detail="invalid_session")
+        if identity["role"] == "speaker" and session["playback_started_at"] is not None:
+            raise HTTPException(status_code=409, detail="playback_already_started")
 
         try:
             server_url, _, _ = livekit_settings()
@@ -700,10 +702,6 @@ def create_app(database_path: str | Path | None = None) -> FastAPI:
 
     @app.post("/api/v1/sessions/{session_id}/playback/schedule")
     async def schedule_playback(session_id: str, host=Depends(require_host)):
-        connected = await manager.connected_devices(session_id)
-        if not connected:
-            raise HTTPException(status_code=409, detail="no_connected_speakers")
-
         now = time.time()
         with database.connect() as db:
             db.execute("BEGIN IMMEDIATE")
@@ -721,6 +719,13 @@ def create_app(database_path: str | Path | None = None) -> FastAPI:
             if session["playback_started_at"] is not None:
                 db.rollback()
                 raise HTTPException(status_code=409, detail="playback_already_scheduled")
+
+            # Snapshot active sockets while holding the same SQLite write lock used
+            # by Speaker WebSocket admission. This makes cohort selection atomic.
+            connected = await manager.connected_devices(session_id)
+            if not connected:
+                db.rollback()
+                raise HTTPException(status_code=409, detail="no_connected_speakers")
 
             rows = db.execute(
                 "SELECT id, state, last_seen_at FROM devices WHERE session_id = ?",
@@ -950,23 +955,38 @@ def create_app(database_path: str | Path | None = None) -> FastAPI:
                 return
 
             client_id = identity["client_id"]
-            previous = await manager.register(
-                session_id, client_id, identity["role"], websocket
-            )
-            registered = True
+            with database.connect() as db:
+                db.execute("BEGIN IMMEDIATE")
+                if identity["role"] == "speaker":
+                    session = db.execute(
+                        "SELECT playback_started_at FROM sessions WHERE id = ?",
+                        (session_id,),
+                    ).fetchone()
+                    if not session or session["playback_started_at"] is not None:
+                        db.rollback()
+                        await websocket.close(
+                            code=4403,
+                            reason="playback-already-started",
+                        )
+                        return
+
+                previous = await manager.register(
+                    session_id, client_id, identity["role"], websocket
+                )
+                registered = True
+                if identity["role"] == "speaker":
+                    now = time.time()
+                    db.execute(
+                        "UPDATE devices SET last_seen_at = ? WHERE id = ?",
+                        (now, client_id),
+                    )
+                db.commit()
+
             if previous:
                 try:
                     await previous.close(code=4001, reason="connection-replaced")
                 except RuntimeError:
                     pass
-
-            if identity["role"] == "speaker":
-                now = time.time()
-                with database.connect() as db:
-                    db.execute(
-                        "UPDATE devices SET last_seen_at = ? WHERE id = ?",
-                        (now, client_id),
-                    )
 
             await websocket.send_json(
                 {
