@@ -238,6 +238,6 @@ class BackendSessionCoordinator(
         const val MAX_RECONNECT_DELAY_MS = 30_000L
         const val MAX_BACKOFF_SHIFT = 5
         const val HEARTBEAT_ACK_TIMEOUT_INTERVALS = 3L
-        val FATAL_CLOSE_CODES = setOf(4000, 4001, 4003, 4401)
+        val FATAL_CLOSE_CODES = setOf(4000, 4001, 4003, 4401, 4403)
     }
 }
