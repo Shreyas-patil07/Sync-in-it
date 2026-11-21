@@ -585,7 +585,7 @@ class MainActivity : Activity() {
                 runOnUiThread {
                     if (isFinishing || isDestroyed || hostBackendSession !== state) return@runOnUiThread
                     hostDetails.text =
-                        "Cloud Host active · $sourceDescription\nJoin every Speaker, then start synchronized playback."
+                        "Cloud Host active · $sourceDescription\nPlayback starts automatically when every joined Speaker is ready."
                     inviteStatus.text = "Host is online in LiveKit. Share the QR invitation."
                     synchronizedPlaybackButton.isEnabled = true
                     postStatus("Host cloud media is connected. Waiting for Speakers to become ready.")
@@ -777,8 +777,8 @@ class MainActivity : Activity() {
                 )
                 runOnUiThread {
                     if (!isFinishing && !isDestroyed && speakerBackendSession === state) {
-                        inviteStatus.text = "Connected · waiting for the Host to start synchronized playback."
-                        postStatus("Speaker connected. The backend will accept playback scheduling only after its audio path and clock are ready.")
+                        inviteStatus.text = "Connected · waiting for the Host group to become ready."
+                        postStatus("Speaker connected. Synchronized playback starts automatically when every joined Speaker is ready.")
                     }
                 }
             } catch (error: Exception) {
@@ -795,8 +795,14 @@ class MainActivity : Activity() {
                 }
                 runOnUiThread {
                     if (!isFinishing && !isDestroyed && sessionGeneration.get() == attempt) {
-                        inviteStatus.text = "Could not join the cloud session."
-                        postStatus("Cloud Speaker join failed: ${error.message ?: error.javaClass.simpleName}")
+                        val apiError = error as? com.syncinit.backend.BackendApiException
+                        if (apiError?.errorCode == "playback_already_started") {
+                            inviteStatus.text = "Playback already started · join a new Host session."
+                            postStatus("This session has already started playback. Start a new Host session before joining another Speaker.")
+                        } else {
+                            inviteStatus.text = "Could not join the cloud session."
+                            postStatus("Cloud Speaker join failed: ${error.message ?: error.javaClass.simpleName}")
+                        }
                     }
                 }
                 appendDiagnostic("CLOUD_SPEAKER_JOIN_FAILED", error.message ?: error.javaClass.simpleName)
