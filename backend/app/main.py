@@ -281,7 +281,8 @@ class SessionDatabase:
                     max_speakers INTEGER NOT NULL,
                     state TEXT NOT NULL CHECK (state IN ('active', 'closed')),
                     created_at REAL NOT NULL,
-                    expires_at REAL NOT NULL
+                    expires_at REAL NOT NULL,
+                    playback_started_at REAL
                 );
 
                 CREATE TABLE IF NOT EXISTS devices (
@@ -301,6 +302,9 @@ class SessionDatabase:
                     ON devices(session_id, joined_at);
                 """
             )
+            columns = {row["name"] for row in db.execute("PRAGMA table_info(sessions)")}
+            if "playback_started_at" not in columns:
+                db.execute("ALTER TABLE sessions ADD COLUMN playback_started_at REAL")
 
 
 def token_hash(token: str) -> str:
@@ -502,6 +506,9 @@ def create_app(database_path: str | Path | None = None) -> FastAPI:
             ):
                 db.rollback()
                 raise HTTPException(status_code=404, detail="session_not_found")
+            if session["playback_started_at"] is not None:
+                db.rollback()
+                raise HTTPException(status_code=409, detail="playback_already_started")
             if payload.protocol_version != session["protocol_version"]:
                 db.rollback()
                 raise HTTPException(status_code=409, detail="protocol_version_mismatch")
@@ -697,16 +704,47 @@ def create_app(database_path: str | Path | None = None) -> FastAPI:
         if not connected:
             raise HTTPException(status_code=409, detail="no_connected_speakers")
 
+        now = time.time()
         with database.connect() as db:
+            db.execute("BEGIN IMMEDIATE")
+            session = db.execute(
+                "SELECT state, expires_at, playback_started_at FROM sessions WHERE id = ?",
+                (session_id,),
+            ).fetchone()
+            if (
+                not session
+                or session["state"] != "active"
+                or session["expires_at"] <= now
+            ):
+                db.rollback()
+                raise HTTPException(status_code=401, detail="invalid_session")
+            if session["playback_started_at"] is not None:
+                db.rollback()
+                raise HTTPException(status_code=409, detail="playback_already_scheduled")
+
             rows = db.execute(
-                "SELECT id, state FROM devices WHERE session_id = ?",
+                "SELECT id, state, last_seen_at FROM devices WHERE session_id = ?",
                 (session_id,),
             ).fetchall()
-        ready = {row["id"] for row in rows if row["state"] == "ready"}
-        if not connected.issubset(ready):
-            raise HTTPException(status_code=409, detail="speakers_not_ready")
+            # A recently joined device must finish connecting and report READY before
+            # the shared timeline is committed. Old, disconnected records do not block.
+            recently_active = {
+                row["id"]
+                for row in rows
+                if now - row["last_seen_at"] <= 15
+            }
+            ready = {row["id"] for row in rows if row["state"] == "ready"}
+            if not recently_active.issubset(connected) or not connected.issubset(ready):
+                db.rollback()
+                raise HTTPException(status_code=409, detail="speakers_not_ready")
 
-        start_at_ns = time.monotonic_ns() + 4_500_000_000
+            start_at_ns = time.monotonic_ns() + 4_500_000_000
+            db.execute(
+                "UPDATE sessions SET playback_started_at = ? WHERE id = ?",
+                (now, session_id),
+            )
+            db.commit()
+
         message = {
             "type": "playback.scheduled",
             "start_at_server_monotonic_ns": start_at_ns,
@@ -722,6 +760,8 @@ def create_app(database_path: str | Path | None = None) -> FastAPI:
                 {"type": "playback.cancelled", "reason": "schedule-delivery-failed"},
                 target_device_ids=delivered,
             )
+            # Keep the start boundary closed: some Speakers may already have armed
+            # the schedule, so accepting a new participant would be unsafe.
             raise HTTPException(status_code=503, detail="playback_schedule_delivery_failed")
 
         return {
