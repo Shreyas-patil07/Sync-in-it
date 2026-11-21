@@ -237,3 +237,57 @@ def test_playback_schedule_requires_all_connected_speakers_ready(tmp_path):
             event = speaker_socket.receive_json()
             assert event["type"] == "playback.scheduled"
             assert event["start_at_server_monotonic_ns"] == payload["start_at_server_monotonic_ns"]
+
+            repeated = client.post(schedule_url, headers=host_headers)
+            assert repeated.status_code == 409
+            assert repeated.json()["detail"] == "playback_already_scheduled"
+
+            late_join = client.post(
+                "/api/v1/sessions/join",
+                json={
+                    "join_code": host["join_code"],
+                    "device_name": "Late Speaker",
+                },
+            )
+            assert late_join.status_code == 409
+            assert late_join.json()["detail"] == "playback_already_started"
+
+
+
+def test_playback_schedule_waits_for_recently_joined_speakers_to_connect(tmp_path):
+    client = TestClient(create_app(tmp_path / "playback-cohort.sqlite3"))
+    host = client.post(
+        "/api/v1/sessions",
+        json={"host_name": "Host", "max_speakers": 2},
+    ).json()
+    first = client.post(
+        "/api/v1/sessions/join",
+        json={"join_code": host["join_code"], "device_name": "Speaker 1"},
+    ).json()
+    client.post(
+        "/api/v1/sessions/join",
+        json={"join_code": host["join_code"], "device_name": "Speaker 2"},
+    )
+    host_headers = {"Authorization": f"Bearer {host['host_token']}"}
+    speaker_headers = {"Authorization": f"Bearer {first['device_token']}"}
+    schedule_url = f"/api/v1/sessions/{host['session_id']}/playback/schedule"
+
+    with client.websocket_connect(
+        f"/api/v1/sessions/{host['session_id']}/ws"
+    ) as speaker_socket:
+        speaker_socket.send_json(
+            {"type": "authenticate", "token": first["device_token"]}
+        )
+        assert speaker_socket.receive_json()["type"] == "authenticated"
+        assert speaker_socket.receive_json()["type"] == "session.snapshot"
+
+        ready = client.patch(
+            f"/api/v1/sessions/{host['session_id']}/devices/me/state",
+            headers=speaker_headers,
+            json={"state": "ready", "detail": "audio sink and clock ready"},
+        )
+        assert ready.status_code == 200
+
+        response = client.post(schedule_url, headers=host_headers)
+        assert response.status_code == 409
+        assert response.json()["detail"] == "speakers_not_ready"
