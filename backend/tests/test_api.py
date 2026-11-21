@@ -252,6 +252,29 @@ def test_playback_schedule_requires_all_connected_speakers_ready(tmp_path):
             assert late_join.status_code == 409
             assert late_join.json()["detail"] == "playback_already_started"
 
+            token_after_start = client.post(
+                f"/api/v1/sessions/{host['session_id']}/livekit-token",
+                headers=speaker_headers,
+            )
+            assert token_after_start.status_code == 409
+            assert token_after_start.json()["detail"] == "playback_already_started"
+
+            from starlette.websockets import WebSocketDisconnect
+            with client.websocket_connect(
+                f"/api/v1/sessions/{host['session_id']}/ws"
+            ) as late_socket:
+                late_socket.send_json(
+                    {"type": "authenticate", "token": joined["device_token"]}
+                )
+                try:
+                    late_socket.receive_json()
+                except WebSocketDisconnect as error:
+                    assert error.code == 4403
+                else:
+                    raise AssertionError(
+                        "A Speaker event channel was admitted after playback started"
+                    )
+
 
 
 def test_playback_schedule_waits_for_recently_joined_speakers_to_connect(tmp_path):
