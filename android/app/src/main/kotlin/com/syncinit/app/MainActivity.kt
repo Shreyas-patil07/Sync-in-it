@@ -850,7 +850,7 @@ class MainActivity : Activity() {
                         postStatus("Speaker ${deviceId.takeLast(6)} · $deviceState$suffix")
                         if (deviceState == BackendDeviceState.READY.wireValue) {
                             val activeHost = hostBackendSession
-                            if (activeHost?.sessionId == sessionId) {
+                            if (activeHost != null && activeHost.sessionId == sessionId) {
                                 activeHost.readyStateEvents.incrementAndGet()
                                 tryAutoStartSynchronizedPlayback(activeHost)
                             }
